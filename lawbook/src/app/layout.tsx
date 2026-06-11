@@ -61,37 +61,11 @@ function SiteHeader() {
             </span>
           </span>
         </Link>
-        <nav className="hidden items-center gap-7 text-sm font-medium text-muted sm:flex">
-          <Link
-            href="/?tab=judgments"
-            className="transition-colors hover:text-foreground"
-          >
-            Judgments
-          </Link>
-          <Link
-            href="/?tab=statutes"
-            className="transition-colors hover:text-foreground"
-          >
-            Statutes
-          </Link>
-          <Link
-            href="/?tab=hansard"
-            className="transition-colors hover:text-foreground"
-          >
-            Hansard
-          </Link>
-          <Link
-            href="/?tab=bills"
-            className="transition-colors hover:text-foreground"
-          >
-            Bills
-          </Link>
-        </nav>
         <a
           href="https://backend.lawplain.com/v1/stats"
           target="_blank"
           rel="noopener noreferrer"
-          className="hidden rounded-full border border-border-strong px-3.5 py-1.5 text-xs font-medium text-muted transition-colors hover:border-accent hover:text-foreground md:inline-block"
+          className="rounded-full border border-border-strong px-3.5 py-1.5 text-xs font-medium text-muted transition-colors hover:border-accent hover:text-foreground"
         >
           API
         </a>
