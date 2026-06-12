@@ -37,18 +37,17 @@ export default async function Home({
   return (
     <main className="mx-auto w-full max-w-6xl px-5 sm:px-8">
       {/* Hero */}
-      <section className="pt-14 pb-8 sm:pt-20">
+      <section className="pt-16 pb-10 sm:pt-24">
         <div className="mx-auto max-w-3xl text-center">
-          <span className="mb-4 inline-flex items-center gap-2 rounded-full border border-border bg-surface px-3 py-1 text-xs font-medium text-muted">
+          <span className="mb-5 inline-flex items-center gap-2 rounded-full border border-border bg-surface px-3 py-1 text-xs font-medium text-muted">
             <span className="h-1.5 w-1.5 rounded-full bg-accent" />
             Public · read-only · Singapore legal corpus
           </span>
-          <h1 className="font-serif text-4xl font-semibold leading-[1.1] tracking-tight text-foreground sm:text-5xl">
-            Research Singapore law,
-            <br className="hidden sm:block" />
-            <span className="text-accent"> in one search.</span>
+          <h1 className="text-balance text-4xl font-semibold leading-[1.05] tracking-tight text-foreground sm:text-6xl">
+            Research Singapore law,{" "}
+            <span className="text-accent">in one search.</span>
           </h1>
-          <p className="mx-auto mt-4 max-w-xl text-base leading-relaxed text-muted sm:text-lg">
+          <p className="mx-auto mt-5 max-w-xl text-pretty text-base leading-relaxed text-muted sm:text-lg">
             Full-text search across judgments, statutes, subsidiary legislation,
             parliamentary Hansard, bills and practice directions.
           </p>
@@ -62,22 +61,22 @@ export default async function Home({
 
       {/* Stats */}
       {countEntries.length > 0 && (
-        <section className="border-t border-border py-10">
-          <h2 className="mb-5 text-center text-xs font-semibold uppercase tracking-[0.18em] text-muted-2">
+        <section className="border-t border-border py-12">
+          <h2 className="mb-6 text-center text-xs font-semibold uppercase tracking-[0.18em] text-muted-2">
             Corpus at a glance
           </h2>
           <dl className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
             {countEntries.map(([key, n]) => (
               <div
                 key={key}
-                className="rounded-xl border border-border bg-surface px-4 py-5 text-center"
+                className="rounded-xl border border-border bg-surface px-4 py-5 text-center transition-colors hover:border-border-strong"
               >
-                <dt className="text-xs font-medium uppercase tracking-wide text-muted-2">
-                  {CORPUS_LABELS[key] ?? key}
-                </dt>
-                <dd className="mt-1 font-serif text-2xl font-semibold text-foreground tabular-nums">
+                <dd className="text-2xl font-semibold tabular-nums text-foreground">
                   {n.toLocaleString()}
                 </dd>
+                <dt className="mt-1 text-xs font-medium uppercase tracking-wide text-muted-2">
+                  {CORPUS_LABELS[key] ?? key}
+                </dt>
               </div>
             ))}
           </dl>

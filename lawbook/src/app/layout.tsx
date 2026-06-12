@@ -20,9 +20,9 @@ const sourceSerif = Source_Serif_4({
 });
 
 export const metadata: Metadata = {
-  title: "sgjudge — Singapore Legal Research",
+  title: "Lawbook — Singapore Legal Research",
   description:
-    "Search Singapore judgments, statutes, subsidiary legislation, Hansard, bills and practice directions across the sgjudge legal corpus.",
+    "Search Singapore judgments, statutes, subsidiary legislation, Hansard, bills and practice directions across the Lawbook legal corpus.",
 };
 
 export default function RootLayout({
@@ -46,18 +46,16 @@ export default function RootLayout({
 
 function SiteHeader() {
   return (
-    <header className="sticky top-0 z-40 border-b border-border bg-background/85 backdrop-blur supports-[backdrop-filter]:bg-background/70">
+    <header className="sticky top-0 z-40 border-b border-border bg-background/80 backdrop-blur supports-[backdrop-filter]:bg-background/65">
       <div className="mx-auto flex h-16 w-full max-w-6xl items-center justify-between px-5 sm:px-8">
-        <Link href="/" className="group flex items-center gap-2.5">
-          <span className="flex h-8 w-8 items-center justify-center rounded-md bg-primary text-primary-fg">
-            <BalanceMark className="h-4.5 w-4.5" />
-          </span>
+        <Link href="/" className="group flex items-center gap-3">
+          <BrandMark className="h-9 w-9 transition-transform duration-200 group-hover:-translate-y-0.5" />
           <span className="flex flex-col leading-none">
-            <span className="font-serif text-lg font-semibold tracking-tight text-foreground">
-              sgjudge
+            <span className="text-[15px] font-semibold tracking-tight text-foreground">
+              Lawbook
             </span>
-            <span className="text-[10px] font-medium uppercase tracking-[0.18em] text-muted-2">
-              Legal Corpus
+            <span className="mt-1 text-[10px] font-medium uppercase tracking-[0.2em] text-muted-2">
+              Singapore Legal Research
             </span>
           </span>
         </Link>
@@ -76,13 +74,14 @@ function SiteHeader() {
 
 function SiteFooter() {
   return (
-    <footer className="border-t border-border bg-surface-2/40">
+    <footer className="mt-16 border-t border-border bg-surface-2/40">
       <div className="mx-auto flex w-full max-w-6xl flex-col gap-2 px-5 py-8 text-sm text-muted sm:flex-row sm:items-center sm:justify-between sm:px-8">
-        <p>
-          <span className="font-serif font-semibold text-foreground">
-            sgjudge
-          </span>{" "}
-          — a read-only projection of the Singapore legal corpus.
+        <p className="flex items-center gap-2.5">
+          <BrandMark className="h-6 w-6" />
+          <span>
+            <span className="font-semibold text-foreground">Lawbook</span> — a
+            read-only projection of the Singapore legal corpus.
+          </span>
         </p>
         <p className="text-xs text-muted-2">
           Not legal advice. Data via{" "}
@@ -93,23 +92,56 @@ function SiteFooter() {
   );
 }
 
-function BalanceMark({ className }: { className?: string }) {
+function BrandMark({ className }: { className?: string }) {
   return (
     <svg
       className={className}
-      viewBox="0 0 24 24"
+      viewBox="0 0 96 96"
       fill="none"
-      stroke="currentColor"
-      strokeWidth={1.75}
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
+      role="img"
+      aria-label="Lawbook"
     >
-      <path d="M12 3v18" />
-      <path d="M7 21h10" />
-      <path d="M5 7h14" />
-      <path d="M9 7 6 14a3 3 0 0 0 6 0z" opacity={0.9} />
-      <path d="M15 7l3 7a3 3 0 0 1-6 0z" opacity={0.9} />
+      <rect x="10" y="10" width="76" height="76" rx="18" fill="#102A2B" />
+      <path
+        d="M26 39C35 39 42 41.5 48 46V68C42.2 63.8 35 61.5 26 61.5V39Z"
+        fill="#F7F1E4"
+      />
+      <path
+        d="M70 39C61 39 54 41.5 48 46V68C53.8 63.8 61 61.5 70 61.5V39Z"
+        fill="#F7F1E4"
+      />
+      <path
+        d="M48 45.5V69"
+        stroke="#C69C5B"
+        strokeWidth={3.5}
+        strokeLinecap="round"
+      />
+      <path
+        d="M33 31H63"
+        stroke="#C69C5B"
+        strokeWidth={4}
+        strokeLinecap="round"
+      />
+      <path
+        d="M48 26V36"
+        stroke="#C69C5B"
+        strokeWidth={4}
+        strokeLinecap="round"
+      />
+      <circle cx="33" cy="31" r="2.8" fill="#C69C5B" />
+      <circle cx="63" cy="31" r="2.8" fill="#C69C5B" />
+      <path
+        d="M32 49H40"
+        stroke="#102A2B"
+        strokeWidth={3}
+        strokeLinecap="round"
+      />
+      <path
+        d="M56 49H64"
+        stroke="#102A2B"
+        strokeWidth={3}
+        strokeLinecap="round"
+      />
     </svg>
   );
 }

@@ -6,7 +6,7 @@ export default function NotFound() {
       <p className="font-mono text-sm uppercase tracking-[0.2em] text-accent">
         404
       </p>
-      <h1 className="mt-3 font-serif text-3xl font-semibold text-foreground">
+      <h1 className="mt-3 text-3xl font-semibold tracking-tight text-foreground">
         Record not found
       </h1>
       <p className="mt-3 max-w-md text-muted">

@@ -62,7 +62,7 @@ export default async function StatutePage({
             <span className="text-muted-2">· {s.year_enacted}</span>
           )}
         </div>
-        <h1 className="font-serif text-2xl font-semibold leading-tight text-foreground sm:text-3xl">
+        <h1 className="text-2xl font-semibold leading-tight tracking-tight text-foreground sm:text-3xl">
           {s.short_title || s.act_id || decoded}
         </h1>
 

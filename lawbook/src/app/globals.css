@@ -1,25 +1,27 @@
+/* biome-ignore-all lint/complexity/noImportantStyles: the prefers-reduced-motion reset must override Tailwind utility transitions for accessibility */
 @import "tailwindcss";
 
 /*
- * Design system — "Authoritative Editorial" for a legal research corpus.
- * Palette: ink navy + warm parchment + restrained gold accent.
- * Serif display headings convey legal authority; sans body for readability.
+ * Design system — "Warm Editorial Minimal" (Harvey-inspired).
+ * Palette aligned to the Lawbook brand mark: deep teal-ink #102A2B,
+ * warm ivory #F7F1E4, restrained bronze-gold accent. Sans-forward UI,
+ * generous whitespace, hairline borders; serif reserved for long-form reading.
  */
 :root {
-  --background: #f6f3ec; /* parchment */
-  --surface: #fffdf8; /* paper / cards */
-  --surface-2: #efeadf; /* sunken wells */
-  --foreground: #1b2330; /* ink */
-  --muted: #5c6473; /* slate text */
-  --muted-2: #8a8f9c; /* faint meta */
-  --border: #e0d9c9; /* warm hairline */
-  --border-strong: #cdc4b0;
-  --primary: #14213d; /* deep navy */
-  --primary-fg: #f6f3ec;
-  --accent: #9a7233; /* legal gold */
-  --accent-soft: #f0e6d2;
-  --ring: #14213d;
-  --highlight: #fdf3cf; /* search snippet mark */
+  --background: #f7f2e8; /* warm ivory */
+  --surface: #fffdf9; /* paper / cards */
+  --surface-2: #efe7d6; /* sunken wells */
+  --foreground: #102a2b; /* deep teal-ink */
+  --muted: #4f615e; /* muted teal-grey */
+  --muted-2: #7e8c89; /* faint meta */
+  --border: #e6ddcb; /* warm hairline */
+  --border-strong: #d6cab1;
+  --primary: #102a2b; /* ink */
+  --primary-fg: #f7f1e4;
+  --accent: #8a5e2e; /* bronze-gold (AA on ivory) */
+  --accent-soft: #efe2c9;
+  --ring: #102a2b;
+  --highlight: #f3e2b3; /* search highlight */
 }
 
 @theme inline {
@@ -44,20 +46,20 @@
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --background: #0c1118;
-    --surface: #131b27;
-    --surface-2: #0f1620;
-    --foreground: #e9e7e0;
-    --muted: #9aa3b2;
-    --muted-2: #6b7382;
-    --border: #243140;
-    --border-strong: #33445a;
-    --primary: #c9b277; /* gold becomes the bright brand in dark */
-    --primary-fg: #0c1118;
-    --accent: #d6b677;
-    --accent-soft: #1c2738;
-    --ring: #c9b277;
-    --highlight: #3a3414;
+    --background: #0d1a1b; /* deep teal-black */
+    --surface: #142525;
+    --surface-2: #0f1f20;
+    --foreground: #ece6d6;
+    --muted: #9fb0ac;
+    --muted-2: #6f817d;
+    --border: #233b3a;
+    --border-strong: #335251;
+    --primary: #c69c5b; /* brand gold becomes the bright mark in dark */
+    --primary-fg: #0d1a1b;
+    --accent: #d8b377;
+    --accent-soft: #1d3231;
+    --ring: #c69c5b;
+    --highlight: #3a3217;
   }
 }
 
@@ -75,6 +77,29 @@ body {
 ::selection {
   background: var(--accent-soft);
   color: var(--foreground);
+}
+
+/* Interaction polish (pre-delivery checklist) */
+button:not(:disabled),
+[role="button"]:not([aria-disabled="true"]) {
+  cursor: pointer;
+}
+
+:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }
 
 /* Snippet highlight rendered from API <b> tags */
