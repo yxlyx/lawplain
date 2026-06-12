@@ -48,7 +48,11 @@ export interface JudgmentDetail {
   court?: string;
   neutral_cite?: string;
   decision_date?: string;
+  hearing_date?: string;
+  case_no?: string;
+  year?: number;
   judges_json?: string;
+  counsel_json?: string;
   catchwords_json?: string;
   body_length: number;
   body_offset: number;

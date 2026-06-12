@@ -59,7 +59,36 @@ export default async function JudgmentPage({
 
   const judges = parseJsonField<string[]>(j.judges_json, []);
   const catchwords = parseJsonField<string[]>(j.catchwords_json, []);
+  const counsel = parseJsonField<CounselEntry[]>(j.counsel_json, []);
+  const counselGroups = groupCounsel(counsel);
   const initialLoaded = (j.body_offset ?? 0) + (j.body_text?.length ?? 0);
+
+  const metaRows: { label: string; value: React.ReactNode }[] = [];
+  if (j.court) metaRows.push({ label: "Tribunal", value: courtName(j.court) });
+  if (j.case_no) metaRows.push({ label: "Case Number", value: j.case_no });
+  if (j.decision_date)
+    metaRows.push({
+      label: "Decision Date",
+      value: formatDate(j.decision_date),
+    });
+  if (j.hearing_date)
+    metaRows.push({ label: "Hearing Date", value: formatDate(j.hearing_date) });
+  if (judges.length > 0)
+    metaRows.push({ label: "Coram", value: judges.join(", ") });
+  if (counselGroups.length > 0)
+    metaRows.push({
+      label: "Counsel",
+      value: (
+        <span className="flex flex-col gap-1.5">
+          {counselGroups.map((g) => (
+            <span key={g.role} className="block">
+              <span className="text-foreground">{g.names.join(", ")}</span>{" "}
+              <span className="text-muted-2">({g.role})</span>
+            </span>
+          ))}
+        </span>
+      ),
+    });
 
   return (
     <main className="mx-auto w-full max-w-3xl px-5 py-10 sm:px-8">
@@ -79,21 +108,24 @@ export default async function JudgmentPage({
             </span>
           )}
           {j.neutral_cite && (
-            <span className="text-muted">{j.neutral_cite}</span>
-          )}
-          {j.decision_date && (
-            <span className="text-muted-2">· {j.decision_date}</span>
+            <span className="font-mono text-muted">{j.neutral_cite}</span>
           )}
         </div>
         <h1 className="font-serif text-2xl font-medium leading-tight tracking-tight text-foreground sm:text-3xl">
           {(j.title as string) || j.neutral_cite || decoded}
         </h1>
 
-        {judges.length > 0 && (
-          <p className="mt-3 text-sm text-muted">
-            <span className="font-medium text-foreground">Coram:</span>{" "}
-            {judges.join(", ")}
-          </p>
+        {metaRows.length > 0 && (
+          <dl className="mt-5 grid grid-cols-1 gap-x-6 gap-y-2.5 text-sm sm:grid-cols-[max-content_1fr]">
+            {metaRows.map((row) => (
+              <div key={row.label} className="sm:contents">
+                <dt className="text-xs font-semibold uppercase tracking-wide text-muted-2 sm:pt-0.5">
+                  {row.label}
+                </dt>
+                <dd className="mb-1 text-muted sm:mb-0">{row.value}</dd>
+              </div>
+            ))}
+          </dl>
         )}
 
         {catchwords.length > 0 && (
@@ -133,4 +165,58 @@ export default async function JudgmentPage({
       </section>
     </main>
   );
+}
+
+interface CounselEntry {
+  role?: string;
+  name?: string;
+  firm?: string;
+}
+
+const COURT_NAMES: Record<string, string> = {
+  SGCA: "Singapore Court of Appeal",
+  SGHC: "Singapore High Court",
+  "SGHC(A)": "Appellate Division of the High Court",
+  "SGHC(I)": "Singapore International Commercial Court",
+  SGHCF: "High Court (Family Division)",
+  SGDC: "District Court",
+  SGMC: "Magistrates' Court",
+  SGFC: "Family Court",
+  SGYC: "Youth Court",
+  SGCAB: "Court of Appeal",
+};
+
+function courtName(code: string): string {
+  return COURT_NAMES[code] ? `${COURT_NAMES[code]} (${code})` : code;
+}
+
+function formatDate(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  return d.toLocaleDateString("en-SG", {
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+  });
+}
+
+function groupCounsel(
+  counsel: CounselEntry[],
+): { role: string; names: string[] }[] {
+  const order: string[] = [];
+  const byRole = new Map<string, string[]>();
+  for (const c of counsel) {
+    const role = (c.role ?? "counsel").trim();
+    const label = c.firm ? `${c.name} (${c.firm})` : (c.name ?? "");
+    if (!label) continue;
+    if (!byRole.has(role)) {
+      byRole.set(role, []);
+      order.push(role);
+    }
+    byRole.get(role)?.push(label);
+  }
+  return order.map((role) => ({
+    role: role.charAt(0).toUpperCase() + role.slice(1),
+    names: byRole.get(role) ?? [],
+  }));
 }
