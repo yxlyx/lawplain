@@ -167,7 +167,7 @@ export function JudgmentBody({
 
       <article
         ref={containerRef}
-        className="flex max-w-[68ch] flex-col gap-4 font-serif text-[15px] leading-7 text-foreground/90"
+        className="flex max-w-[68ch] flex-col gap-4 font-serif text-[17px] leading-7 text-foreground/90"
       >
         {renderJudgment(text, regex)}
       </article>

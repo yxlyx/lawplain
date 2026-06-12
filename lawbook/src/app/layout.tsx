@@ -1,10 +1,10 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono, Source_Serif_4 } from "next/font/google";
+import { EB_Garamond, Geist_Mono, Inter } from "next/font/google";
 import Link from "next/link";
 import "./globals.css";
 
-const geistSans = Geist({
-  variable: "--font-geist-sans",
+const inter = Inter({
+  variable: "--font-inter",
   subsets: ["latin"],
 });
 
@@ -13,7 +13,7 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
-const sourceSerif = Source_Serif_4({
+const ebGaramond = EB_Garamond({
   variable: "--font-serif",
   subsets: ["latin"],
   display: "swap",
@@ -33,7 +33,7 @@ export default function RootLayout({
   return (
     <html
       lang="en"
-      className={`${geistSans.variable} ${geistMono.variable} ${sourceSerif.variable} h-full antialiased`}
+      className={`${inter.variable} ${geistMono.variable} ${ebGaramond.variable} h-full antialiased`}
     >
       <body className="min-h-full flex flex-col bg-background text-foreground">
         <SiteHeader />
@@ -101,44 +101,44 @@ function BrandMark({ className }: { className?: string }) {
       role="img"
       aria-label="Lawbook"
     >
-      <rect x="10" y="10" width="76" height="76" rx="18" fill="#102A2B" />
+      <rect x="10" y="10" width="76" height="76" rx="18" fill="#18181B" />
       <path
         d="M26 39C35 39 42 41.5 48 46V68C42.2 63.8 35 61.5 26 61.5V39Z"
-        fill="#F7F1E4"
+        fill="#FAFAFA"
       />
       <path
         d="M70 39C61 39 54 41.5 48 46V68C53.8 63.8 61 61.5 70 61.5V39Z"
-        fill="#F7F1E4"
+        fill="#FAFAFA"
       />
       <path
         d="M48 45.5V69"
-        stroke="#C69C5B"
+        stroke="#0088FF"
         strokeWidth={3.5}
         strokeLinecap="round"
       />
       <path
         d="M33 31H63"
-        stroke="#C69C5B"
+        stroke="#0088FF"
         strokeWidth={4}
         strokeLinecap="round"
       />
       <path
         d="M48 26V36"
-        stroke="#C69C5B"
+        stroke="#0088FF"
         strokeWidth={4}
         strokeLinecap="round"
       />
-      <circle cx="33" cy="31" r="2.8" fill="#C69C5B" />
-      <circle cx="63" cy="31" r="2.8" fill="#C69C5B" />
+      <circle cx="33" cy="31" r="2.8" fill="#0088FF" />
+      <circle cx="63" cy="31" r="2.8" fill="#0088FF" />
       <path
         d="M32 49H40"
-        stroke="#102A2B"
+        stroke="#18181B"
         strokeWidth={3}
         strokeLinecap="round"
       />
       <path
         d="M56 49H64"
-        stroke="#102A2B"
+        stroke="#18181B"
         strokeWidth={3}
         strokeLinecap="round"
       />

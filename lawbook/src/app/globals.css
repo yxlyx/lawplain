@@ -2,26 +2,26 @@
 @import "tailwindcss";
 
 /*
- * Design system — "Warm Editorial Minimal" (Harvey-inspired).
- * Palette aligned to the Lawbook brand mark: deep teal-ink #102A2B,
- * warm ivory #F7F1E4, restrained bronze-gold accent. Sans-forward UI,
- * generous whitespace, hairline borders; serif reserved for long-form reading.
+ * Design system — "Clean Legal Neutral" (Mike-inspired, willchen96/mike).
+ * Near-white neutral surfaces, near-black ink, hairline grey borders, and a
+ * single azure-blue accent. Inter for UI; EB Garamond for long-form legal
+ * text. Generous whitespace, shadcn-style restraint.
  */
 :root {
-  --background: #f7f2e8; /* warm ivory */
-  --surface: #fffdf9; /* paper / cards */
-  --surface-2: #efe7d6; /* sunken wells */
-  --foreground: #102a2b; /* deep teal-ink */
-  --muted: #4f615e; /* muted teal-grey */
-  --muted-2: #7e8c89; /* faint meta */
-  --border: #e6ddcb; /* warm hairline */
-  --border-strong: #d6cab1;
-  --primary: #102a2b; /* ink */
-  --primary-fg: #f7f1e4;
-  --accent: #8a5e2e; /* bronze-gold (AA on ivory) */
-  --accent-soft: #efe2c9;
-  --ring: #102a2b;
-  --highlight: #f3e2b3; /* search highlight */
+  --background: #fafafa; /* near-white */
+  --surface: #ffffff; /* cards */
+  --surface-2: #f4f4f5; /* sunken wells */
+  --foreground: #18181b; /* near-black ink */
+  --muted: #444448; /* secondary text */
+  --muted-2: #75757c; /* faint meta */
+  --border: #e6e6e8; /* hairline */
+  --border-strong: #d4d4d8;
+  --primary: #212124; /* ink buttons (shadcn style) */
+  --primary-fg: #fafafa;
+  --accent: #0073e6; /* azure (AA-adjusted from rgb(0,136,255)) */
+  --accent-soft: rgba(0, 136, 255, 0.1);
+  --ring: #0088ff; /* signature azure focus */
+  --highlight: rgba(0, 136, 255, 0.16); /* search highlight */
 }
 
 @theme inline {
@@ -39,27 +39,27 @@
   --color-accent-soft: var(--accent-soft);
   --color-ring: var(--ring);
   --color-highlight: var(--highlight);
-  --font-sans: var(--font-geist-sans);
+  --font-sans: var(--font-inter);
   --font-mono: var(--font-geist-mono);
   --font-serif: var(--font-serif);
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --background: #0d1a1b; /* deep teal-black */
-    --surface: #142525;
-    --surface-2: #0f1f20;
-    --foreground: #ece6d6;
-    --muted: #9fb0ac;
-    --muted-2: #6f817d;
-    --border: #233b3a;
-    --border-strong: #335251;
-    --primary: #c69c5b; /* brand gold becomes the bright mark in dark */
-    --primary-fg: #0d1a1b;
-    --accent: #d8b377;
-    --accent-soft: #1d3231;
-    --ring: #c69c5b;
-    --highlight: #3a3217;
+    --background: #141414; /* near-black */
+    --surface: #1f1f22;
+    --surface-2: #28282c;
+    --foreground: #fafafa;
+    --muted: #a1a1aa;
+    --muted-2: #71717a;
+    --border: rgba(255, 255, 255, 0.1);
+    --border-strong: rgba(255, 255, 255, 0.2);
+    --primary: #e4e4e7; /* inverted ink buttons */
+    --primary-fg: #212124;
+    --accent: #4da3ff; /* azure, lifted for dark contrast */
+    --accent-soft: rgba(0, 136, 255, 0.18);
+    --ring: #4da3ff;
+    --highlight: rgba(0, 136, 255, 0.28);
   }
 }
 
