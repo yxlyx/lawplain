@@ -202,14 +202,13 @@ export function SearchExplorer({
         })}
       </div>
 
-      {hasQuery && (
-        <FilterRow
-          tab={tab}
-          courts={courts}
-          filters={filters}
-          onChange={(patch) => setFilters((f) => ({ ...f, ...patch }))}
-        />
-      )}
+      <FilterRow
+        tab={tab}
+        courts={courts}
+        filters={filters}
+        onChange={(patch) => setFilters((f) => ({ ...f, ...patch }))}
+        onClear={() => setFilters({})}
+      />
 
       <div className="mt-5">
         {!hasQuery && <Hint />}
@@ -259,91 +258,141 @@ export function SearchExplorer({
   );
 }
 
+function Field({
+  label,
+  className,
+  children,
+}: {
+  label: string;
+  className?: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <label className={`flex flex-col gap-1 ${className ?? ""}`}>
+      <span className="text-[11px] font-semibold uppercase tracking-wide text-muted-2">
+        {label}
+      </span>
+      {children}
+    </label>
+  );
+}
+
 function FilterRow({
   tab,
   courts,
   filters,
   onChange,
+  onClear,
 }: {
   tab: TabId;
   courts: string[];
   filters: Filters;
   onChange: (patch: Partial<Filters>) => void;
+  onClear: () => void;
 }) {
   const inputCls =
     "h-9 rounded-lg border border-border bg-surface px-3 text-sm text-foreground outline-none placeholder:text-muted-2 focus:border-ring focus:ring-2 focus:ring-ring/15";
-  const items: React.ReactNode[] = [];
+  const fields: React.ReactNode[] = [];
 
   if (tab === "judgments" || tab === "practice") {
-    items.push(
-      <select
-        key="court"
-        value={filters.court ?? ""}
-        onChange={(e) => onChange({ court: e.target.value || undefined })}
-        className={inputCls}
-      >
-        <option value="">All courts</option>
-        {courts.map((c) => (
-          <option key={c} value={c}>
-            {c}
-          </option>
-        ))}
-      </select>,
+    fields.push(
+      <Field key="court" label="Court">
+        <select
+          value={filters.court ?? ""}
+          onChange={(e) => onChange({ court: e.target.value || undefined })}
+          className={inputCls}
+        >
+          <option value="">All courts</option>
+          {courts.map((c) => (
+            <option key={c} value={c}>
+              {c}
+            </option>
+          ))}
+        </select>
+      </Field>,
     );
   }
   if (tab === "judgments") {
-    items.push(
-      <input
-        key="year"
-        value={filters.year_range ?? ""}
-        onChange={(e) => onChange({ year_range: e.target.value || undefined })}
-        placeholder="Year e.g. 2024 or 2018-2026"
-        className={`${inputCls} w-52`}
-      />,
-      <input
-        key="judge"
-        value={filters.judge ?? ""}
-        onChange={(e) => onChange({ judge: e.target.value || undefined })}
-        placeholder="Judge"
-        className={`${inputCls} w-36`}
-      />,
+    fields.push(
+      <Field key="year" label="Year" className="w-44">
+        <input
+          value={filters.year_range ?? ""}
+          onChange={(e) =>
+            onChange({ year_range: e.target.value || undefined })
+          }
+          placeholder="2024 or 2018-2026"
+          className={inputCls}
+        />
+      </Field>,
+      <Field key="judge" label="Coram" className="w-44">
+        <input
+          value={filters.judge ?? ""}
+          onChange={(e) => onChange({ judge: e.target.value || undefined })}
+          placeholder="Judge name"
+          className={inputCls}
+        />
+      </Field>,
     );
   }
   if (tab === "statutes") {
-    items.push(
-      <select
-        key="kind"
-        value={filters.kind ?? ""}
-        onChange={(e) => onChange({ kind: e.target.value || undefined })}
-        className={inputCls}
-      >
-        <option value="">All kinds</option>
-        <option value="act_current">Act (current)</option>
-        <option value="act_repealed">Act (repealed)</option>
-      </select>,
+    fields.push(
+      <Field key="kind" label="Status">
+        <select
+          value={filters.kind ?? ""}
+          onChange={(e) => onChange({ kind: e.target.value || undefined })}
+          className={inputCls}
+        >
+          <option value="">All kinds</option>
+          <option value="act_current">Act (current)</option>
+          <option value="act_repealed">Act (repealed)</option>
+        </select>
+      </Field>,
     );
   }
   if (tab === "hansard") {
-    items.push(
-      <input
-        key="speaker"
-        value={filters.speaker ?? ""}
-        onChange={(e) => onChange({ speaker: e.target.value || undefined })}
-        placeholder="Speaker"
-        className={`${inputCls} w-40`}
-      />,
-      <input
-        key="since"
-        type="date"
-        value={filters.since ?? ""}
-        onChange={(e) => onChange({ since: e.target.value || undefined })}
-        className={inputCls}
-      />,
+    fields.push(
+      <Field key="speaker" label="Speaker" className="w-44">
+        <input
+          value={filters.speaker ?? ""}
+          onChange={(e) => onChange({ speaker: e.target.value || undefined })}
+          placeholder="Speaker name"
+          className={inputCls}
+        />
+      </Field>,
+      <Field key="since" label="On or after">
+        <input
+          type="date"
+          value={filters.since ?? ""}
+          onChange={(e) => onChange({ since: e.target.value || undefined })}
+          className={inputCls}
+        />
+      </Field>,
     );
   }
 
-  if (items.length === 0) return null;
-  return <div className="mt-3 flex flex-wrap items-center gap-2">{items}</div>;
+  if (fields.length === 0) return null;
+
+  const activeCount = Object.values(filters).filter(Boolean).length;
+
+  return (
+    <div className="mt-4 rounded-2xl border border-border bg-surface-2/40 px-4 py-3">
+      <div className="mb-2.5 flex items-center justify-between">
+        <span className="text-[11px] font-semibold uppercase tracking-wide text-muted-2">
+          Filters
+        </span>
+        {activeCount > 0 && (
+          <button
+            type="button"
+            onClick={onClear}
+            className="text-xs font-medium text-accent transition-colors hover:text-foreground"
+          >
+            Clear {activeCount} filter{activeCount === 1 ? "" : "s"}
+          </button>
+        )}
+      </div>
+      <div className="flex flex-wrap items-end gap-3">{fields}</div>
+    </div>
+  );
 }
 
 function ResultCard({
