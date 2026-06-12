@@ -24,9 +24,9 @@ async function getStats(): Promise<StatsResponse | null> {
 export default async function Home({
   searchParams,
 }: {
-  searchParams: Promise<{ tab?: string }>;
+  searchParams: Promise<{ tab?: string; q?: string }>;
 }) {
-  const [{ tab }, stats] = await Promise.all([searchParams, getStats()]);
+  const [{ tab, q }, stats] = await Promise.all([searchParams, getStats()]);
 
   const courts = (stats?.judgments_by_court ?? [])
     .slice()
@@ -52,7 +52,11 @@ export default async function Home({
 
       {/* Search */}
       <section className="mx-auto max-w-2xl pb-6">
-        <SearchExplorer courts={courts} initialTab={tab ?? "judgments"} />
+        <SearchExplorer
+          courts={courts}
+          initialTab={tab ?? "judgments"}
+          initialQuery={q ?? ""}
+        />
       </section>
 
       {/* One quiet stats line, Google-footer style */}

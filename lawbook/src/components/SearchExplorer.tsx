@@ -90,15 +90,17 @@ function runSearch(
 export function SearchExplorer({
   courts = [],
   initialTab = "judgments",
+  initialQuery = "",
 }: {
   courts?: string[];
   initialTab?: string;
+  initialQuery?: string;
 }) {
   const startTab = TABS.some((t) => t.id === initialTab)
     ? (initialTab as TabId)
     : "judgments";
   const [tab, setTab] = useState<TabId>(startTab);
-  const [q, setQ] = useState("");
+  const [q, setQ] = useState(initialQuery);
   const [filters, setFilters] = useState<Filters>({});
   const [data, setData] = useState<SearchResponse | null>(null);
   const [loading, setLoading] = useState(false);
@@ -211,7 +213,6 @@ export function SearchExplorer({
       />
 
       <div className="mt-5">
-        {!hasQuery && <Hint />}
         {hasQuery && error && (
           <div className="rounded-lg border border-border bg-surface p-5 text-sm text-muted">
             {error}
@@ -277,6 +278,19 @@ function Field({
   );
 }
 
+function splitYear(range?: string): [string, string] {
+  if (!range) return ["", ""];
+  const [from, to] = range.split("-");
+  return [from?.trim() ?? "", to?.trim() ?? ""];
+}
+
+function composeYear(from: string, to: string): string | undefined {
+  const f = from.replace(/\D/g, "").slice(0, 4);
+  const t = to.replace(/\D/g, "").slice(0, 4);
+  if (f && t) return `${f}-${t}`;
+  return f || t || undefined;
+}
+
 function FilterRow({
   tab,
   courts,
@@ -312,17 +326,33 @@ function FilterRow({
       </Field>,
     );
   }
+  const [yearFrom, yearTo] = splitYear(filters.year_range);
   if (tab === "judgments") {
     fields.push(
-      <Field key="year" label="Year" className="w-44">
-        <input
-          value={filters.year_range ?? ""}
-          onChange={(e) =>
-            onChange({ year_range: e.target.value || undefined })
-          }
-          placeholder="2024 or 2018-2026"
-          className={inputCls}
-        />
+      <Field key="year" label="Year">
+        <div className="flex items-center gap-1.5">
+          <input
+            inputMode="numeric"
+            maxLength={4}
+            value={yearFrom}
+            onChange={(e) =>
+              onChange({ year_range: composeYear(e.target.value, yearTo) })
+            }
+            placeholder="From"
+            className={`${inputCls} w-20`}
+          />
+          <span className="text-muted-2">&ndash;</span>
+          <input
+            inputMode="numeric"
+            maxLength={4}
+            value={yearTo}
+            onChange={(e) =>
+              onChange({ year_range: composeYear(yearFrom, e.target.value) })
+            }
+            placeholder="To"
+            className={`${inputCls} w-20`}
+          />
+        </div>
       </Field>,
       <Field key="judge" label="Coram" className="w-44">
         <input
@@ -556,15 +586,6 @@ function rerankResults(
   });
   scored.sort((a, b) => b.relevance - a.relevance);
   return scored;
-}
-
-function Hint() {
-  return (
-    <p className="px-6 pt-3 text-center text-sm leading-relaxed text-muted-2">
-      Try <span className="font-medium text-muted">negligence duty care</span> —
-      keywords are matched with AND.
-    </p>
-  );
 }
 
 function SkeletonList() {
