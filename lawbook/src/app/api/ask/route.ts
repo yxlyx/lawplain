@@ -57,13 +57,6 @@ export async function POST(req: Request): Promise<Response> {
     });
   }
 
-  // Re-resolve context server-side — never trust client-supplied document text.
-  let context: ChatContext | undefined;
-  if (cite && (kind === "judgment" || kind === "statute")) {
-    const params = new URLSearchParams({ cite, kind });
-    context = (await loadChatContext(params)) ?? undefined;
-  }
-
   const encoder = new TextEncoder();
   const stream = new ReadableStream<Uint8Array>({
     async start(controller) {
@@ -76,6 +69,32 @@ export async function POST(req: Request): Promise<Response> {
       };
 
       try {
+        const startedAt = Date.now();
+        safeEnqueue({
+          type: "progress",
+          phase: "context",
+          message:
+            cite && (kind === "judgment" || kind === "statute")
+              ? "Loading pinned document…"
+              : "Starting research agent…",
+          elapsedMs: 0,
+        });
+
+        // Re-resolve context server-side — never trust client-supplied document text.
+        let context: ChatContext | undefined;
+        if (cite && (kind === "judgment" || kind === "statute")) {
+          const params = new URLSearchParams({ cite, kind });
+          context = (await loadChatContext(params)) ?? undefined;
+          safeEnqueue({
+            type: "progress",
+            phase: "context",
+            message: context
+              ? "Pinned document loaded."
+              : "Pinned document unavailable; continuing without it.",
+            elapsedMs: Date.now() - startedAt,
+          });
+        }
+
         const agent = useSandbox ? askLegalAgentSandboxed : askLegalAgent;
         for await (const ev of agent(question, req.signal, context)) {
           safeEnqueue(ev);

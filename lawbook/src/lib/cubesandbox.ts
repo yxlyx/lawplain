@@ -212,6 +212,7 @@ export async function* streamProcess(
         data: String(end.status ?? ""),
         exitCode: (end.exitCode as number) ?? undefined,
       };
+      return;
     }
   }
 }
@@ -250,6 +251,23 @@ export const GRAFF_DOWNLOAD_URL =
   "https://github.com/justrach/codegraff/releases/download/v0.0.15/graff-x86_64-linux.tar.gz";
 
 export const GRAFF_BIN_PATH = "/tmp/graff-x86_64-linux/graff";
+
+export async function readSandboxFile(
+  sid: string,
+  path: string,
+): Promise<string | null> {
+  const res = await fetch(
+    `${GW}/sandboxes/${sid}/host/${ENVD_PORT}/files?path=${encodeURIComponent(path)}&username=root`,
+    { headers: authHeaders() },
+  );
+  if (res.status === 404) return null;
+  if (!res.ok) {
+    throw new Error(
+      `readSandboxFile failed (${res.status}): ${await res.text()}`,
+    );
+  }
+  return res.text();
+}
 
 export async function installGraff(sid: string): Promise<void> {
   const result = await runProcess(sid, {

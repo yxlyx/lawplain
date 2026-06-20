@@ -17,14 +17,46 @@ import type { ChatContext } from "@/lib/agent";
 
 type ChatEvent =
   | { type: "delta"; text: string }
-  | { type: "tool"; name: string; summary: string }
+  | {
+      type: "progress";
+      phase: string;
+      message: string;
+      elapsedMs?: number;
+    }
+  | {
+      type: "tool";
+      name: string;
+      summary: string;
+      kind?: "search" | "detail" | "setup" | "other";
+      duplicate?: boolean;
+      count?: number;
+    }
   | { type: "done"; text: string; costUsd: number; contextTokens: number }
   | { type: "error"; message: string };
 
+type Phase =
+  | "starting"
+  | "sandbox"
+  | "searching"
+  | "reading"
+  | "thinking"
+  | "answering"
+  | "done"
+  | "stopped"
+  | "error";
+
 interface ToolStep {
   id: number;
-  kind: "search" | "fetch" | "read" | "other";
+  key: string;
+  kind: "search" | "fetch" | "read" | "setup" | "other";
   label: string;
+  count: number;
+}
+
+interface ProgressStep {
+  id: number;
+  message: string;
+  elapsedMs?: number;
 }
 
 interface Message {
@@ -35,50 +67,89 @@ interface Message {
   /** tool calls made while producing this assistant message */
   tools: ToolStep[];
   /** streaming/searching state for an assistant message */
-  phase: "searching" | "answering" | "done" | "error";
+  phase: Phase;
+  progress: ProgressStep[];
+  startedAt?: number;
+  elapsedMs?: number;
   error?: string;
   cost?: { usd: number; tokens: number };
 }
 
 /** Map a raw tool_call into a typed, human-readable step. */
-function describeTool(name: string, summary: string): ToolStep {
-  if (name === "bash") {
-    if (summary.startsWith("search: "))
-      return {
-        id: 0,
-        kind: "search",
-        label: `Searching “${summary.slice(8)}”`,
-      };
-    if (summary.startsWith("/v1/judgments/"))
-      return {
-        id: 0,
-        kind: "fetch",
-        label: `Reading judgment ${summary.split('"')[0].slice("/v1/judgments/".length)}`,
-      };
-    if (summary.startsWith("/v1/statutes/")) {
+function describeTool(ev: Extract<ChatEvent, { type: "tool" }>): ToolStep {
+  const { name, summary } = ev;
+  let kind: ToolStep["kind"] = "other";
+  let label = summary;
+
+  if (name === "sandbox") {
+    kind = "setup";
+    label = summary;
+  } else if (name === "bash") {
+    if (summary.startsWith("search: ")) {
+      kind = "search";
+      label = `Searching “${summary.slice(8)}”`;
+    } else if (summary.startsWith("/v1/judgments/")) {
+      kind = "fetch";
+      label = `Reading judgment ${summary.split('"')[0].slice("/v1/judgments/".length)}`;
+    } else if (summary.startsWith("/v1/statutes/")) {
       const ref = summary
         .split('"')[0]
         .slice("/v1/statutes/".length)
         .replace(/%20/g, " ");
-      return { id: 0, kind: "fetch", label: `Reading statute ${ref}` };
+      kind = "fetch";
+      label = `Reading statute ${ref}`;
+    } else if (summary.startsWith("/v1/")) {
+      kind = "fetch";
+      label = `Fetching ${summary}`;
     }
-    if (summary.startsWith("/v1/"))
-      return { id: 0, kind: "fetch", label: `Fetching ${summary}` };
-    return { id: 0, kind: "other", label: summary };
+  } else if (name === "webfetch") {
+    kind = "fetch";
+    label = `Fetching ${summary}`;
+  } else if (name === "read_file") {
+    kind = "read";
+    label = `Reading ${summary}`;
   }
-  if (name === "webfetch")
-    return { id: 0, kind: "fetch", label: `Fetching ${summary}` };
-  if (name === "read_file")
-    return { id: 0, kind: "read", label: `Reading ${summary}` };
-  return { id: 0, kind: "other", label: summary };
+
+  return {
+    id: 0,
+    key: `${kind}:${label.toLowerCase()}`,
+    kind,
+    label,
+    count: ev.count ?? 1,
+  };
 }
 
-const PHASE_LABEL: Record<Message["phase"], string> = {
-  searching: "Searching the corpus",
+const PHASE_LABEL: Record<Phase, string> = {
+  starting: "Starting research agent",
+  sandbox: "Preparing secure sandbox",
+  searching: "Searching legal sources",
+  reading: "Reading source material",
+  thinking: "Planning next step",
   answering: "Writing answer",
   done: "Answer",
+  stopped: "Stopped",
   error: "Error",
 };
+
+function formatElapsed(ms: number): string {
+  const seconds = Math.max(0, Math.floor(ms / 1000));
+  const minutes = Math.floor(seconds / 60);
+  const rest = seconds % 60;
+  return minutes ? `${minutes}m ${rest}s` : `${rest}s`;
+}
+
+function mapProgressPhase(phase: string): Phase {
+  if (
+    phase === "sandbox_start" ||
+    phase === "agent_install" ||
+    phase === "agent_start"
+  )
+    return "sandbox";
+  if (phase === "searching") return "searching";
+  if (phase === "reading") return "reading";
+  if (phase === "answering") return "answering";
+  return "thinking";
+}
 
 /* ── minimal inline markdown: links + bold ─────────────────────────────── */
 
@@ -191,6 +262,7 @@ const TOOL_DOT: Record<ToolStep["kind"], string> = {
   search: "bg-accent",
   fetch: "bg-emerald-500",
   read: "bg-amber-500",
+  setup: "bg-violet-500",
   other: "bg-muted-2",
 };
 
@@ -204,11 +276,18 @@ export function AskAgent({ initialContext }: AskAgentProps = {}) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
+  const [now, setNow] = useState(() => Date.now());
   const abortRef = useRef<AbortController | null>(null);
   const msgId = useRef(0);
   const toolId = useRef(0);
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+
+  useEffect(() => {
+    if (!busy) return;
+    const id = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(id);
+  }, [busy]);
 
   /** Keep the textarea tall enough for its content (up to a cap). */
   const autosize = useCallback(() => {
@@ -238,8 +317,19 @@ export function AskAgent({ initialContext }: AskAgentProps = {}) {
     setMessages((ms) =>
       ms.map((m) =>
         m.role === "assistant" &&
-        (m.phase === "searching" || m.phase === "answering")
-          ? { ...m, phase: "done" }
+        !["done", "error", "stopped"].includes(m.phase)
+          ? {
+              ...m,
+              phase: "stopped",
+              progress: [
+                ...m.progress,
+                {
+                  id: toolId.current++,
+                  message: "Research stopped by you.",
+                  elapsedMs: m.startedAt ? Date.now() - m.startedAt : undefined,
+                },
+              ],
+            }
           : m,
       ),
     );
@@ -255,15 +345,25 @@ export function AskAgent({ initialContext }: AskAgentProps = {}) {
         role: "user",
         text: q,
         tools: [],
+        progress: [],
         phase: "done",
       };
       const aId = msgId.current++;
+      const startedAt = Date.now();
       const assistantMsg: Message = {
         id: aId,
         role: "assistant",
         text: "",
         tools: [],
-        phase: "searching",
+        progress: [
+          {
+            id: toolId.current++,
+            message: "Connecting to the research agent…",
+            elapsedMs: 0,
+          },
+        ],
+        startedAt,
+        phase: "starting",
       };
       setMessages((m) => [...m, userMsg, assistantMsg]);
       setInput("");
@@ -316,12 +416,40 @@ export function AskAgent({ initialContext }: AskAgentProps = {}) {
                 acc += ev.text;
                 patch((m) => ({ ...m, text: acc }));
                 break;
-              case "tool": {
-                const step = describeTool(ev.name, ev.summary);
+              case "progress":
                 patch((m) => ({
                   ...m,
-                  tools: [...m.tools, { ...step, id: toolId.current++ }],
+                  phase: mapProgressPhase(ev.phase),
+                  elapsedMs: ev.elapsedMs,
+                  progress: [
+                    ...m.progress,
+                    {
+                      id: toolId.current++,
+                      message: ev.message,
+                      elapsedMs: ev.elapsedMs,
+                    },
+                  ].slice(-6),
                 }));
+                break;
+              case "tool": {
+                const step = describeTool(ev);
+                patch((m) => {
+                  const existing = m.tools.find((t) => t.key === step.key);
+                  if (existing) {
+                    return {
+                      ...m,
+                      tools: m.tools.map((t) =>
+                        t.key === step.key
+                          ? { ...t, count: Math.max(t.count + 1, step.count) }
+                          : t,
+                      ),
+                    };
+                  }
+                  return {
+                    ...m,
+                    tools: [...m.tools, { ...step, id: toolId.current++ }],
+                  };
+                });
                 break;
               }
               case "done":
@@ -389,6 +517,9 @@ export function AskAgent({ initialContext }: AskAgentProps = {}) {
       {/* Transcript / empty state */}
       <div
         ref={scrollRef}
+        role="log"
+        aria-live="polite"
+        aria-relevant="additions text"
         className="thin-scroll max-h-[60vh] min-h-[180px] overflow-y-auto px-4 py-4"
       >
         {initialContext && (
@@ -446,7 +577,7 @@ export function AskAgent({ initialContext }: AskAgentProps = {}) {
                   </div>
                 </div>
               ) : (
-                <AssistantMessage key={m.id} m={m} />
+                <AssistantMessage key={m.id} m={m} now={now} />
               ),
             )}
           </div>
@@ -496,8 +627,9 @@ export function AskAgent({ initialContext }: AskAgentProps = {}) {
   );
 }
 
-function AssistantMessage({ m }: { m: Message }) {
-  const live = m.phase === "searching" || m.phase === "answering";
+function AssistantMessage({ m, now }: { m: Message; now: number }) {
+  const live = !["done", "error", "stopped"].includes(m.phase);
+  const elapsed = m.startedAt ? (m.elapsedMs ?? now - m.startedAt) : undefined;
   return (
     <div className="flex flex-col gap-2.5">
       {/* Tool steps — collapsible once answering, live while searching */}
@@ -514,20 +646,49 @@ function AssistantMessage({ m }: { m: Message }) {
                 className={`h-1.5 w-1.5 rounded-full ${TOOL_DOT[t.kind]}`}
               />
               {t.label}
+              {t.count > 1 && (
+                <span className="rounded-full bg-background px-1.5 text-[10px] text-muted-2">
+                  ×{t.count}
+                </span>
+              )}
             </span>
           ))}
         </div>
       )}
 
-      {/* Phase indicator while no text yet */}
-      {live && m.text === "" && (
-        <div className="flex items-center gap-2 text-[13px] text-muted">
-          <span className="relative flex h-2 w-2">
-            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-accent opacity-60" />
-            <span className="relative inline-flex h-2 w-2 rounded-full bg-accent" />
-          </span>
-          {PHASE_LABEL[m.phase]}…
-        </div>
+      {/* Live status */}
+      {live && (
+        <output
+          aria-live="polite"
+          className="rounded-xl border border-border bg-surface-2/70 px-3 py-2 text-[13px] text-muted"
+        >
+          <div className="flex items-center gap-2">
+            <span className="relative flex h-2 w-2">
+              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-accent opacity-60" />
+              <span className="relative inline-flex h-2 w-2 rounded-full bg-accent" />
+            </span>
+            <span className="font-medium text-foreground">
+              {PHASE_LABEL[m.phase]}…
+            </span>
+            {elapsed !== undefined && (
+              <span className="text-muted-2">{formatElapsed(elapsed)}</span>
+            )}
+          </div>
+          {m.progress.length > 0 && (
+            <ol className="mt-2 space-y-1 border-l border-border pl-3 font-mono text-[11px] text-muted-2">
+              {m.progress.slice(-4).map((p) => (
+                <li key={p.id}>
+                  {p.elapsedMs !== undefined && (
+                    <span className="mr-2 tabular-nums">
+                      {formatElapsed(p.elapsedMs)}
+                    </span>
+                  )}
+                  {p.message}
+                </li>
+              ))}
+            </ol>
+          )}
+        </output>
       )}
 
       {/* Answer body */}
@@ -540,7 +701,12 @@ function AssistantMessage({ m }: { m: Message }) {
         </div>
       )}
 
-      {/* Error */}
+      {/* Stopped / error */}
+      {m.phase === "stopped" && (
+        <p className="rounded-lg bg-amber-50 px-3 py-2 text-[13px] text-amber-800">
+          Research stopped. Any partial answer above may be incomplete.
+        </p>
+      )}
       {m.phase === "error" && m.error && (
         <p className="rounded-lg bg-red-50 px-3 py-2 text-[13px] text-red-700">
           {m.error}

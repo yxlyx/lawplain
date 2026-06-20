@@ -21,7 +21,8 @@ import {
   deleteSandbox,
   GRAFF_BIN_PATH,
   installGraff,
-  streamProcess,
+  readSandboxFile,
+  runProcess,
 } from "@/lib/cubesandbox";
 import { BASE } from "@/lib/sgjudge";
 
@@ -70,29 +71,40 @@ Keep each curl's output small: select only the columns you need with jq, e.g.
   curl -sG "${BASE}/v1/judgments/search" --data-urlencode "q=defamation" | jq '.results[] | {citation,title,court,year,score}'
 
 # How to work — STRICT BUDGET (this is enforced)
-You have a HARD LIMIT of 8 tool calls total for the whole turn. Count them.
-- NEVER repeat a search you have already run (same q + endpoint). If a query
-  returned nothing useful, reformulate ONCE, then move on.
-- Do at most 2-4 searches, then at most 2 detail fetches (judgment body or
-  statute section) for the most promising hits. That is usually enough.
+You have a HARD LIMIT of 6 tool calls total for the whole turn. Count them.
+For broad doctrine questions like "what are the elements of X", use FAST PATH:
+- Run exactly ONE targeted search with limit=5.
+- Fetch exactly ONE best detail result if needed.
+- Then STOP searching and answer. Do not inspect multiple cases unless the user asks for comparison.
+For harder questions:
+- NEVER repeat a search or detail fetch you have already run (same endpoint + query/citation).
+- Do at most 2 searches, then at most 2 detail fetches for the most promising hits.
 - Prefer limit=5 on searches to keep context small.
-- Once you have any usable results, STOP searching and write the answer.
+- Prefer Court of Appeal and High Court authorities over District Court results.
+  If the top result is SGDC but a relevant SGHC/SGCA result appears, use SGHC/SGCA.
+- Once you have any usable authoritative result, STOP searching and write the answer.
   Do not "double-check" or re-search the same term. Do not call /v1/stats.
-- If the first search already answers the question, you may answer immediately
-  with 1-2 tool calls total.
+- If the first search already answers the question, answer immediately with 1 tool call total.
+- Do not call the same URL/citation twice. Duplicate tool calls waste the user's time.
+- For defamation-elements questions, good search terms are:
+  "defamation defamatory reference publication" or "defamation elements plaintiff".
+- Do not narrate your internal process in the final answer.
+- Do not call attempt_completion; just write the final answer normally.
 
 # Answering
 - Write in clear prose (markdown). Lead with the direct answer, then support.
+- Keep the answer concise: direct answer, 2-4 bullets/numbered points, citations.
+- When asked what a claimant/plaintiff "must prove", list only the legal elements.
+  Keep defences, burden shifts, damages, or remedies in a short separate note only if needed.
 - Cite every non-trivial claim: judgments by neutral citation or [citation]
   and year; statutes by short title + section number.
 - Link to the app where useful: judgments at /judgment/{citation} and
-  statutes at /statute/{act_id}. Use markdown links.
+  statutes at /statute/{act_id}. Use app-relative markdown links, not backend URLs.
 - Be factual and neutral. This is legal information, NOT legal advice — say so
   briefly when a user asks for a recommendation or prediction.
 - If the corpus has nothing relevant, say so plainly; do not invent cases,
   citations, or section numbers.
-- Keep the answer tight: a few short paragraphs or a short bullet list. Quote
-  sparingly (a phrase), never paste whole bodies.
+- Quote sparingly (a phrase), never paste whole bodies.
 `;
 }
 
@@ -101,11 +113,29 @@ export interface AgentTurnEvent {
   type: "delta";
   text: string;
 }
+export interface AgentProgressEvent {
+  type: "progress";
+  phase:
+    | "context"
+    | "sandbox_start"
+    | "agent_install"
+    | "agent_start"
+    | "thinking"
+    | "searching"
+    | "reading"
+    | "answering"
+    | "cleanup";
+  message: string;
+  elapsedMs?: number;
+}
 export interface AgentToolEvent {
   /** The agent invoked a tool (e.g. a curl search). Shown as a status chip. */
   type: "tool";
   name: string;
   summary: string;
+  kind?: "search" | "detail" | "setup" | "other";
+  duplicate?: boolean;
+  count?: number;
 }
 export interface AgentDoneEvent {
   /** Turn finished. */
@@ -121,6 +151,7 @@ export interface AgentErrorEvent {
 
 export type AgentEvent =
   | AgentTurnEvent
+  | AgentProgressEvent
   | AgentToolEvent
   | AgentDoneEvent
   | AgentErrorEvent;
@@ -188,6 +219,27 @@ function agentEnv(): NodeJS.ProcessEnv {
   return env as NodeJS.ProcessEnv;
 }
 
+function agentProviderEnv(): Record<string, string> {
+  const allow = [
+    "ANTHROPIC_API_KEY",
+    "CODEGRAFF_API_KEY",
+    "DEEPSEEK_API_KEY",
+    "OPENAI_API_KEY",
+    "MINIMAX_API_KEY",
+    "XIAOMI_API_KEY",
+    "KIMI_API_KEY",
+    "MOONSHOT_API_KEY",
+    "XAI_API_KEY",
+    "ZAI_API_KEY",
+  ];
+  const env: Record<string, string> = {};
+  for (const key of allow) {
+    const value = process.env[key];
+    if (value) env[key] = value;
+  }
+  return env;
+}
+
 /** Best-effort one-line summary of a tool call for the UI status line. */
 function summarizeTool(name: string, input: unknown): string {
   const inp =
@@ -200,7 +252,11 @@ function summarizeTool(name: string, input: unknown): string {
     const m = cmd.match(/q=([^&"'\s]+)/);
     const url = cmd.match(/https?:\/\/\S+/)?.[0];
     if (m) return `search: ${decodeURIComponentSafe(m[1])}`;
-    if (url) return url.replace(BASE, "").split("?")[0];
+    if (url)
+      return url
+        .replace(BASE, "")
+        .split("?")[0]
+        .replace(/["')]+$/, "");
     return cmd.slice(0, 80);
   }
   if (name === "webfetch") return `fetch ${String(inp.url ?? "")}`;
@@ -296,7 +352,7 @@ export async function* askLegalAgent(
  * Requires:
  *   CUBESANDBOX_GATEWAY_URL  — gateway base URL
  *   CUBESANDBOX_TENANT_KEY   — tenant API key
- *   KIMI_API_KEY             — model provider key (injected into the VM)
+ *   CODEGRAFF_API_KEY / KIMI_API_KEY / etc — model provider key injected into the VM
  *
  * Yields the same AgentEvent stream as askLegalAgent, so the UI doesn't need
  * to know which backend is in use.
@@ -308,7 +364,7 @@ export async function* askLegalAgentSandboxed(
 ): AsyncGenerator<AgentEvent> {
   const gw = process.env.CUBESANDBOX_GATEWAY_URL;
   const tenantKey = process.env.CUBESANDBOX_TENANT_KEY;
-  const kimiKey = process.env.KIMI_API_KEY;
+  const providerEnv = agentProviderEnv();
 
   if (!gw || !tenantKey) {
     yield {
@@ -318,19 +374,35 @@ export async function* askLegalAgentSandboxed(
     };
     return;
   }
-  if (!kimiKey) {
-    yield { type: "error", message: "KIMI_API_KEY not set" };
+  if (Object.keys(providerEnv).length === 0) {
+    yield {
+      type: "error",
+      message:
+        "No graff provider key set (expected CODEGRAFF_API_KEY, KIMI_API_KEY, OPENAI_API_KEY, etc.)",
+    };
     return;
   }
 
   let sid: string | null = null;
+  const startedAt = Date.now();
+  let lastHeartbeat = startedAt;
   try {
     // 1. Create microVM
-    yield { type: "tool", name: "sandbox", summary: "Starting sandbox…" };
+    yield {
+      type: "progress",
+      phase: "sandbox_start",
+      message: "Starting secure sandbox…",
+      elapsedMs: Date.now() - startedAt,
+    };
     sid = await createSandbox({ cpuCount: 2, memoryMB: 1024 });
 
     // 2. Download graff into the VM
-    yield { type: "tool", name: "sandbox", summary: "Loading agent…" };
+    yield {
+      type: "progress",
+      phase: "agent_install",
+      message: "Loading research runtime…",
+      elapsedMs: Date.now() - startedAt,
+    };
     await installGraff(sid);
 
     // 3. Run graff --json inside the VM, piping the prompt via stdin.
@@ -345,73 +417,180 @@ export async function* askLegalAgentSandboxed(
       SYSTEM_PROMPT: systemPrompt,
       GRAFF_BIN: GRAFF_BIN_PATH,
       MODEL: AGENT_MODEL,
-      KIMI_API_KEY: kimiKey,
+      ...providerEnv,
       HOME: "/home/user",
       PATH: "/usr/bin:/bin:/usr/local/bin",
       GRAFF_NO_TELEMETRY: "1",
     };
 
     let finalText = "";
+    let streamedText = "";
     let costUsd = 0;
     let contextTokens = 0;
     let lineBuf = "";
+    let stderr = "";
+    let sawTurn = false;
+    let sawText = false;
+    let announcedAnswering = false;
+    let exitCode: number | undefined;
+    const seenTools = new Map<string, number>();
 
-    for await (const chunk of streamProcess(sid, {
+    yield {
+      type: "progress",
+      phase: "agent_start",
+      message: "Starting research agent…",
+      elapsedMs: Date.now() - startedAt,
+    };
+
+    const start = await runProcess(sid, {
       cmd: "/bin/bash",
       args: [
         "-c",
-        'printf \'%s\' "$PROMPT_JSON" | "$GRAFF_BIN" --json --yolo --no-telemetry --model "$MODEL" --system-prompt "$SYSTEM_PROMPT"',
+        `rm -f /tmp/graff.out /tmp/graff.err /tmp/graff.exit /tmp/graff.launch; nohup /bin/bash -lc 'printf %s "$PROMPT_JSON" | "$GRAFF_BIN" --json --yolo --no-telemetry --model "$MODEL" --system-prompt "$SYSTEM_PROMPT" > /tmp/graff.out 2> /tmp/graff.err; echo $? > /tmp/graff.exit' > /tmp/graff.launch 2>&1 < /dev/null & echo $!`,
       ],
       cwd: "/tmp",
       envs,
-      timeoutMs: 300_000,
-    })) {
-      if (signal?.aborted) break;
+      timeoutMs: 10_000,
+    });
+    if (start.exitCode && start.exitCode !== 0) {
+      throw new Error(`failed to start graff: ${start.stderr || start.stdout}`);
+    }
 
-      if (chunk.type !== "stdout") continue;
+    yield {
+      type: "progress",
+      phase: "thinking",
+      message: "Planning searches…",
+      elapsedMs: Date.now() - startedAt,
+    };
 
-      // Buffer stdout and emit complete NDJSON lines
-      lineBuf += chunk.data;
-      let nl = lineBuf.indexOf("\n");
-      while (nl >= 0) {
-        const line = lineBuf.slice(0, nl).trim();
-        lineBuf = lineBuf.slice(nl + 1);
-        if (!line) continue;
+    let offset = 0;
+    const deadline = Date.now() + 300_000;
+    while (!signal?.aborted && Date.now() < deadline) {
+      const out = (await readSandboxFile(sid, "/tmp/graff.out")) ?? "";
+      if (out.length > offset) {
+        lineBuf += out.slice(offset);
+        offset = out.length;
 
-        let ev: Event;
-        try {
-          ev = JSON.parse(line) as Event;
-        } catch {
-          continue; // skip non-JSON lines (e.g. progress noise)
+        let nl = lineBuf.indexOf("\n");
+        while (nl >= 0) {
+          const line = lineBuf.slice(0, nl).trim();
+          lineBuf = lineBuf.slice(nl + 1);
+          if (!line) {
+            nl = lineBuf.indexOf("\n");
+            continue;
+          }
+
+          let ev: Event;
+          try {
+            ev = JSON.parse(line) as Event;
+          } catch {
+            nl = lineBuf.indexOf("\n");
+            continue;
+          }
+
+          switch (ev.type) {
+            case "text":
+              if (ev.text) {
+                if (!announcedAnswering) {
+                  announcedAnswering = true;
+                  yield {
+                    type: "progress",
+                    phase: "answering",
+                    message: "Writing answer…",
+                    elapsedMs: Date.now() - startedAt,
+                  };
+                }
+                sawText = true;
+                streamedText += ev.text;
+                yield { type: "delta", text: ev.text };
+              }
+              break;
+            case "tool_call": {
+              const summary = summarizeTool(ev.name, ev.input);
+              const count = (seenTools.get(summary) ?? 0) + 1;
+              seenTools.set(summary, count);
+              const kind = summary.startsWith("search: ")
+                ? "search"
+                : summary.startsWith("/v1/")
+                  ? "detail"
+                  : "other";
+              yield {
+                type: "progress",
+                phase: kind === "search" ? "searching" : "reading",
+                message:
+                  kind === "search"
+                    ? `Searching ${summary.slice(8)}…`
+                    : `Reading source ${summary}…`,
+                elapsedMs: Date.now() - startedAt,
+              };
+              yield {
+                type: "tool",
+                name: ev.name,
+                summary,
+                kind,
+                duplicate: count > 1,
+                count,
+              };
+              break;
+            }
+            case "turn":
+              sawTurn = true;
+              finalText = ev.text;
+              costUsd = ev.cost_usd;
+              contextTokens = ev.context_tokens;
+              break;
+            case "error":
+              yield { type: "error", message: ev.message };
+              return;
+            default:
+              break;
+          }
+          nl = lineBuf.indexOf("\n");
         }
-
-        switch (ev.type) {
-          case "text":
-            if (ev.text) yield { type: "delta", text: ev.text };
-            break;
-          case "tool_call":
-            yield {
-              type: "tool",
-              name: ev.name,
-              summary: summarizeTool(ev.name, ev.input),
-            };
-            break;
-          case "turn":
-            finalText = ev.text;
-            costUsd = ev.cost_usd;
-            contextTokens = ev.context_tokens;
-            break;
-          case "error":
-            yield { type: "error", message: ev.message };
-            return;
-          default:
-            break;
-        }
-        nl = lineBuf.indexOf("\n");
       }
+
+      const exitText = await readSandboxFile(sid, "/tmp/graff.exit");
+      if (exitText !== null) {
+        exitCode = Number.parseInt(exitText.trim(), 10);
+        stderr = (await readSandboxFile(sid, "/tmp/graff.err")) ?? "";
+        break;
+      }
+      if (Date.now() - lastHeartbeat > 8000) {
+        lastHeartbeat = Date.now();
+        yield {
+          type: "progress",
+          phase: sawText ? "answering" : "thinking",
+          message: sawText ? "Still writing answer…" : "Still researching…",
+          elapsedMs: Date.now() - startedAt,
+        };
+      }
+      await new Promise((resolve) => setTimeout(resolve, 750));
+    }
+
+    if (!signal?.aborted && Date.now() >= deadline) {
+      yield { type: "error", message: "sandboxed graff timed out" };
+      return;
     }
 
     if (signal?.aborted) return;
+    if (exitCode && exitCode !== 0) {
+      yield {
+        type: "error",
+        message: `sandboxed graff exited with ${exitCode}: ${stderr.trim().slice(0, 500)}`,
+      };
+      return;
+    }
+    if (!sawTurn && streamedText) {
+      finalText = streamedText;
+    } else if (!sawTurn) {
+      yield {
+        type: "error",
+        message: stderr.trim()
+          ? `sandboxed graff ended before producing an answer: ${stderr.trim().slice(0, 500)}`
+          : "sandboxed graff ended before producing an answer",
+      };
+      return;
+    }
     yield { type: "done", text: finalText, costUsd, contextTokens };
   } catch (err) {
     yield {
