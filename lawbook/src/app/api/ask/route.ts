@@ -19,6 +19,7 @@ import {
   type ChatContext,
 } from "@/lib/agent";
 import { loadChatContext } from "@/lib/ask-context";
+import { getSession } from "@/lib/auth";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -35,14 +36,26 @@ function sse(event: AgentEvent): string {
 }
 
 export async function POST(req: Request): Promise<Response> {
+  const session = await getSession(req.headers);
+  if (!session) {
+    return new Response(JSON.stringify({ error: "Authentication required" }), {
+      status: 401,
+      headers: { "content-type": "application/json" },
+    });
+  }
+
   let question = "";
   let cite: string | undefined;
   let kind: string | undefined;
   try {
-    const body = await req.json();
-    question = typeof body?.question === "string" ? body.question.trim() : "";
-    cite = typeof body?.cite === "string" ? body.cite : undefined;
-    kind = typeof body?.kind === "string" ? body.kind : undefined;
+    const body = (await req.json()) as {
+      question?: unknown;
+      cite?: unknown;
+      kind?: unknown;
+    };
+    question = typeof body.question === "string" ? body.question.trim() : "";
+    cite = typeof body.cite === "string" ? body.cite : undefined;
+    kind = typeof body.kind === "string" ? body.kind : undefined;
   } catch {
     return new Response(JSON.stringify({ error: "Invalid JSON body" }), {
       status: 400,

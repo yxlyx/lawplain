@@ -386,6 +386,9 @@ export function AskAgent({ initialContext }: AskAgentProps = {}) {
           }),
           signal: ac.signal,
         });
+        if (res.status === 401) {
+          throw new Error("Please sign in to use Ask Lawplain.");
+        }
         if (!res.ok || !res.body) {
           const msg = await res.text().catch(() => res.statusText);
           throw new Error(msg || `request failed (${res.status})`);

@@ -121,8 +121,10 @@ async function get<T>(
   }
   const res = await fetch(url, init);
   if (!res.ok) {
-    const { error } = await res.json().catch(() => ({ error: res.statusText }));
-    throw new ApiError(res.status, error || res.statusText);
+    const body = (await res
+      .json()
+      .catch(() => ({ error: res.statusText }))) as { error?: string };
+    throw new ApiError(res.status, body.error || res.statusText);
   }
   return res.json() as Promise<T>;
 }

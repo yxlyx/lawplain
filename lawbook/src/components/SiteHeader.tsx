@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { AuthMenu } from "@/components/AuthMenu";
 import { SearchIcon, SparkleIcon } from "@/components/icons";
 
 const TABS = [
@@ -50,6 +51,7 @@ export function SiteHeader() {
               </Link>
             );
           })}
+          <AuthMenu />
         </nav>
       </div>
     </header>

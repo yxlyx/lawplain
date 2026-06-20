@@ -88,6 +88,42 @@ The route handler spawns the `graff` binary as a subprocess, so:
 Then `npm run dev` and use the **Ask Lawplain** box. With no key configured the
 route returns an `error` event explaining the model is unavailable.
 
+## Authentication and D1 setup
+
+Lawplain uses [Better Auth](https://www.better-auth.com/) for username/password accounts. Auth data is stored in a Cloudflare D1 database bound as `AUTH_DB`.
+
+1. Generate a Better Auth secret:
+   ```bash
+   openssl rand -base64 32
+   ```
+2. Copy `.env.example` to `.env.local` and set:
+   ```bash
+   BETTER_AUTH_SECRET=...
+   BETTER_AUTH_URL=http://localhost:3000
+   ```
+3. Create the D1 database:
+   ```bash
+   bun run d1:create
+   ```
+4. Copy the returned `database_id` into `wrangler.jsonc`.
+5. Apply the auth schema locally or remotely:
+   ```bash
+   bun run d1:migrate:local
+   bun run d1:migrate:remote
+   ```
+6. Run the app:
+   ```bash
+   bun run dev
+   ```
+
+Account routes:
+
+- `/sign-up` — create a username/password account.
+- `/sign-in` — sign in with username/password.
+- `/api/auth/*` — Better Auth handler.
+
+`/api/ask` now requires an authenticated session before it starts the long-running agent workflow.
+
 ### Notes & caveats
 
 - **`yolo: true` is required** — without it the agent's `bash` (the `curl`

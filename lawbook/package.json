@@ -7,23 +7,34 @@
     "build": "next build",
     "start": "next start",
     "lint": "biome check",
-    "format": "biome format --write"
+    "format": "biome format --write",
+    "cf:build": "opennextjs-cloudflare build",
+    "cf:preview": "opennextjs-cloudflare preview",
+    "cf:deploy": "opennextjs-cloudflare deploy",
+    "d1:create": "wrangler d1 create lawbook-auth",
+    "d1:migrate:local": "wrangler d1 migrations apply lawbook-auth --local",
+    "d1:migrate:remote": "wrangler d1 migrations apply lawbook-auth --remote"
   },
   "dependencies": {
     "@codegraff/sdk": "^0.3.1",
+    "@opennextjs/cloudflare": "^1.19.11",
+    "better-auth": "^1.6.20",
+    "drizzle-orm": "^0.45.2",
     "next": "16.2.9",
     "react": "19.2.4",
     "react-dom": "19.2.4"
   },
   "devDependencies": {
     "@biomejs/biome": "2.2.0",
+    "@cloudflare/workers-types": "^4.20260620.1",
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "babel-plugin-react-compiler": "1.0.0",
     "tailwindcss": "^4",
-    "typescript": "^5"
+    "typescript": "^5",
+    "wrangler": "^4.103.0"
   },
   "ignoreScripts": [
     "sharp",
