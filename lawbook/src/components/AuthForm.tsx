@@ -10,6 +10,8 @@ type AuthFormProps = {
 };
 
 function accountEmail(username: string): string {
+  // Better Auth email/password requires an email value. For now Lawplain
+  // exposes username-only auth, so we derive a non-routable synthetic email.
   return `${username.trim().toLowerCase()}@users.lawplain.local`;
 }
 
@@ -28,7 +30,9 @@ function errorMessage(error: unknown, fallback: string): string {
 export function AuthForm({ mode }: AuthFormProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const next = searchParams.get("next") || "/";
+  const rawNext = searchParams.get("next") || "/";
+  const next =
+    rawNext.startsWith("/") && !rawNext.startsWith("//") ? rawNext : "/";
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");

@@ -72,6 +72,7 @@ interface Message {
   startedAt?: number;
   elapsedMs?: number;
   error?: string;
+  authRequired?: boolean;
   cost?: { usd: number; tokens: number };
 }
 
@@ -387,7 +388,13 @@ export function AskAgent({ initialContext }: AskAgentProps = {}) {
           signal: ac.signal,
         });
         if (res.status === 401) {
-          throw new Error("Please sign in to use Ask Lawplain.");
+          patch((m) => ({
+            ...m,
+            phase: "error",
+            authRequired: true,
+            error: "Sign in to use Ask Lawplain.",
+          }));
+          return;
         }
         if (!res.ok || !res.body) {
           const msg = await res.text().catch(() => res.statusText);
@@ -711,9 +718,25 @@ function AssistantMessage({ m, now }: { m: Message; now: number }) {
         </p>
       )}
       {m.phase === "error" && m.error && (
-        <p className="rounded-lg bg-red-50 px-3 py-2 text-[13px] text-red-700">
-          {m.error}
-        </p>
+        <div className="rounded-xl bg-red-50 px-3 py-3 text-[13px] text-red-700">
+          <p>{m.error}</p>
+          {m.authRequired && (
+            <div className="mt-3 flex flex-wrap gap-2">
+              <a
+                href="/sign-in?next=/ask"
+                className="rounded-lg bg-foreground px-3 py-1.5 text-xs font-semibold text-primary-fg"
+              >
+                Sign in
+              </a>
+              <a
+                href="/sign-up?next=/ask"
+                className="rounded-lg border border-red-200 px-3 py-1.5 text-xs font-semibold text-red-700"
+              >
+                Create account
+              </a>
+            </div>
+          )}
+        </div>
       )}
 
       {/* Footer meta */}

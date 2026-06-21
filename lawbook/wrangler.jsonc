@@ -17,8 +17,8 @@
   "d1_databases": [
     {
       "binding": "AUTH_DB",
-      "database_name": "lawbook-auth",
-      "database_id": "replace-with-d1-database-id",
+      "database_name": "lawplain-auth",
+      "database_id": "6d699262-db7a-4771-84dd-a74a462183ea",
       "migrations_dir": "migrations"
     }
   ]

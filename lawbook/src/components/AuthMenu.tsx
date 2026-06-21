@@ -1,13 +1,15 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { authClient } from "@/lib/auth-client";
 
 export function AuthMenu() {
   const pathname = usePathname();
+  const router = useRouter();
   const { data: session, isPending } = authClient.useSession();
-  const next = encodeURIComponent(pathname || "/");
+  const nextPath = pathname || "/";
+  const next = encodeURIComponent(nextPath.startsWith("/") ? nextPath : "/");
   const username = session?.user
     ? ((session.user as { username?: string; name?: string }).username ??
       session.user.name)
@@ -42,12 +44,19 @@ export function AuthMenu() {
 
   return (
     <div className="ml-2 flex items-center gap-2 border-l border-border pl-2">
-      <span className="hidden max-w-32 truncate rounded-lg bg-surface-2 px-3 py-1.5 text-sm font-medium text-muted sm:inline-block">
+      <Link
+        href="/profile"
+        className="hidden max-w-32 truncate rounded-lg bg-surface-2 px-3 py-1.5 text-sm font-medium text-muted transition-colors hover:text-foreground sm:inline-block"
+      >
         {username}
-      </span>
+      </Link>
       <button
         type="button"
-        onClick={() => void authClient.signOut()}
+        onClick={async () => {
+          await authClient.signOut();
+          router.refresh();
+          window.location.assign("/");
+        }}
         className="rounded-lg px-3 py-1.5 text-sm font-medium text-muted-2 transition-colors hover:bg-surface-2 hover:text-foreground"
       >
         Sign out
