@@ -31,7 +31,8 @@ export async function loadChatContext(
         { include_body: true, body_length: MAX_EXCERPT },
         { cache: "no-store" },
       );
-      const title = j.title || j.neutral_cite || cite;
+      const canonical = j.citation || cite;
+      const title = j.title || j.neutral_cite || canonical;
       const head = [
         `Court: ${j.court ?? "—"}`,
         `Year: ${j.year ?? "—"}`,
@@ -42,9 +43,9 @@ export async function loadChatContext(
         .join("\n");
       return {
         kind: "judgment",
-        citation: cite,
+        citation: canonical,
         title,
-        href: `/judgment/${encodeURIComponent(cite)}`,
+        href: `/judgment/${encodeURIComponent(canonical)}`,
         excerpt: trim(`${head}\n\n${j.body_text ?? ""}`, MAX_EXCERPT),
       };
     }

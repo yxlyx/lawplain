@@ -132,6 +132,8 @@ export interface AgentToolEvent {
   /** The agent invoked a tool (e.g. a curl search). Shown as a status chip. */
   type: "tool";
   name: string;
+  /** Stable machine key for dedupe; separate from the human display summary. */
+  key: string;
   summary: string;
   kind?: "search" | "detail" | "setup" | "other";
   duplicate?: boolean;
@@ -177,15 +179,29 @@ export interface ChatContext {
 function composePrompt(question: string, ctx?: ChatContext): string {
   if (!ctx) return question;
   const kindLabel = ctx.kind === "judgment" ? "Judgment" : "Statute";
+  const encodedCitation = encodeURIComponent(ctx.citation);
   const fetchHint =
     ctx.kind === "judgment"
-      ? `/v1/judgments/${ctx.citation} with a larger body_length`
-      : `/v1/statutes/${ctx.citation}`;
-  return `# Context — the user has this document open
-${kindLabel}: ${ctx.title} (${ctx.citation})
+      ? `/v1/judgments/${encodedCitation}?include_body=true&body_length=8000`
+      : `/v1/statutes/${encodedCitation}?include_body=true`;
+  return `# Context — pinned source
+The user is asking about this exact ${kindLabel.toLowerCase()}.
+Pinned ${kindLabel}: ${ctx.title}
+Canonical ID: ${ctx.citation}
 Full document in the app: ${ctx.href}
-You can still fetch more of it via the API (e.g. ${fetchHint}) if the excerpt
-below is missing what you need — but prefer the excerpt already provided.
+
+When the question says "this case", "this judgment", "this statute", or similar,
+answer about the pinned source above. Do not substitute another source with a
+similar title, party name, issue, year, or citation.
+
+If you need more text, fetch exactly:
+${fetchHint}
+
+After fetching, verify that the returned citation/reference matches:
+${ctx.citation}
+
+Only discuss other judgments/statutes if the user asks for comparison or broader
+research, and clearly distinguish them from the pinned source.
 
 # Excerpt
 ${ctx.excerpt}
@@ -240,28 +256,78 @@ function agentProviderEnv(): Record<string, string> {
   return env;
 }
 
+interface ToolSummary {
+  key: string;
+  summary: string;
+  kind: "search" | "detail" | "setup" | "other";
+}
+
 /** Best-effort one-line summary of a tool call for the UI status line. */
-function summarizeTool(name: string, input: unknown): string {
+function summarizeToolCall(name: string, input: unknown): ToolSummary {
   const inp =
     input && typeof input === "object"
       ? (input as Record<string, unknown>)
       : {};
   if (name === "bash") {
     const cmd = String(inp.command ?? "").trim();
-    // Pull the query out of a curl --data-urlencode "q=..." if present.
-    const m = cmd.match(/q=([^&"'\s]+)/);
-    const url = cmd.match(/https?:\/\/\S+/)?.[0];
-    if (m) return `search: ${decodeURIComponentSafe(m[1])}`;
-    if (url)
-      return url
-        .replace(BASE, "")
-        .split("?")[0]
-        .replace(/["')]+$/, "");
-    return cmd.slice(0, 80);
+    const urlRaw = cmd.match(/https?:\/\/[^\s"')]+/)?.[0];
+    const url = parseUrlSafe(urlRaw);
+    const q = extractSearchQuery(cmd, url);
+
+    if (q) {
+      const path = url?.pathname ?? "unknown-search";
+      const endpoint = path.replace(BASE, "");
+      return {
+        key: `bash:${endpoint}?q=${q}`,
+        summary: `search: ${decodeURIComponentSafe(q)} (${endpoint})`,
+        kind: "search",
+      };
+    }
+
+    if (url) {
+      const path = `${url.pathname}${url.search}`.replace(BASE, "");
+      return {
+        key: `bash:${path}`,
+        summary: url.pathname.replace(BASE, ""),
+        kind: url.pathname.startsWith("/v1/") ? "detail" : "other",
+      };
+    }
+
+    return {
+      key: `bash:${cmd.slice(0, 160)}`,
+      summary: cmd.slice(0, 80),
+      kind: "other",
+    };
   }
-  if (name === "webfetch") return `fetch ${String(inp.url ?? "")}`;
-  if (name === "read_file") return `read ${String(inp.path ?? "")}`;
-  return name;
+  if (name === "webfetch") {
+    const url = String(inp.url ?? "");
+    return { key: `webfetch:${url}`, summary: `fetch ${url}`, kind: "detail" };
+  }
+  if (name === "read_file") {
+    const path = String(inp.path ?? "");
+    return { key: `read_file:${path}`, summary: `read ${path}`, kind: "other" };
+  }
+  return { key: name, summary: name, kind: "other" };
+}
+
+function parseUrlSafe(raw: string | undefined): URL | null {
+  if (!raw) return null;
+  try {
+    return new URL(raw.replace(/["')]+$/, ""));
+  } catch {
+    return null;
+  }
+}
+
+function extractSearchQuery(cmd: string, url: URL | null): string | null {
+  const fromUrl = url?.searchParams.get("q");
+  if (fromUrl) return fromUrl;
+
+  const dataUrlencode = cmd.match(/--data-urlencode\s+["']q=([^"']+)["']/);
+  if (dataUrlencode) return dataUrlencode[1];
+
+  const queryParam = cmd.match(/[?&]q=([^&"'\s]+)/);
+  return queryParam?.[1] ?? null;
 }
 
 function decodeURIComponentSafe(s: string): string {
@@ -305,13 +371,17 @@ export async function* askLegalAgent(
         case "text":
           if (ev.text) yield { type: "delta", text: ev.text };
           break;
-        case "tool_call":
+        case "tool_call": {
+          const tool = summarizeToolCall(ev.name, ev.input);
           yield {
             type: "tool",
             name: ev.name,
-            summary: summarizeTool(ev.name, ev.input),
+            key: tool.key,
+            summary: tool.summary,
+            kind: tool.kind,
           };
           break;
+        }
         case "turn":
           finalText = ev.text;
           costUsd = ev.cost_usd;
@@ -506,28 +576,24 @@ export async function* askLegalAgentSandboxed(
               }
               break;
             case "tool_call": {
-              const summary = summarizeTool(ev.name, ev.input);
-              const count = (seenTools.get(summary) ?? 0) + 1;
-              seenTools.set(summary, count);
-              const kind = summary.startsWith("search: ")
-                ? "search"
-                : summary.startsWith("/v1/")
-                  ? "detail"
-                  : "other";
+              const tool = summarizeToolCall(ev.name, ev.input);
+              const count = (seenTools.get(tool.key) ?? 0) + 1;
+              seenTools.set(tool.key, count);
               yield {
                 type: "progress",
-                phase: kind === "search" ? "searching" : "reading",
+                phase: tool.kind === "search" ? "searching" : "reading",
                 message:
-                  kind === "search"
-                    ? `Searching ${summary.slice(8)}…`
-                    : `Reading source ${summary}…`,
+                  tool.kind === "search"
+                    ? `Searching ${tool.summary.slice(8)}…`
+                    : `Reading source ${tool.summary}…`,
                 elapsedMs: Date.now() - startedAt,
               };
               yield {
                 type: "tool",
                 name: ev.name,
-                summary,
-                kind,
+                key: tool.key,
+                summary: tool.summary,
+                kind: tool.kind,
                 duplicate: count > 1,
                 count,
               };
