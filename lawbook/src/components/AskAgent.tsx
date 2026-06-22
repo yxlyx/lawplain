@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
   useCallback,
   useEffect,
@@ -17,6 +17,7 @@ import {
   XIcon,
 } from "@/components/icons";
 import type { ChatContext } from "@/lib/agent";
+import { authClient } from "@/lib/auth-client";
 
 type ChatEvent =
   | { type: "delta"; text: string }
@@ -29,6 +30,7 @@ type ChatEvent =
   | {
       type: "tool";
       name: string;
+      key?: string;
       summary: string;
       kind?: "search" | "detail" | "setup" | "other";
       duplicate?: boolean;
@@ -78,6 +80,12 @@ interface Message {
   cost?: { usd: number; tokens: number };
 }
 
+interface AskQuestionHistoryEntry {
+  id: string;
+  question: string;
+  createdAt: number;
+}
+
 /** Map a raw tool_call into a typed, human-readable step. */
 function describeTool(ev: Extract<ChatEvent, { type: "tool" }>): ToolStep {
   const { name, summary } = ev;
@@ -93,14 +101,13 @@ function describeTool(ev: Extract<ChatEvent, { type: "tool" }>): ToolStep {
       label = `Searching “${summary.slice(8)}”`;
     } else if (summary.startsWith("/v1/judgments/")) {
       kind = "fetch";
-      label = `Reading judgment ${summary.split('"')[0].slice("/v1/judgments/".length)}`;
+      label = `Additional judgment ${decodeURIComponentSafe(summary.split("?")[0].slice("/v1/judgments/".length))}`;
     } else if (summary.startsWith("/v1/statutes/")) {
-      const ref = summary
-        .split('"')[0]
-        .slice("/v1/statutes/".length)
-        .replace(/%20/g, " ");
+      const ref = decodeURIComponentSafe(
+        summary.split("?")[0].slice("/v1/statutes/".length),
+      );
       kind = "fetch";
-      label = `Reading statute ${ref}`;
+      label = `Additional statute ${ref}`;
     } else if (summary.startsWith("/v1/")) {
       kind = "fetch";
       label = `Fetching ${summary}`;
@@ -115,11 +122,19 @@ function describeTool(ev: Extract<ChatEvent, { type: "tool" }>): ToolStep {
 
   return {
     id: 0,
-    key: `${kind}:${label.toLowerCase()}`,
+    key: ev.key ?? `${kind}:${label.toLowerCase()}`,
     kind,
     label,
     count: ev.count ?? 1,
   };
+}
+
+function decodeURIComponentSafe(s: string): string {
+  try {
+    return decodeURIComponent(s);
+  } catch {
+    return s;
+  }
 }
 
 const PHASE_LABEL: Record<Phase, string> = {
@@ -269,6 +284,33 @@ const TOOL_DOT: Record<ToolStep["kind"], string> = {
   other: "bg-muted-2",
 };
 
+const ASK_HISTORY_LIMIT = 50;
+
+function isCursorOnFirstLine(el: HTMLTextAreaElement): boolean {
+  return !el.value.slice(0, el.selectionStart).includes("\n");
+}
+
+function isCursorOnLastLine(el: HTMLTextAreaElement): boolean {
+  return !el.value.slice(el.selectionEnd).includes("\n");
+}
+
+function mergeQuestionHistory(
+  history: AskQuestionHistoryEntry[],
+  question: string,
+): AskQuestionHistoryEntry[] {
+  const trimmed = question.trim();
+  if (!trimmed) return history;
+
+  return [
+    {
+      id: `local-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+      question: trimmed,
+      createdAt: Date.now(),
+    },
+    ...history.filter((entry) => entry.question !== trimmed),
+  ].slice(0, ASK_HISTORY_LIMIT);
+}
+
 export interface AskAgentProps {
   /** A document the user came from — pinned to the transcript and sent with
    *  every question so the agent grounds its answer in that document. */
@@ -277,19 +319,111 @@ export interface AskAgentProps {
 
 export function AskAgent({ initialContext }: AskAgentProps = {}) {
   const pathname = usePathname();
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const { data: session } = authClient.useSession();
+  const isSignedIn = Boolean(session?.user);
   const next = encodeURIComponent(pathname || "/");
   const signInHref = `/sign-in?next=${next}`;
   const signUpHref = `/sign-up?next=${next}`;
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
+  const [questionHistory, setQuestionHistory] = useState<
+    AskQuestionHistoryEntry[]
+  >([]);
   const [busy, setBusy] = useState(false);
+  const [queuedPrompt, setQueuedPrompt] = useState<string | null>(null);
   const [pinnedContext, setPinnedContext] = useState(initialContext);
   const [now, setNow] = useState(() => Date.now());
   const abortRef = useRef<AbortController | null>(null);
+  const activeRef = useRef(false);
+  const queueingOpenRef = useRef(false);
+  const queuedPromptRef = useRef<string | null>(null);
+  const pendingSendAfterCleanupRef = useRef<string | null>(null);
+  const sendRef = useRef<((text: string) => Promise<void>) | null>(null);
+  const historyIndexRef = useRef(-1);
+  const draftBeforeHistoryRef = useRef("");
   const msgId = useRef(0);
   const toolId = useRef(0);
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const draftKey = `ask:draft:${pinnedContext?.kind ?? "none"}:${pinnedContext?.citation ?? "none"}`;
+
+  useEffect(() => {
+    setPinnedContext(initialContext);
+  }, [initialContext]);
+
+  useEffect(() => {
+    try {
+      setInput(sessionStorage.getItem(draftKey) ?? "");
+    } catch {
+      // Ignore unavailable storage.
+    }
+  }, [draftKey]);
+
+  useEffect(() => {
+    try {
+      if (input) sessionStorage.setItem(draftKey, input);
+      else sessionStorage.removeItem(draftKey);
+    } catch {
+      // Ignore unavailable storage.
+    }
+  }, [draftKey, input]);
+
+  const clearDraft = useCallback(() => {
+    try {
+      sessionStorage.removeItem(draftKey);
+    } catch {
+      // Ignore unavailable storage.
+    }
+  }, [draftKey]);
+
+  const resetHistoryNavigation = useCallback(() => {
+    historyIndexRef.current = -1;
+    draftBeforeHistoryRef.current = "";
+  }, []);
+
+  useEffect(() => {
+    if (!isSignedIn) {
+      setQuestionHistory([]);
+      resetHistoryNavigation();
+      return;
+    }
+
+    let ignore = false;
+
+    async function loadQuestionHistory() {
+      try {
+        const res = await fetch("/api/ask/questions", { cache: "no-store" });
+        if (!res.ok) return;
+        const data = (await res.json()) as {
+          questions?: AskQuestionHistoryEntry[];
+        };
+        if (!ignore) setQuestionHistory(data.questions ?? []);
+      } catch {
+        // History recall is an enhancement; keep Ask usable if loading fails.
+      }
+    }
+
+    void loadQuestionHistory();
+
+    return () => {
+      ignore = true;
+    };
+  }, [isSignedIn, resetHistoryNavigation]);
+
+  const removePinnedContext = useCallback(() => {
+    setPinnedContext(undefined);
+
+    const nextParams = new URLSearchParams(searchParams.toString());
+    nextParams.delete("cite");
+    nextParams.delete("kind");
+
+    const nextQuery = nextParams.toString();
+    router.replace(nextQuery ? `${pathname}?${nextQuery}` : pathname, {
+      scroll: false,
+    });
+  }, [pathname, router, searchParams]);
 
   useEffect(() => {
     if (!busy) return;
@@ -318,7 +452,62 @@ export function AskAgent({ initialContext }: AskAgentProps = {}) {
     el.scrollTop = el.scrollHeight;
   }, [messages]);
 
+  const queuePrompt = useCallback((prompt: string) => {
+    queuedPromptRef.current = prompt;
+    setQueuedPrompt(prompt);
+    setInput("");
+    window.setTimeout(() => inputRef.current?.focus(), 0);
+  }, []);
+
+  const clearQueuedPrompt = useCallback(() => {
+    queuedPromptRef.current = null;
+    setQueuedPrompt(null);
+  }, []);
+
+  const navigateQuestionHistory = useCallback(
+    (direction: "older" | "newer", el: HTMLTextAreaElement) => {
+      if (!isSignedIn || questionHistory.length === 0) return false;
+      if (direction === "older" && !isCursorOnFirstLine(el)) return false;
+      if (direction === "newer" && !isCursorOnLastLine(el)) return false;
+
+      const currentIndex = historyIndexRef.current;
+      if (direction === "newer" && currentIndex === -1) return false;
+
+      let nextIndex = currentIndex;
+      if (direction === "older") {
+        if (currentIndex === -1) {
+          draftBeforeHistoryRef.current = input;
+          nextIndex = 0;
+        } else {
+          nextIndex = Math.min(currentIndex + 1, questionHistory.length - 1);
+        }
+      } else {
+        nextIndex = currentIndex - 1;
+      }
+
+      historyIndexRef.current = nextIndex;
+      const nextInput =
+        nextIndex === -1
+          ? draftBeforeHistoryRef.current
+          : questionHistory[nextIndex]?.question;
+
+      if (nextInput === undefined) return false;
+
+      setInput(nextInput);
+      window.requestAnimationFrame(() => {
+        const target = inputRef.current;
+        if (!target) return;
+        const cursor = target.value.length;
+        target.setSelectionRange(cursor, cursor);
+      });
+
+      return true;
+    },
+    [input, isSignedIn, questionHistory],
+  );
+
   const stop = useCallback(() => {
+    queueingOpenRef.current = false;
     abortRef.current?.abort();
     abortRef.current = null;
     setBusy(false);
@@ -343,10 +532,32 @@ export function AskAgent({ initialContext }: AskAgentProps = {}) {
     );
   }, []);
 
+  const steerQueuedPrompt = useCallback(() => {
+    if (!queuedPromptRef.current) return;
+    stop();
+  }, [stop]);
+
   const send = useCallback(
     async (text: string) => {
       const q = text.trim();
-      if (!q || busy) return;
+      if (!q) return;
+
+      if (activeRef.current) {
+        if (queueingOpenRef.current) {
+          queuePrompt(q);
+        } else {
+          pendingSendAfterCleanupRef.current = q;
+          setInput("");
+        }
+        return;
+      }
+
+      activeRef.current = true;
+      queueingOpenRef.current = true;
+      resetHistoryNavigation();
+      if (isSignedIn) {
+        setQuestionHistory((history) => mergeQuestionHistory(history, q));
+      }
 
       const userMsg: Message = {
         id: msgId.current++,
@@ -374,6 +585,7 @@ export function AskAgent({ initialContext }: AskAgentProps = {}) {
         phase: "starting",
       };
       setMessages((m) => [...m, userMsg, assistantMsg]);
+      clearDraft();
       setInput("");
       setBusy(true);
 
@@ -451,7 +663,7 @@ export function AskAgent({ initialContext }: AskAgentProps = {}) {
                       ...m,
                       tools: m.tools.map((t) =>
                         t.key === step.key
-                          ? { ...t, count: Math.max(t.count + 1, step.count) }
+                          ? { ...t, count: ev.count ?? t.count + 1 }
                           : t,
                       ),
                     };
@@ -464,20 +676,25 @@ export function AskAgent({ initialContext }: AskAgentProps = {}) {
                 break;
               }
               case "done":
+                queueingOpenRef.current = false;
                 patch((m) => ({
                   ...m,
                   text: ev.text || acc,
                   phase: "done",
                   cost: { usd: ev.costUsd, tokens: ev.contextTokens },
                 }));
-                break;
+                await reader.cancel().catch(() => {});
+                return;
               case "error":
+                queueingOpenRef.current = false;
                 patch((m) => ({ ...m, phase: "error", error: ev.message }));
-                break;
+                await reader.cancel().catch(() => {});
+                return;
             }
           }
         }
       } catch (err) {
+        queueingOpenRef.current = false;
         if ((err as Error).name !== "AbortError") {
           patch((m) => ({
             ...m,
@@ -486,12 +703,34 @@ export function AskAgent({ initialContext }: AskAgentProps = {}) {
           }));
         }
       } finally {
+        const nextPrompt = queuedPromptRef.current;
+        const pendingPrompt = pendingSendAfterCleanupRef.current;
+        queuedPromptRef.current = null;
+        pendingSendAfterCleanupRef.current = null;
+        queueingOpenRef.current = false;
+        setQueuedPrompt(null);
+        activeRef.current = false;
         setBusy(false);
         abortRef.current = null;
+
+        const promptToSend = nextPrompt ?? pendingPrompt;
+        if (promptToSend) {
+          window.setTimeout(() => {
+            void sendRef.current?.(promptToSend);
+          }, 0);
+        }
       }
     },
-    [busy, pinnedContext],
+    [
+      clearDraft,
+      isSignedIn,
+      pinnedContext,
+      queuePrompt,
+      resetHistoryNavigation,
+    ],
   );
+
+  sendRef.current = send;
 
   const onSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -516,7 +755,9 @@ export function AskAgent({ initialContext }: AskAgentProps = {}) {
             type="button"
             onClick={() => {
               setMessages([]);
+              clearDraft();
               setInput("");
+              clearQueuedPrompt();
             }}
             className="rounded-md px-2 py-1 text-xs text-muted-2 hover:bg-surface-2 hover:text-muted"
           >
@@ -535,7 +776,7 @@ export function AskAgent({ initialContext }: AskAgentProps = {}) {
       >
         {pinnedContext && (
           <div className="relative mb-4 rounded-xl border border-border bg-surface-2/60 pr-11 transition-colors hover:border-border-strong hover:bg-surface-2">
-            <a
+            <Link
               href={pinnedContext.href}
               className="flex min-w-0 items-center gap-2.5 px-3 py-2 text-left"
             >
@@ -554,10 +795,10 @@ export function AskAgent({ initialContext }: AskAgentProps = {}) {
               <span className="shrink-0 font-mono text-[10px] text-muted-2">
                 {pinnedContext.citation}
               </span>
-            </a>
+            </Link>
             <button
               type="button"
-              onClick={() => setPinnedContext(undefined)}
+              onClick={removePinnedContext}
               className="absolute right-3 top-1/2 inline-flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded-full text-muted-2 transition-colors hover:bg-border hover:text-foreground"
               aria-label={`Remove pinned ${pinnedContext.kind}`}
               title="Remove pinned source"
@@ -613,44 +854,96 @@ export function AskAgent({ initialContext }: AskAgentProps = {}) {
       </div>
 
       {/* Composer */}
-      <form
-        onSubmit={onSubmit}
-        className="flex items-end gap-2 border-t border-border bg-surface px-3 py-3"
-      >
-        <textarea
-          ref={inputRef}
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" && !e.shiftKey) {
-              e.preventDefault();
-              void send(input);
-            }
-          }}
-          rows={1}
-          placeholder="Ask a follow-up…"
-          className="thin-scroll max-h-40 flex-1 resize-none rounded-xl border border-border bg-background px-3.5 py-2.5 text-sm text-foreground placeholder:text-muted-2 focus:border-accent focus:outline-none disabled:opacity-50"
-          disabled={busy}
-        />
-        {busy ? (
-          <button
-            type="button"
-            onClick={stop}
-            className="inline-flex h-[42px] items-center gap-1.5 rounded-xl border border-border px-3 text-sm font-medium text-muted hover:bg-surface-2"
-          >
-            <StopIcon className="h-4 w-4" /> Stop
-          </button>
-        ) : (
-          <button
-            type="submit"
-            disabled={!input.trim()}
-            className="inline-flex h-[42px] w-[42px] items-center justify-center rounded-xl bg-foreground text-primary-fg transition-opacity disabled:cursor-not-allowed disabled:opacity-30 hover:opacity-90"
-            aria-label="Send"
-          >
-            <ArrowUpIcon className="h-4 w-4" />
-          </button>
+      <div className="border-t border-border bg-surface px-3 py-3">
+        {queuedPrompt && (
+          <div className="mb-2 flex items-center gap-2 rounded-xl border border-border bg-surface-2/70 px-3 py-2 text-xs text-muted">
+            <span className="min-w-0 flex-1 truncate">
+              Queued next prompt: {queuedPrompt}
+            </span>
+            <button
+              type="button"
+              onClick={steerQueuedPrompt}
+              className="shrink-0 rounded-md px-2 py-1 font-medium text-accent hover:bg-border hover:text-foreground"
+            >
+              Steer
+            </button>
+            <button
+              type="button"
+              onClick={clearQueuedPrompt}
+              className="shrink-0 rounded-md px-2 py-1 font-medium text-muted-2 hover:bg-border hover:text-foreground"
+            >
+              Clear
+            </button>
+          </div>
         )}
-      </form>
+        <form onSubmit={onSubmit} className="flex items-end gap-2">
+          <textarea
+            ref={inputRef}
+            value={input}
+            onChange={(e) => {
+              setInput(e.target.value);
+              resetHistoryNavigation();
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "ArrowUp") {
+                if (navigateQuestionHistory("older", e.currentTarget)) {
+                  e.preventDefault();
+                }
+                return;
+              }
+
+              if (e.key === "ArrowDown") {
+                if (navigateQuestionHistory("newer", e.currentTarget)) {
+                  e.preventDefault();
+                }
+                return;
+              }
+
+              if (
+                e.key === "Enter" &&
+                !e.shiftKey &&
+                !e.nativeEvent.isComposing
+              ) {
+                e.preventDefault();
+                void send(input);
+              }
+            }}
+            rows={1}
+            placeholder={
+              busy ? "Ask for follow-up changes…" : "Ask a follow-up…"
+            }
+            className="thin-scroll max-h-40 flex-1 resize-none rounded-xl border border-border bg-background px-3.5 py-2.5 text-sm text-foreground placeholder:text-muted-2 focus:border-accent focus:outline-none"
+          />
+          {busy ? (
+            <>
+              <button
+                type="submit"
+                disabled={!input.trim()}
+                className="inline-flex h-[42px] items-center gap-1.5 rounded-xl bg-foreground px-3 text-sm font-medium text-primary-fg transition-opacity disabled:cursor-not-allowed disabled:opacity-30 hover:opacity-90"
+                aria-label="Queue prompt"
+              >
+                Queue
+              </button>
+              <button
+                type="button"
+                onClick={stop}
+                className="inline-flex h-[42px] items-center gap-1.5 rounded-xl border border-border px-3 text-sm font-medium text-muted hover:bg-surface-2"
+              >
+                <StopIcon className="h-4 w-4" /> Stop
+              </button>
+            </>
+          ) : (
+            <button
+              type="submit"
+              disabled={!input.trim()}
+              className="inline-flex h-[42px] w-[42px] items-center justify-center rounded-xl bg-foreground text-primary-fg transition-opacity disabled:cursor-not-allowed disabled:opacity-30 hover:opacity-90"
+              aria-label="Send"
+            >
+              <ArrowUpIcon className="h-4 w-4" />
+            </button>
+          )}
+        </form>
+      </div>
     </div>
   );
 }
