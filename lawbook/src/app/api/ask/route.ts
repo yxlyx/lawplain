@@ -19,6 +19,7 @@ import {
   type ChatContext,
 } from "@/lib/agent";
 import { loadChatContext } from "@/lib/ask-context";
+import { recordAskQuestion } from "@/lib/ask-history";
 import { getSession } from "@/lib/auth";
 
 export const runtime = "nodejs";
@@ -70,6 +71,17 @@ export async function POST(req: Request): Promise<Response> {
     });
   }
 
+  try {
+    await recordAskQuestion({
+      userId: session.user.id,
+      question,
+      cite,
+      kind,
+    });
+  } catch (err) {
+    console.warn("Failed to record Ask question history", err);
+  }
+
   const encoder = new TextEncoder();
   const stream = new ReadableStream<Uint8Array>({
     async start(controller) {
@@ -98,12 +110,19 @@ export async function POST(req: Request): Promise<Response> {
         if (cite && (kind === "judgment" || kind === "statute")) {
           const params = new URLSearchParams({ cite, kind });
           context = (await loadChatContext(params)) ?? undefined;
+
+          if (!context) {
+            safeEnqueue({
+              type: "error",
+              message: `Pinned ${kind} could not be loaded: ${cite}`,
+            });
+            return;
+          }
+
           safeEnqueue({
             type: "progress",
             phase: "context",
-            message: context
-              ? "Pinned document loaded."
-              : "Pinned document unavailable; continuing without it.",
+            message: `Using pinned ${kind} ${context.citation}.`,
             elapsedMs: Date.now() - startedAt,
           });
         }
