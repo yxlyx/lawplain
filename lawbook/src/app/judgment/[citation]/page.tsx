@@ -133,23 +133,22 @@ export default async function JudgmentPage({
         )}
 
         {catchwords.length > 0 && (
-          <div className="mt-4 flex flex-col gap-1.5 border-l-2 border-border-strong pl-4">
-            {catchwords.map((c) => {
-              const label = c.replace(/^\[|\]$/g, "");
-
-              return (
+          <div className="mt-4 flex flex-wrap gap-x-2 gap-y-1.5 border-l-2 border-border-strong pl-4">
+            {catchwords.flatMap((c) =>
+              catchwordSearchTerms(c).map((term) => (
                 <Link
-                  key={c}
+                  key={`${c}-${term}`}
                   href={{
                     pathname: "/",
-                    query: { tab: "judgments", q: label },
+                    query: { tab: "judgments", q: term },
                   }}
+                  title={c}
                   className="font-serif text-sm italic leading-relaxed text-muted transition-colors hover:text-accent"
                 >
-                  {label}
+                  {term}
                 </Link>
-              );
-            })}
+              )),
+            )}
           </div>
         )}
 
@@ -218,6 +217,98 @@ function formatDate(iso: string): string {
     month: "long",
     year: "numeric",
   });
+}
+
+function catchwordSearchTerms(catchword: string): string[] {
+  const bracketedTerms = [...catchword.matchAll(/\[([^\]]+)\]/g)]
+    .map((match) => match[1].trim())
+    .filter(Boolean);
+
+  const sourceTerms =
+    bracketedTerms.length > 0
+      ? bracketedTerms
+      : catchword
+          .trim()
+          .split(/\s+[–—]\s+/)
+          .map((part) => part.trim())
+          .filter(Boolean);
+
+  return [...new Set(sourceTerms.flatMap(conciseSearchTerms))];
+}
+
+function conciseSearchTerms(term: string): string[] {
+  const normalized = term
+    .replace(/^applicable test for\s+/i, "")
+    .replace(/^principles? (?:relating to|concerning)\s+/i, "")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  if (!normalized) return [];
+  if (wordCount(normalized) <= 5) return [normalized];
+
+  const terms: string[] = [];
+
+  const liabilityMatch = normalized.match(
+    /^liability in (?<field>.+?) for (?<loss>.+)$/i,
+  );
+  if (liabilityMatch?.groups?.field && liabilityMatch.groups.loss) {
+    terms.push(`liability in ${liabilityMatch.groups.field.trim()}`);
+    terms.push(liabilityMatch.groups.loss.trim());
+  }
+
+  const dueToMatch = normalized.match(/\bdue to (?<reason>.+)$/i);
+  if (dueToMatch?.groups?.reason) terms.push(dueToMatch.groups.reason.trim());
+
+  for (const phrase of [
+    "pure economic loss",
+    "breach of duty",
+    "remoteness of damage",
+    "limitation of actions",
+    "set-offs",
+    "negligence",
+    "damages",
+    "costs",
+  ]) {
+    if (normalized.toLowerCase().includes(phrase)) terms.push(phrase);
+  }
+
+  const conciseTerms = terms
+    .map((phrase) => phrase.replace(/\s+/g, " ").trim())
+    .filter((phrase) => phrase && wordCount(phrase) <= 5);
+
+  if (conciseTerms.length > 0) return conciseTerms;
+
+  return [lastContentWords(normalized, 4)];
+}
+
+function wordCount(value: string): number {
+  return value.split(/\s+/).filter(Boolean).length;
+}
+
+function lastContentWords(value: string, limit: number): string {
+  const stopWords = new Set([
+    "a",
+    "an",
+    "and",
+    "as",
+    "for",
+    "in",
+    "of",
+    "on",
+    "or",
+    "part",
+    "that",
+    "the",
+    "this",
+    "to",
+    "whether",
+  ]);
+  const words = value
+    .split(/\s+/)
+    .map((word) => word.replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu, ""))
+    .filter((word) => word && !stopWords.has(word.toLowerCase()));
+
+  return words.slice(-limit).join(" ") || value;
 }
 
 function groupCounsel(
