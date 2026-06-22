@@ -26,7 +26,7 @@ import {
 } from "@/lib/cubesandbox";
 import { BASE } from "@/lib/sgjudge";
 
-export const AGENT_MODEL = process.env.LAWPLAIN_AGENT_MODEL ?? "kimi-k2.7";
+export const AGENT_MODEL = process.env.LAWPLAIN_AGENT_MODEL ?? "glm-5.2";
 
 /** Override the `graff` binary path (defaults to `graff` on PATH). */
 export const AGENT_BINARY = process.env.LAWGRAFF_BINARY ?? "graff";

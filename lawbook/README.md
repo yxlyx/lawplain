@@ -79,7 +79,7 @@ The route handler spawns the `graff` binary as a subprocess, so:
    ```
    (`graff login` / `graff login codex` also work for the free codegraff key
    or a ChatGPT subscription.)
-3. **Pick the model** (optional). Defaults to `kimi-k2.7`; override with:
+3. **Pick the model** (optional). Defaults to `glm-5.2`; override with:
    ```bash
    export LAWPLAIN_AGENT_MODEL=claude-sonnet-4-6   # any graff-supported model
    ```
