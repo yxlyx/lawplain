@@ -35,11 +35,16 @@ export default async function Home({
 
   const counts = stats?.counts ?? {};
   const countEntries = Object.entries(counts).filter(([, n]) => n > 0);
+  const hasInitialQuery = (q ?? "").trim().length > 0;
 
   return (
-    <main className="mx-auto w-full max-w-6xl px-5 sm:px-8">
+    <main
+      className={`mx-auto flex min-h-0 w-full max-w-6xl flex-1 flex-col px-5 sm:px-8 ${
+        hasInitialQuery ? "justify-start" : "justify-center"
+      }`}
+    >
       {/* Brand — Google-style minimal landing */}
-      <section className="pt-20 pb-10 sm:pt-32">
+      <section className={hasInitialQuery ? "pt-10 pb-5" : "pb-5"}>
         <div className="mx-auto max-w-2xl text-center">
           <h1 className="font-serif text-5xl font-medium tracking-tight text-foreground sm:text-7xl">
             Lawplain<span className="text-accent">.</span>
@@ -51,7 +56,7 @@ export default async function Home({
       </section>
 
       {/* Search */}
-      <section className="mx-auto max-w-2xl pb-6">
+      <section className="mx-auto max-w-2xl pb-3">
         <SearchExplorer
           courts={courts}
           initialTab={tab ?? "judgments"}
@@ -61,7 +66,7 @@ export default async function Home({
 
       {/* One quiet stats line, Google-footer style */}
       {countEntries.length > 0 && (
-        <p className="mx-auto max-w-3xl pb-12 pt-10 text-center text-xs leading-relaxed text-muted-2">
+        <p className="mx-auto max-w-3xl pb-4 pt-4 text-center text-xs leading-relaxed text-muted-2">
           {countEntries.map(([key, n], i) => (
             <span key={key}>
               {i > 0 && <span className="mx-1.5 text-border-strong">·</span>}

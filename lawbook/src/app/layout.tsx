@@ -35,9 +35,9 @@ export default function RootLayout({
       lang="en"
       className={`${googleSans.variable} ${geistMono.variable} ${lora.variable} h-full antialiased`}
     >
-      <body className="min-h-full flex flex-col bg-background text-foreground">
+      <body className="flex min-h-svh flex-col overflow-x-hidden bg-background text-foreground">
         <SiteHeader />
-        <div className="flex-1">{children}</div>
+        <div className="flex min-h-0 flex-1">{children}</div>
         <SiteFooter />
       </body>
     </html>
@@ -46,16 +46,16 @@ export default function RootLayout({
 
 function SiteFooter() {
   return (
-    <footer className="mt-16 border-t border-border bg-surface-2/40">
-      <div className="mx-auto flex w-full max-w-6xl flex-col gap-2 px-5 py-8 text-sm text-muted sm:flex-row sm:items-center sm:justify-between sm:px-8">
+    <footer className="border-t border-border bg-surface-2/35">
+      <div className="mx-auto flex w-full max-w-6xl flex-col gap-2 px-5 py-4 text-xs leading-relaxed text-muted-2 sm:flex-row sm:items-center sm:justify-between sm:px-8">
         <p className="flex items-center gap-2.5">
-          <BrandMark className="h-6 w-6" />
+          <BrandMark className="h-5 w-5" />
           <span>
-            <span className="font-semibold text-foreground">Lawplain</span> — a
+            <span className="font-semibold text-muted">Lawplain</span> — a
             read-only projection of the Singapore legal corpus.
           </span>
         </p>
-        <p className="text-xs text-muted-2">
+        <p>
           Not legal advice. Data via{" "}
           <span className="font-mono">backend.lawplain.com</span>
         </p>

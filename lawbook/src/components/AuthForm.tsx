@@ -81,7 +81,7 @@ export function AuthForm({ mode }: AuthFormProps) {
   }
 
   return (
-    <div className="rounded-2xl border border-border bg-surface p-6 shadow-sm">
+    <div className="w-full rounded-2xl border border-border bg-surface p-6 shadow-sm">
       <div className="mb-6">
         <p className="text-xs font-semibold uppercase tracking-wide text-muted-2">
           Lawplain account

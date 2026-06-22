@@ -32,8 +32,8 @@ export default async function AskPage({
   const context = await loadChatContext(params);
 
   return (
-    <main className="mx-auto w-full max-w-2xl px-5 pb-16 sm:px-8">
-      <div className="pt-10 sm:pt-14">
+    <main className="mx-auto w-full max-w-2xl px-5 pb-6 sm:px-8">
+      <div className="pt-6 sm:pt-8">
         <Link
           href="/"
           className="inline-flex items-center gap-1.5 text-sm text-muted-2 transition-colors hover:text-foreground"
@@ -43,7 +43,7 @@ export default async function AskPage({
         </Link>
       </div>
 
-      <header className="pb-6 pt-8 text-center">
+      <header className="pb-4 pt-5 text-center">
         <h1 className="inline-flex items-center gap-2.5 font-serif text-4xl font-medium tracking-tight text-foreground sm:text-5xl">
           <span className="inline-flex h-9 w-9 items-center justify-center rounded-xl bg-accent-soft text-accent">
             <SparkleIcon className="h-5 w-5" />

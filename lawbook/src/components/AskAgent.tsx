@@ -1,5 +1,7 @@
 "use client";
 
+import Link from "next/link";
+import { usePathname } from "next/navigation";
 import {
   useCallback,
   useEffect,
@@ -273,6 +275,8 @@ export interface AskAgentProps {
 }
 
 export function AskAgent({ initialContext }: AskAgentProps = {}) {
+  const pathname = usePathname();
+  const signUpHref = `/sign-up?next=${encodeURIComponent(pathname || "/")}`;
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
@@ -580,7 +584,12 @@ export function AskAgent({ initialContext }: AskAgentProps = {}) {
                   </div>
                 </div>
               ) : (
-                <AssistantMessage key={m.id} m={m} now={now} />
+                <AssistantMessage
+                  key={m.id}
+                  m={m}
+                  now={now}
+                  signUpHref={signUpHref}
+                />
               ),
             )}
           </div>
@@ -630,7 +639,15 @@ export function AskAgent({ initialContext }: AskAgentProps = {}) {
   );
 }
 
-function AssistantMessage({ m, now }: { m: Message; now: number }) {
+function AssistantMessage({
+  m,
+  now,
+  signUpHref,
+}: {
+  m: Message;
+  now: number;
+  signUpHref: string;
+}) {
   const live = !["done", "error", "stopped"].includes(m.phase);
   const elapsed = m.startedAt ? (m.elapsedMs ?? now - m.startedAt) : undefined;
   return (
@@ -712,7 +729,20 @@ function AssistantMessage({ m, now }: { m: Message; now: number }) {
       )}
       {m.phase === "error" && m.error && (
         <p className="rounded-lg bg-red-50 px-3 py-2 text-[13px] text-red-700">
-          {m.error}
+          {m.error === "Please sign in to use Ask Lawplain." ? (
+            <>
+              Please sign in or{" "}
+              <Link
+                href={signUpHref}
+                className="font-medium underline decoration-red-700/40 underline-offset-2 hover:decoration-red-700"
+              >
+                sign up
+              </Link>{" "}
+              to use Ask Lawplain.
+            </>
+          ) : (
+            m.error
+          )}
         </p>
       )}
 
