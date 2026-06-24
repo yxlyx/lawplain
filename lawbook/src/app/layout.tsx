@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Geist_Mono, Google_Sans_Flex, Lora } from "next/font/google";
+import { AnalyticsConsent } from "@/components/AnalyticsConsent";
 import { SiteHeader } from "@/components/SiteHeader";
 import "./globals.css";
 
@@ -39,6 +40,7 @@ export default function RootLayout({
         <SiteHeader />
         <div className="flex min-h-0 flex-1">{children}</div>
         <SiteFooter />
+        <AnalyticsConsent />
       </body>
     </html>
   );

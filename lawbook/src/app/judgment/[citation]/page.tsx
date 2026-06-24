@@ -248,16 +248,14 @@ function conciseSearchTerms(term: string): string[] {
 
   const terms: string[] = [];
 
-  const liabilityMatch = normalized.match(
-    /^liability in (?<field>.+?) for (?<loss>.+)$/i,
-  );
-  if (liabilityMatch?.groups?.field && liabilityMatch.groups.loss) {
-    terms.push(`liability in ${liabilityMatch.groups.field.trim()}`);
-    terms.push(liabilityMatch.groups.loss.trim());
+  const liabilityMatch = normalized.match(/^liability in (.+?) for (.+)$/i);
+  if (liabilityMatch?.[1] && liabilityMatch[2]) {
+    terms.push(`liability in ${liabilityMatch[1].trim()}`);
+    terms.push(liabilityMatch[2].trim());
   }
 
-  const dueToMatch = normalized.match(/\bdue to (?<reason>.+)$/i);
-  if (dueToMatch?.groups?.reason) terms.push(dueToMatch.groups.reason.trim());
+  const dueToMatch = normalized.match(/\bdue to (.+)$/i);
+  if (dueToMatch?.[1]) terms.push(dueToMatch[1].trim());
 
   for (const phrase of [
     "pure economic loss",
