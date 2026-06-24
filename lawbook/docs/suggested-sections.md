@@ -149,7 +149,9 @@ GET /api/suggestions?docType=judgment&docId=2023_SGHC_3&term=transnational
    plain side-tab navigation (useful on its own, no backend needed).
 2. Stand up `/api/events` + chosen store; add client logging behind consent +
    DNT checks.
-3. Add `/api/suggestions` + threshold gating.
+3. Add `/api/suggestions` + threshold gating. ✅ Done — `GET /api/suggestions`
+   (`src/app/api/suggestions/route.ts`, `src/lib/suggestions.ts`, migration
+   `migrations/0003_section_engagement.sql`).
 4. Layer popularity ordering/badges onto the side-tabs.
 
 ## 11. Open questions
