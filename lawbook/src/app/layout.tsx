@@ -1,10 +1,10 @@
 import type { Metadata } from "next";
-import { Geist_Mono, Google_Sans_Flex, Lora } from "next/font/google";
+import { Geist, Geist_Mono, Lora } from "next/font/google";
 import { AnalyticsConsentBanner } from "@/components/AnalyticsConsentBanner";
 import { SiteHeader } from "@/components/SiteHeader";
 import "./globals.css";
 
-const googleSans = Google_Sans_Flex({
+const geistSans = Geist({
   variable: "--font-google-sans",
   subsets: ["latin"],
 });
@@ -34,7 +34,7 @@ export default function RootLayout({
   return (
     <html
       lang="en"
-      className={`${googleSans.variable} ${geistMono.variable} ${lora.variable} h-full antialiased`}
+      className={`${geistSans.variable} ${geistMono.variable} ${lora.variable} h-full antialiased`}
     >
       <body className="flex min-h-svh flex-col overflow-x-clip bg-background text-foreground">
         <SiteHeader />
