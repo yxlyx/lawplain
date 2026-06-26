@@ -16,7 +16,7 @@ export default function SavedPage() {
           Saved research
         </h1>
         <p className="mt-2 max-w-2xl text-sm leading-6 text-muted">
-          Your saved judgments, statutes, highlights, and result sets live here.
+          Your saved judgments and statutes live here.
         </p>
       </div>
       <SavedWorkspace />

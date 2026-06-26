@@ -169,12 +169,6 @@ export function SearchExplorer({
   const [recentSearches, setRecentSearches] = useState<SearchHistoryEntry[]>(
     [],
   );
-  const [savingResultSet, setSavingResultSet] = useState(false);
-  const [showSaveResultSetForm, setShowSaveResultSetForm] = useState(false);
-  const [resultSetName, setResultSetName] = useState("");
-  const [saveResultSetMessage, setSaveResultSetMessage] = useState<
-    string | null
-  >(null);
   const seq = useRef(0);
   const lastRecorded = useRef("");
   const { data: session } = authClient.useSession();
@@ -241,7 +235,7 @@ export function SearchExplorer({
       return;
     }
     let cancelled = false;
-    fetch("/api/search-history?limit=10")
+    fetch("/api/search-history?limit=5")
       .then(async (res) =>
         res.ok
           ? ((await res.json()) as { searches?: SearchHistoryEntry[] })
@@ -296,7 +290,7 @@ export function SearchExplorer({
       return;
     }
 
-    const searchesRes = await fetch("/api/search-history?limit=10").catch(
+    const searchesRes = await fetch("/api/search-history?limit=5").catch(
       () => null,
     );
     if (!searchesRes?.ok) return;
@@ -305,57 +299,6 @@ export function SearchExplorer({
     } | null;
     setRecentSearches(searches?.searches ?? []);
   }, [isSignedIn, data, error, tab, filters, currentSnapshot]);
-
-  function openSaveResultSetForm() {
-    if (!data) return;
-    setResultSetName(
-      `${TABS.find((t) => t.id === tab)?.label ?? "Search"}: ${data.query}`.slice(
-        0,
-        80,
-      ),
-    );
-    setSaveResultSetMessage(null);
-    setShowSaveResultSetForm(true);
-  }
-
-  async function handleSaveResultSet() {
-    if (!data || currentSnapshot.length === 0 || savingResultSet) return;
-    const name = resultSetName.trim();
-    if (!name) {
-      setSaveResultSetMessage("Please name this result set.");
-      return;
-    }
-    setSavingResultSet(true);
-    setSaveResultSetMessage(null);
-    try {
-      const res = await fetch("/api/result-sets", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          name,
-          tab,
-          query: data.query,
-          filters,
-          resultCount: data.count,
-          results: currentSnapshot.slice(0, 50),
-        }),
-      });
-      if (res.status === 401) {
-        setSaveResultSetMessage("Sign in again to save result sets.");
-        return;
-      }
-      if (!res.ok) throw new Error("Unable to save result set");
-      setShowSaveResultSetForm(false);
-      setResultSetName("");
-      setSaveResultSetMessage("Result set saved. Compare it from Saved.");
-    } catch {
-      setSaveResultSetMessage(
-        "Could not save this result set. Please try again.",
-      );
-    } finally {
-      setSavingResultSet(false);
-    }
-  }
 
   return (
     <section className="w-full">
@@ -385,6 +328,80 @@ export function SearchExplorer({
         )}
       </div>
 
+      {isSignedIn && recentSearches.length > 0 && (
+        <section className="mt-2 overflow-hidden rounded-2xl border border-border bg-surface shadow-sm">
+          <div className="flex items-center justify-between border-border border-b px-4 py-2">
+            <span className="text-xs font-medium text-muted-2">
+              Recent searches
+            </span>
+            <button
+              type="button"
+              onClick={() => {
+                fetch("/api/search-history", { method: "DELETE" }).catch(
+                  () => undefined,
+                );
+                setRecentSearches([]);
+              }}
+              className="text-xs font-medium text-muted-2 transition-colors hover:text-accent"
+            >
+              Clear
+            </button>
+          </div>
+          <ul className="divide-y divide-border">
+            {recentSearches.slice(0, 5).map((entry) => {
+              const tabLabel =
+                TABS.find((t) => t.id === entry.tab)?.label ?? entry.tab;
+              const resultLabel = `${entry.resultCount} result${
+                entry.resultCount === 1 ? "" : "s"
+              }`;
+
+              return (
+                <li key={entry.id} className="group flex items-center">
+                  <button
+                    type="button"
+                    title={`${tabLabel}: ${entry.query} · ${resultLabel}`}
+                    onClick={() => {
+                      setTab(entry.tab);
+                      setQ(entry.query);
+                      setFilters(entry.filters);
+                      setData(null);
+                      setError(null);
+                    }}
+                    className="flex min-w-0 flex-1 items-center gap-3 px-4 py-2.5 text-left transition-colors hover:bg-surface-2"
+                  >
+                    <SearchIcon className="h-4 w-4 shrink-0 text-muted-2" />
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-sm text-foreground">
+                        {entry.query}
+                      </span>
+                      <span className="block truncate text-xs text-muted-2">
+                        {tabLabel} · {resultLabel}
+                      </span>
+                    </span>
+                  </button>
+                  <button
+                    type="button"
+                    aria-label={`Remove recent search: ${entry.query}`}
+                    onClick={() => {
+                      fetch(
+                        `/api/search-history/${encodeURIComponent(entry.id)}`,
+                        { method: "DELETE" },
+                      ).catch(() => undefined);
+                      setRecentSearches((searches) =>
+                        searches.filter((search) => search.id !== entry.id),
+                      );
+                    }}
+                    className="mr-2 rounded-full p-1.5 text-muted-2 opacity-70 transition-colors hover:bg-surface-2 hover:text-foreground group-hover:opacity-100"
+                  >
+                    <XIcon className="h-4 w-4" />
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+        </section>
+      )}
+
       <div className="mt-4 flex flex-wrap justify-center gap-1.5">
         {TABS.map((t) => {
           const active = t.id === tab;
@@ -413,51 +430,6 @@ export function SearchExplorer({
         onClear={() => setFilters({})}
       />
 
-      {isSignedIn && recentSearches.length > 0 && (
-        <section className="mt-4 rounded-2xl border border-border bg-surface-2/40 px-4 py-3">
-          <div className="mb-2 flex items-center justify-between gap-3">
-            <h2 className="text-sm font-medium text-foreground">
-              Recent searches
-            </h2>
-            <button
-              type="button"
-              onClick={() => {
-                fetch("/api/search-history", { method: "DELETE" }).catch(
-                  () => undefined,
-                );
-                setRecentSearches([]);
-              }}
-              className="text-xs font-medium text-muted-2 transition-colors hover:text-accent"
-            >
-              Clear
-            </button>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            {recentSearches.map((entry) => (
-              <button
-                key={entry.id}
-                type="button"
-                title={`${entry.resultCount} result${entry.resultCount === 1 ? "" : "s"}`}
-                onClick={() => {
-                  setTab(entry.tab);
-                  setQ(entry.query);
-                  setFilters(entry.filters);
-                  setData(null);
-                  setError(null);
-                }}
-                className="rounded-full border border-border bg-surface px-3 py-1.5 text-xs text-muted transition-colors hover:border-accent hover:text-accent"
-              >
-                <span className="font-medium">
-                  {TABS.find((t) => t.id === entry.tab)?.label}
-                </span>
-                <span className="mx-1 text-muted-2">·</span>
-                {entry.query}
-              </button>
-            ))}
-          </div>
-        </section>
-      )}
-
       <div className="mt-5">
         {hasQuery && error && (
           <div className="rounded-lg border border-border bg-surface p-5 text-sm text-muted">
@@ -477,80 +449,12 @@ export function SearchExplorer({
                     &ldquo;{data.query}&rdquo;
                   </span>
                 </p>
-                {isSignedIn ? (
-                  <button
-                    type="button"
-                    onClick={openSaveResultSetForm}
-                    disabled={currentSnapshot.length === 0}
-                    className="rounded-lg border border-accent/40 bg-accent-soft px-3 py-1.5 text-xs font-medium text-accent transition-colors hover:border-accent hover:bg-accent hover:text-primary-fg disabled:cursor-not-allowed disabled:opacity-50"
-                  >
-                    Save result set
-                  </button>
-                ) : (
-                  <span className="flex flex-wrap items-center gap-1.5 text-xs text-muted-2">
-                    <span>To save and compare result sets,</span>
-                    <Link
-                      href="/sign-in?next=%2F"
-                      className="font-medium text-accent hover:underline"
-                    >
-                      sign in
-                    </Link>
-                    <span>or</span>
-                    <Link
-                      href="/sign-up?next=%2F"
-                      className="font-medium text-accent hover:underline"
-                    >
-                      create account
-                    </Link>
-                    <span>.</span>
+                {isSignedIn && (
+                  <span className="text-xs text-muted-2">
+                    Searches are saved to your recent history.
                   </span>
                 )}
               </div>
-
-              {saveResultSetMessage && !showSaveResultSetForm && (
-                <div className="rounded-xl border border-border bg-surface-2/70 px-3 py-2 text-xs text-muted">
-                  {saveResultSetMessage}
-                </div>
-              )}
-
-              {showSaveResultSetForm && (
-                <form
-                  className="flex flex-wrap items-center gap-2 rounded-xl border border-border bg-surface-2/70 px-3 py-2 text-xs text-muted"
-                  onSubmit={(event) => {
-                    event.preventDefault();
-                    void handleSaveResultSet();
-                  }}
-                >
-                  <input
-                    value={resultSetName}
-                    onChange={(event) => setResultSetName(event.target.value)}
-                    className="h-8 min-w-64 rounded-lg border border-border bg-surface px-2 text-xs text-foreground outline-none focus:border-ring"
-                    aria-label="Result set name"
-                  />
-                  <button
-                    type="submit"
-                    disabled={savingResultSet}
-                    className="rounded-lg border border-accent/40 bg-accent-soft px-3 py-1.5 text-xs font-medium text-accent transition-colors hover:border-accent hover:bg-accent hover:text-primary-fg disabled:cursor-not-allowed disabled:opacity-50"
-                  >
-                    {savingResultSet ? "Saving…" : "Save"}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setShowSaveResultSetForm(false);
-                      setSaveResultSetMessage(null);
-                    }}
-                    className="px-2 py-1 text-xs font-medium text-muted-2 transition-colors hover:text-foreground"
-                  >
-                    Cancel
-                  </button>
-                  {saveResultSetMessage && (
-                    <span className="basis-full text-muted">
-                      {saveResultSetMessage}
-                    </span>
-                  )}
-                </form>
-              )}
             </div>
             {data.results.length === 0 ? (
               <div className="rounded-lg border border-dashed border-border-strong bg-surface p-8 text-center text-sm text-muted">
@@ -571,7 +475,9 @@ export function SearchExplorer({
                       filters={filters}
                       fraction={relevance}
                       onBeforeNavigate={
-                        isSignedIn ? recordCurrentSearch : undefined
+                        isSignedIn && tab === "judgments"
+                          ? recordCurrentSearch
+                          : undefined
                       }
                     />
                   </li>

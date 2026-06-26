@@ -23,16 +23,52 @@ export function SavedAuthorityButton({
   const [isSaved, setIsSaved] = useState(false);
   const [checkingSaved, setCheckingSaved] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [busyAction, setBusyAction] = useState<"save" | "unsave" | null>(null);
   const [showAuthPrompt, setShowAuthPrompt] = useState(false);
+  const [showUnsavedNotice, setShowUnsavedNotice] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const requestVersion = useRef(0);
   const rootRef = useRef<HTMLDivElement | null>(null);
+  const unsavedNoticeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const announceToolbarPopoverOpen = useExclusiveToolbarPopover(() => {
     setShowAuthPrompt(false);
+    setShowUnsavedNotice(false);
   });
 
+  function clearUnsavedNotice() {
+    if (unsavedNoticeTimer.current) {
+      clearTimeout(unsavedNoticeTimer.current);
+      unsavedNoticeTimer.current = null;
+    }
+    setShowUnsavedNotice(false);
+  }
+
+  function flashUnsavedNotice() {
+    clearUnsavedNotice();
+    setShowUnsavedNotice(true);
+    unsavedNoticeTimer.current = setTimeout(() => {
+      setShowUnsavedNotice(false);
+      unsavedNoticeTimer.current = null;
+    }, 5000);
+  }
+
   useEffect(() => {
-    if (!showAuthPrompt) return;
+    return () => {
+      if (unsavedNoticeTimer.current) clearTimeout(unsavedNoticeTimer.current);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!showAuthPrompt && !showUnsavedNotice) return;
+
+    function dismissFloatingState() {
+      setShowAuthPrompt(false);
+      setShowUnsavedNotice(false);
+      if (unsavedNoticeTimer.current) {
+        clearTimeout(unsavedNoticeTimer.current);
+        unsavedNoticeTimer.current = null;
+      }
+    }
 
     function onPointerDown(event: PointerEvent) {
       const target = event.target;
@@ -41,12 +77,12 @@ export function SavedAuthorityButton({
         rootRef.current &&
         !rootRef.current.contains(target)
       ) {
-        setShowAuthPrompt(false);
+        dismissFloatingState();
       }
     }
 
     function onKeyDown(event: KeyboardEvent) {
-      if (event.key === "Escape") setShowAuthPrompt(false);
+      if (event.key === "Escape") dismissFloatingState();
     }
 
     document.addEventListener("pointerdown", onPointerDown);
@@ -55,7 +91,7 @@ export function SavedAuthorityButton({
       document.removeEventListener("pointerdown", onPointerDown);
       document.removeEventListener("keydown", onKeyDown);
     };
-  }, [showAuthPrompt]);
+  }, [showAuthPrompt, showUnsavedNotice]);
 
   useEffect(() => {
     if (!userId) {
@@ -108,7 +144,9 @@ export function SavedAuthorityButton({
   const className = `inline-flex items-center gap-1.5 rounded-lg border px-3.5 py-2 text-sm font-medium transition-colors disabled:opacity-60 ${
     savedDisplay
       ? "border-accent bg-accent-soft text-accent"
-      : "border-border-strong text-muted hover:border-accent hover:text-foreground"
+      : showUnsavedNotice
+        ? "border-border bg-surface-2 text-muted"
+        : "border-border-strong text-muted hover:border-accent hover:text-foreground"
   }`;
 
   if (isPending)
@@ -155,8 +193,10 @@ export function SavedAuthorityButton({
   const save = async () => {
     if (busy || isSaved) return;
     announceToolbarPopoverOpen();
+    clearUnsavedNotice();
     const version = ++requestVersion.current;
     setBusy(true);
+    setBusyAction("save");
     setShowAuthPrompt(false);
     setMessage(null);
 
@@ -187,7 +227,51 @@ export function SavedAuthorityButton({
       if (version !== requestVersion.current) return;
       setMessage("Could not save. Please try again.");
     } finally {
-      if (version === requestVersion.current) setBusy(false);
+      if (version === requestVersion.current) {
+        setBusy(false);
+        setBusyAction(null);
+      }
+    }
+  };
+
+  const unsave = async () => {
+    if (busy || !isSaved) return;
+    announceToolbarPopoverOpen();
+    const version = ++requestVersion.current;
+    setBusy(true);
+    setBusyAction("unsave");
+    setShowAuthPrompt(false);
+    setMessage(null);
+
+    try {
+      const params = new URLSearchParams({ docType, docId });
+      const res = await fetch(`/api/saved?${params}`, { method: "DELETE" });
+
+      if (version !== requestVersion.current) return;
+
+      if (res.status === 401) {
+        announceToolbarPopoverOpen();
+        setShowAuthPrompt(true);
+        setMessage("Please sign in again to unsave this document.");
+        return;
+      }
+
+      if (!res.ok) {
+        setMessage("Could not unsave. Please try again.");
+        return;
+      }
+
+      setIsSaved(false);
+      setMessage(null);
+      flashUnsavedNotice();
+    } catch {
+      if (version !== requestVersion.current) return;
+      setMessage("Could not unsave. Please try again.");
+    } finally {
+      if (version === requestVersion.current) {
+        setBusy(false);
+        setBusyAction(null);
+      }
     }
   };
 
@@ -198,7 +282,7 @@ export function SavedAuthorityButton({
     >
       <button
         type="button"
-        onClick={save}
+        onClick={isSaved ? unsave : save}
         disabled={busy || checkingSaved}
         className={className}
         aria-live="polite"
@@ -209,13 +293,17 @@ export function SavedAuthorityButton({
         ) : (
           <BookmarkIcon className="h-4 w-4" />
         )}
-        {savedDisplay
-          ? "Saved"
-          : busy
-            ? "Saving…"
-            : checkingSaved
-              ? "Checking…"
-              : "Save"}
+        {busy
+          ? busyAction === "unsave"
+            ? "Unsaving…"
+            : "Saving…"
+          : checkingSaved
+            ? "Checking…"
+            : showUnsavedNotice
+              ? "Unsaved"
+              : savedDisplay
+                ? "Saved"
+                : "Save"}
       </button>
       {message && (
         <p className="max-w-64 text-right text-xs text-red-700">{message}</p>

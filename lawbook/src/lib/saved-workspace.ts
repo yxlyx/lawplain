@@ -12,18 +12,6 @@ export interface SavedAuthority {
   updatedAt: number;
 }
 
-export interface SavedHighlight {
-  id: string;
-  docType: SavedDocType;
-  docId: string;
-  title: string;
-  path: string;
-  sectionId: string | null;
-  selectedText: string;
-  createdAt: number;
-  updatedAt: number;
-}
-
 export function isSavedDocType(value: unknown): value is SavedDocType {
   return value === "judgment" || value === "statute";
 }
@@ -118,88 +106,5 @@ export async function deleteSavedAuthority({
       "DELETE FROM saved_authorities WHERE userId = ? AND docType = ? AND docId = ?",
     )
     .bind(userId, docType, docId)
-    .run();
-}
-
-export async function listSavedHighlights(
-  userId: string,
-): Promise<SavedHighlight[]> {
-  const db = await getAuthDb();
-  const result = await db
-    .prepare(
-      `SELECT id, docType, docId, title, path, sectionId, selectedText, createdAt, updatedAt
-       FROM saved_highlights
-       WHERE userId = ?
-       ORDER BY createdAt DESC
-       LIMIT 100`,
-    )
-    .bind(userId)
-    .all<SavedHighlight>();
-  return result.results ?? [];
-}
-
-export async function createSavedHighlight({
-  userId,
-  docType,
-  docId,
-  title,
-  path,
-  sectionId,
-  selectedText,
-}: {
-  userId: string;
-  docType: SavedDocType;
-  docId: string;
-  title: string;
-  path: string;
-  sectionId?: string;
-  selectedText: string;
-}): Promise<SavedHighlight> {
-  const db = await getAuthDb();
-  const id = crypto.randomUUID();
-  const now = Date.now();
-  const cleanSectionId = sectionId || null;
-  await db
-    .prepare(
-      `INSERT INTO saved_highlights (id, userId, docType, docId, title, path, sectionId, selectedText, createdAt, updatedAt)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    )
-    .bind(
-      id,
-      userId,
-      docType,
-      docId,
-      title,
-      path,
-      cleanSectionId,
-      selectedText,
-      now,
-      now,
-    )
-    .run();
-  return {
-    id,
-    docType,
-    docId,
-    title,
-    path,
-    sectionId: cleanSectionId,
-    selectedText,
-    createdAt: now,
-    updatedAt: now,
-  };
-}
-
-export async function deleteSavedHighlight({
-  userId,
-  id,
-}: {
-  userId: string;
-  id: string;
-}): Promise<void> {
-  const db = await getAuthDb();
-  await db
-    .prepare("DELETE FROM saved_highlights WHERE userId = ? AND id = ?")
-    .bind(userId, id)
     .run();
 }

@@ -123,13 +123,3 @@ export function BookmarkIcon({ className }: IconProps) {
     </svg>
   );
 }
-
-export function HighlighterIcon({ className }: IconProps) {
-  return (
-    <svg className={className} aria-hidden="true" {...base}>
-      <path d="m4 20 4.5-1 9.8-9.8a2.1 2.1 0 0 0 0-3L16.8 4.7a2.1 2.1 0 0 0-3 0L4 14.5z" />
-      <path d="m13 6 5 5" />
-      <path d="M4 20h16" />
-    </svg>
-  );
-}

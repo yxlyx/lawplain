@@ -3,7 +3,7 @@ import Link from "next/link";
 export function SavedFeatureAuthPrompt({
   next,
   title = "Sign in to save research",
-  body = "Create a free account or sign in to keep saved documents and highlights across devices.",
+  body = "Create a free account or sign in to keep saved documents across devices.",
   compact = false,
 }: {
   next: string;

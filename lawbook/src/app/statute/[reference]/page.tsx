@@ -2,7 +2,6 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { CopyActions } from "@/components/CopyActions";
-import { HighlightSaver } from "@/components/HighlightSaver";
 import {
   ArrowLeftIcon,
   ExternalLinkIcon,
@@ -207,13 +206,7 @@ export default async function StatutePage({
               : sec.section_no,
           }))}
         >
-          <HighlightSaver
-            docType="statute"
-            docId={decoded}
-            title={title}
-            path={pagePath}
-            className="flex flex-col gap-4"
-          >
+          <div className="flex flex-col gap-4">
             {sections.length === 0 ? (
               <p className="rounded-lg border border-dashed border-border-strong bg-surface p-8 text-center text-sm text-muted">
                 No section text available for this statute.
@@ -239,7 +232,7 @@ export default async function StatutePage({
                 );
               })
             )}
-          </HighlightSaver>
+          </div>
         </StatuteSectionShell>
       </div>
     </main>

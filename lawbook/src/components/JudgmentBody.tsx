@@ -435,17 +435,17 @@ function renderJudgment(
           data-section-id={section.id}
           data-section-label={section.label}
           aria-hidden="true"
-          className="block h-px scroll-mt-24"
+          className="absolute -top-24 left-0 h-px w-px scroll-mt-24"
         />,
       );
       sectionIndex += 1;
     }
 
     rendered.push(
-      <Fragment key={block.key}>
+      <div key={block.key} className="relative">
         {anchors}
         {renderBlock(block, regex, currentSectionId)}
-      </Fragment>,
+      </div>,
     );
   }
 
