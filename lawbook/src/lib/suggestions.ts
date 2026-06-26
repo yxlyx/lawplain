@@ -45,15 +45,15 @@ export async function getSuggestions({
 
   const totalRow = await db
     .prepare(
-      `SELECT COALESCE(SUM(count), 0) AS total
-       FROM section_engagement
+      `SELECT COUNT(*) AS total
+       FROM section_engagement_sample
        WHERE doc_type = ? AND doc_id = ? AND term = ?`,
     )
     .bind(docType, docId, normalizedTerm)
     .first<{ total: number }>();
 
   const total = Number(totalRow?.total ?? 0);
-  if (total < minSample) return { total, sections: [] };
+  if (total < minSample) return { total: 0, sections: [] };
 
   const { results } = await db
     .prepare(
