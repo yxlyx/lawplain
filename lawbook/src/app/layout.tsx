@@ -36,7 +36,7 @@ export default function RootLayout({
       lang="en"
       className={`${googleSans.variable} ${geistMono.variable} ${lora.variable} h-full antialiased`}
     >
-      <body className="flex min-h-svh flex-col overflow-x-hidden bg-background text-foreground">
+      <body className="flex min-h-svh flex-col overflow-x-clip bg-background text-foreground">
         <SiteHeader />
         <div className="flex min-h-0 flex-1">{children}</div>
         <SiteFooter />

@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { AuthMenu } from "@/components/AuthMenu";
-import { SearchIcon, SparkleIcon } from "@/components/icons";
+import { BookIcon, SearchIcon, SparkleIcon } from "@/components/icons";
 
 const TABS = [
   {
@@ -17,6 +17,12 @@ const TABS = [
     label: "Ask Lawplain",
     icon: SparkleIcon,
     match: (p: string) => p.startsWith("/ask"),
+  },
+  {
+    href: "/saved",
+    label: "Saved",
+    icon: BookIcon,
+    match: (p: string) => p.startsWith("/saved"),
   },
 ];
 

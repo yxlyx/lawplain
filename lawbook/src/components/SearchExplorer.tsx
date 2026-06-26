@@ -1,10 +1,12 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { SearchIcon, XIcon } from "@/components/icons";
 import { ScoreBar } from "@/components/ScoreBar";
 import { Snippet } from "@/components/Snippet";
+import { authClient } from "@/lib/auth-client";
 import {
   ApiError,
   type SearchHit,
@@ -47,8 +49,63 @@ interface Filters {
   since?: string;
 }
 
+interface ResultSnapshotItem {
+  id: string;
+  rank: number;
+  title: string;
+  path: string;
+  citation?: string;
+  reference?: string;
+  score?: number;
+}
+
+interface SearchHistoryEntry {
+  id: string;
+  tab: TabId;
+  query: string;
+  filters: Filters;
+  resultCount: number;
+  topResults: ResultSnapshotItem[];
+  createdAt: number;
+}
+
 const DEBOUNCE_MS = 250;
 const MIN_CHARS = 2;
+const FILTER_KEYS: (keyof Filters)[] = [
+  "court",
+  "year_range",
+  "judge",
+  "kind",
+  "speaker",
+  "since",
+];
+
+function filtersFromSearchParams(params: {
+  get(name: string): string | null;
+}): Filters {
+  const filters: Filters = {};
+  for (const key of FILTER_KEYS) {
+    const value = params.get(key)?.trim();
+    if (value) filters[key] = value;
+  }
+  return filters;
+}
+
+function buildSearchParams(
+  tab: TabId,
+  query: string,
+  filters: Filters,
+): URLSearchParams {
+  const params = new URLSearchParams();
+  params.set("tab", tab);
+  const cleanQuery = query.trim();
+  if (cleanQuery) params.set("q", cleanQuery);
+  for (const key of FILTER_KEYS) {
+    const value = filters[key]?.trim();
+    if (value) params.set(key, value);
+  }
+  return params;
+}
 
 function runSearch(
   tab: TabId,
@@ -96,16 +153,32 @@ export function SearchExplorer({
   initialTab?: string;
   initialQuery?: string;
 }) {
+  const router = useRouter();
+  const searchParams = useSearchParams();
   const startTab = TABS.some((t) => t.id === initialTab)
     ? (initialTab as TabId)
     : "judgments";
   const [tab, setTab] = useState<TabId>(startTab);
   const [q, setQ] = useState(initialQuery);
-  const [filters, setFilters] = useState<Filters>({});
+  const [filters, setFilters] = useState<Filters>(() =>
+    filtersFromSearchParams(searchParams),
+  );
   const [data, setData] = useState<SearchResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [recentSearches, setRecentSearches] = useState<SearchHistoryEntry[]>(
+    [],
+  );
+  const [savingResultSet, setSavingResultSet] = useState(false);
+  const [showSaveResultSetForm, setShowSaveResultSetForm] = useState(false);
+  const [resultSetName, setResultSetName] = useState("");
+  const [saveResultSetMessage, setSaveResultSetMessage] = useState<
+    string | null
+  >(null);
   const seq = useRef(0);
+  const lastRecorded = useRef("");
+  const { data: session } = authClient.useSession();
+  const isSignedIn = Boolean(session?.user);
 
   function selectTab(next: TabId) {
     if (next === tab) return;
@@ -114,6 +187,17 @@ export function SearchExplorer({
     setData(null);
     setError(null);
   }
+
+  useEffect(() => {
+    const params = buildSearchParams(tab, q, filters);
+    const next = `/?${params.toString()}`;
+    if (
+      window.location.pathname === "/" &&
+      `${window.location.pathname}${window.location.search}` !== next
+    ) {
+      router.replace(next, { scroll: false });
+    }
+  }, [tab, q, filters, router]);
 
   useEffect(() => {
     const query = q.trim();
@@ -151,11 +235,127 @@ export function SearchExplorer({
     };
   }, [q, tab, filters]);
 
+  useEffect(() => {
+    if (!isSignedIn) {
+      setRecentSearches([]);
+      return;
+    }
+    let cancelled = false;
+    fetch("/api/search-history?limit=10")
+      .then(async (res) =>
+        res.ok
+          ? ((await res.json()) as { searches?: SearchHistoryEntry[] })
+          : null,
+      )
+      .then((payload) => {
+        if (!cancelled) setRecentSearches(payload?.searches ?? []);
+      })
+      .catch(() => {
+        if (!cancelled) setRecentSearches([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [isSignedIn]);
+
   const ranked = useMemo(
     () => rerankResults(tab, data?.results ?? [], data?.query ?? ""),
     [tab, data],
   );
+  const currentSnapshot = useMemo(
+    () => buildSnapshot(tab, ranked, data?.query ?? q.trim(), filters),
+    [tab, ranked, data?.query, q, filters],
+  );
   const hasQuery = q.trim().length >= MIN_CHARS;
+
+  const recordCurrentSearch = useCallback(async () => {
+    if (!isSignedIn || !data || error || data.query.trim().length < MIN_CHARS) {
+      return;
+    }
+    const signature = JSON.stringify({
+      tab,
+      query: data.query,
+      filters,
+      count: data.count,
+    });
+    if (signature === lastRecorded.current) return;
+    lastRecorded.current = signature;
+    const res = await fetch("/api/search-history", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        tab,
+        query: data.query,
+        filters,
+        resultCount: data.count,
+        topResults: currentSnapshot.slice(0, 10),
+      }),
+    }).catch(() => null);
+    if (!res?.ok) {
+      lastRecorded.current = "";
+      return;
+    }
+
+    const searchesRes = await fetch("/api/search-history?limit=10").catch(
+      () => null,
+    );
+    if (!searchesRes?.ok) return;
+    const searches = (await searchesRes.json().catch(() => null)) as {
+      searches?: SearchHistoryEntry[];
+    } | null;
+    setRecentSearches(searches?.searches ?? []);
+  }, [isSignedIn, data, error, tab, filters, currentSnapshot]);
+
+  function openSaveResultSetForm() {
+    if (!data) return;
+    setResultSetName(
+      `${TABS.find((t) => t.id === tab)?.label ?? "Search"}: ${data.query}`.slice(
+        0,
+        80,
+      ),
+    );
+    setSaveResultSetMessage(null);
+    setShowSaveResultSetForm(true);
+  }
+
+  async function handleSaveResultSet() {
+    if (!data || currentSnapshot.length === 0 || savingResultSet) return;
+    const name = resultSetName.trim();
+    if (!name) {
+      setSaveResultSetMessage("Please name this result set.");
+      return;
+    }
+    setSavingResultSet(true);
+    setSaveResultSetMessage(null);
+    try {
+      const res = await fetch("/api/result-sets", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name,
+          tab,
+          query: data.query,
+          filters,
+          resultCount: data.count,
+          results: currentSnapshot.slice(0, 50),
+        }),
+      });
+      if (res.status === 401) {
+        setSaveResultSetMessage("Sign in again to save result sets.");
+        return;
+      }
+      if (!res.ok) throw new Error("Unable to save result set");
+      setShowSaveResultSetForm(false);
+      setResultSetName("");
+      setSaveResultSetMessage("Result set saved. Compare it from Saved.");
+    } catch {
+      setSaveResultSetMessage(
+        "Could not save this result set. Please try again.",
+      );
+    } finally {
+      setSavingResultSet(false);
+    }
+  }
 
   return (
     <section className="w-full">
@@ -165,6 +365,7 @@ export function SearchExplorer({
           value={q}
           onChange={(e) => setQ(e.target.value)}
           placeholder={PLACEHOLDERS[tab]}
+          aria-label={`Search ${TABS.find((t) => t.id === tab)?.label ?? "corpus"}`}
           autoComplete="off"
           spellCheck={false}
           className="h-14 w-full rounded-full border border-border bg-surface pl-13 pr-13 text-base text-foreground shadow-[0_1px_6px_rgba(32,33,36,0.12)] outline-none transition-shadow placeholder:text-muted-2 hover:shadow-[0_2px_10px_rgba(22,26,38,0.14)] focus:border-ring/40 focus:shadow-[0_2px_12px_rgba(41,98,255,0.22)]"
@@ -212,6 +413,51 @@ export function SearchExplorer({
         onClear={() => setFilters({})}
       />
 
+      {isSignedIn && recentSearches.length > 0 && (
+        <section className="mt-4 rounded-2xl border border-border bg-surface-2/40 px-4 py-3">
+          <div className="mb-2 flex items-center justify-between gap-3">
+            <h2 className="text-sm font-medium text-foreground">
+              Recent searches
+            </h2>
+            <button
+              type="button"
+              onClick={() => {
+                fetch("/api/search-history", { method: "DELETE" }).catch(
+                  () => undefined,
+                );
+                setRecentSearches([]);
+              }}
+              className="text-xs font-medium text-muted-2 transition-colors hover:text-accent"
+            >
+              Clear
+            </button>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {recentSearches.map((entry) => (
+              <button
+                key={entry.id}
+                type="button"
+                title={`${entry.resultCount} result${entry.resultCount === 1 ? "" : "s"}`}
+                onClick={() => {
+                  setTab(entry.tab);
+                  setQ(entry.query);
+                  setFilters(entry.filters);
+                  setData(null);
+                  setError(null);
+                }}
+                className="rounded-full border border-border bg-surface px-3 py-1.5 text-xs text-muted transition-colors hover:border-accent hover:text-accent"
+              >
+                <span className="font-medium">
+                  {TABS.find((t) => t.id === entry.tab)?.label}
+                </span>
+                <span className="mx-1 text-muted-2">·</span>
+                {entry.query}
+              </button>
+            ))}
+          </div>
+        </section>
+      )}
+
       <div className="mt-5">
         {hasQuery && error && (
           <div className="rounded-lg border border-border bg-surface p-5 text-sm text-muted">
@@ -220,15 +466,92 @@ export function SearchExplorer({
         )}
         {hasQuery && !error && data && (
           <>
-            <p className="mb-3 text-xs text-muted-2">
-              {data.count >= 20
-                ? "Top 20 results"
-                : `${data.count} result${data.count === 1 ? "" : "s"}`}{" "}
-              for{" "}
-              <span className="font-semibold text-muted">
-                &ldquo;{data.query}&rdquo;
-              </span>
-            </p>
+            <div className="mb-3 flex flex-col gap-3">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <p className="text-xs text-muted-2">
+                  {data.count >= 20
+                    ? "Top 20 results"
+                    : `${data.count} result${data.count === 1 ? "" : "s"}`}{" "}
+                  for{" "}
+                  <span className="font-semibold text-muted">
+                    &ldquo;{data.query}&rdquo;
+                  </span>
+                </p>
+                {isSignedIn ? (
+                  <button
+                    type="button"
+                    onClick={openSaveResultSetForm}
+                    disabled={currentSnapshot.length === 0}
+                    className="rounded-lg border border-accent/40 bg-accent-soft px-3 py-1.5 text-xs font-medium text-accent transition-colors hover:border-accent hover:bg-accent hover:text-primary-fg disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    Save result set
+                  </button>
+                ) : (
+                  <span className="flex flex-wrap items-center gap-1.5 text-xs text-muted-2">
+                    <span>To save and compare result sets,</span>
+                    <Link
+                      href="/sign-in?next=%2F"
+                      className="font-medium text-accent hover:underline"
+                    >
+                      sign in
+                    </Link>
+                    <span>or</span>
+                    <Link
+                      href="/sign-up?next=%2F"
+                      className="font-medium text-accent hover:underline"
+                    >
+                      create account
+                    </Link>
+                    <span>.</span>
+                  </span>
+                )}
+              </div>
+
+              {saveResultSetMessage && !showSaveResultSetForm && (
+                <div className="rounded-xl border border-border bg-surface-2/70 px-3 py-2 text-xs text-muted">
+                  {saveResultSetMessage}
+                </div>
+              )}
+
+              {showSaveResultSetForm && (
+                <form
+                  className="flex flex-wrap items-center gap-2 rounded-xl border border-border bg-surface-2/70 px-3 py-2 text-xs text-muted"
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    void handleSaveResultSet();
+                  }}
+                >
+                  <input
+                    value={resultSetName}
+                    onChange={(event) => setResultSetName(event.target.value)}
+                    className="h-8 min-w-64 rounded-lg border border-border bg-surface px-2 text-xs text-foreground outline-none focus:border-ring"
+                    aria-label="Result set name"
+                  />
+                  <button
+                    type="submit"
+                    disabled={savingResultSet}
+                    className="rounded-lg border border-accent/40 bg-accent-soft px-3 py-1.5 text-xs font-medium text-accent transition-colors hover:border-accent hover:bg-accent hover:text-primary-fg disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {savingResultSet ? "Saving…" : "Save"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowSaveResultSetForm(false);
+                      setSaveResultSetMessage(null);
+                    }}
+                    className="px-2 py-1 text-xs font-medium text-muted-2 transition-colors hover:text-foreground"
+                  >
+                    Cancel
+                  </button>
+                  {saveResultSetMessage && (
+                    <span className="basis-full text-muted">
+                      {saveResultSetMessage}
+                    </span>
+                  )}
+                </form>
+              )}
+            </div>
             {data.results.length === 0 ? (
               <div className="rounded-lg border border-dashed border-border-strong bg-surface p-8 text-center text-sm text-muted">
                 No matches. Try broader keywords or remove a filter.
@@ -245,7 +568,11 @@ export function SearchExplorer({
                       tab={tab}
                       hit={hit}
                       query={data.query}
+                      filters={filters}
                       fraction={relevance}
+                      onBeforeNavigate={
+                        isSignedIn ? recordCurrentSearch : undefined
+                      }
                     />
                   </li>
                 ))}
@@ -429,14 +756,19 @@ function ResultCard({
   tab,
   hit,
   query,
+  filters,
   fraction,
+  onBeforeNavigate,
 }: {
   tab: TabId;
   hit: SearchHit;
   query: string;
+  filters: Filters;
   fraction: number;
+  onBeforeNavigate?: () => Promise<void>;
 }) {
-  const href = detailHref(tab, hit, query);
+  const router = useRouter();
+  const href = detailHref(tab, hit, query, filters);
   const title = cardTitle(tab, hit);
   const meta = cardMeta(tab, hit);
 
@@ -468,23 +800,168 @@ function ResultCard({
     </article>
   );
 
-  return href ? (
-    <Link href={href} aria-label={title} className="block">
+  if (!href) return inner;
+
+  if (isExternalHref(href)) {
+    return (
+      <a
+        href={href}
+        aria-label={title}
+        className="block"
+        target="_blank"
+        rel="noopener noreferrer"
+        onClick={() => {
+          if (onBeforeNavigate) void onBeforeNavigate();
+        }}
+      >
+        {inner}
+      </a>
+    );
+  }
+
+  return (
+    <Link
+      href={href}
+      aria-label={title}
+      className="block"
+      onClick={async (event) => {
+        if (event.defaultPrevented || !onBeforeNavigate) return;
+        if (
+          event.button !== 0 ||
+          event.metaKey ||
+          event.ctrlKey ||
+          event.shiftKey ||
+          event.altKey
+        ) {
+          void onBeforeNavigate();
+          return;
+        }
+        event.preventDefault();
+        try {
+          await onBeforeNavigate();
+        } finally {
+          router.push(href);
+        }
+      }}
+      onAuxClick={(event) => {
+        if (event.defaultPrevented || event.button !== 1 || !onBeforeNavigate) {
+          return;
+        }
+        void onBeforeNavigate();
+      }}
+    >
       {inner}
     </Link>
-  ) : (
-    inner
   );
 }
 
-function detailHref(tab: TabId, hit: SearchHit, query: string): string | null {
-  // Carry the search query so the detail page can highlight and jump to matches.
-  const qs = query ? `?q=${encodeURIComponent(query)}` : "";
-  if (tab === "judgments" && typeof hit.citation === "string")
-    return `/judgment/${encodeURIComponent(hit.citation)}${qs}`;
-  if (tab === "statutes" && typeof hit.act_id === "string")
-    return `/statute/${encodeURIComponent(hit.act_id)}`;
-  return null;
+function detailHref(
+  tab: TabId,
+  hit: SearchHit,
+  query: string,
+  filters: Filters,
+): string | null {
+  const returnTo = `/?${buildSearchParams(tab, query, filters).toString()}`;
+  const qs = new URLSearchParams();
+  if (query) qs.set("q", query);
+  qs.set("returnTo", returnTo);
+  const suffix = `?${qs.toString()}`;
+  if (tab === "judgments" && typeof hit.citation === "string") {
+    return `/judgment/${encodeURIComponent(hit.citation)}${suffix}`;
+  }
+  if (tab === "statutes" && typeof hit.act_id === "string") {
+    return `/statute/${encodeURIComponent(hit.act_id)}${suffix}`;
+  }
+
+  const id = resultDetailId(tab, hit);
+  if (!id) return null;
+
+  qs.set("title", cardTitle(tab, hit));
+  if (hit.snippet) qs.set("snippet", String(hit.snippet));
+  const meta = detailMeta(tab, hit);
+  if (meta.length > 0) qs.set("meta", JSON.stringify(meta));
+  return `/document/${encodeURIComponent(tab)}/${encodeURIComponent(id)}?${qs.toString()}`;
+}
+
+function resultDetailId(tab: TabId, hit: SearchHit): string | null {
+  const key =
+    tab === "hansard"
+      ? hit.speech_id
+      : tab === "bills"
+        ? hit.bill_id
+        : tab === "subsidiary"
+          ? hit.sl_id
+          : tab === "practice"
+            ? hit.pd_id
+            : null;
+  return typeof key === "string" && key ? key : null;
+}
+
+function detailMeta(tab: TabId, hit: SearchHit): [string, string][] {
+  const out: [string, string][] = [];
+  const add = (label: string, value: unknown) => {
+    if (value !== undefined && value !== null && value !== "") {
+      out.push([label, String(value)]);
+    }
+  };
+
+  if (tab === "hansard") {
+    add("Speaker", hit.speaker);
+    add("Party", hit.party);
+    add("Constituency", hit.constituency);
+    add("Date", hit.date);
+  } else if (tab === "bills") {
+    add("Bill number", hit.bill_number);
+    add("Year", hit.year);
+    add("Status", hit.status);
+    add("Introduced", hit.introduced_date);
+  } else if (tab === "subsidiary") {
+    add("Parent Act", hit.parent_act_id);
+    add("Number", hit.sl_number);
+    add("Date", hit.doc_date);
+  } else if (tab === "practice") {
+    add("Court", hit.court);
+    add("Number", hit.pd_number);
+    add("Effective", hit.effective_date);
+  }
+
+  return out;
+}
+
+function isExternalHref(href: string): boolean {
+  return /^https?:\/\//i.test(href);
+}
+
+function buildSnapshot(
+  tab: TabId,
+  ranked: { hit: SearchHit; relevance: number }[],
+  query: string,
+  filters: Filters,
+): ResultSnapshotItem[] {
+  return ranked.slice(0, 50).map(({ hit, relevance }, index) => {
+    const title = cardTitle(tab, hit);
+    const path =
+      detailHref(tab, hit, query, filters) ??
+      `/?${buildSearchParams(tab, query, filters).toString()}`;
+    const citation =
+      typeof hit.citation === "string" ? hit.citation : undefined;
+    const reference = typeof hit.act_id === "string" ? hit.act_id : undefined;
+    const id =
+      citation ??
+      reference ??
+      (typeof hit.id === "string" ? hit.id : undefined) ??
+      (typeof hit.url === "string" ? hit.url : undefined) ??
+      `${tab}:${title}`;
+    return {
+      id,
+      rank: index + 1,
+      title,
+      path,
+      citation,
+      reference,
+      score: Number.isFinite(relevance) ? relevance : undefined,
+    };
+  });
 }
 
 function cardTitle(tab: TabId, hit: SearchHit): string {
@@ -542,7 +1019,9 @@ function cardMeta(tab: TabId, hit: SearchHit): MetaItem[] {
     if (hit.date) text("date", hit.date);
   } else if (tab === "bills") {
     if (hit.session) tag("session", String(hit.session));
-    if (hit.status) text("status", hit.status);
+    if (hit.status && String(hit.status).toLowerCase() !== "introduced") {
+      text("status", hit.status);
+    }
   }
   return out;
 }

@@ -5,6 +5,8 @@ export interface Block {
   body: string;
   sectionId?: string;
   id?: string;
+  startOffset?: number;
+  endOffset?: number;
 }
 
 export interface DocSection {
@@ -78,12 +80,34 @@ export function parseBlocks(text: string): Block[] {
   const seen = new Map<string, number>();
   const headingSeen = new Map<string, number>();
   const paragraphSeen = new Map<string, number>();
+  const rawBlocks: { raw: string; startOffset: number; endOffset: number }[] =
+    [];
+  const separator = /\n[^\S\n]*\n+/g;
+  let start = 0;
+  let match = separator.exec(text);
+  while (match !== null) {
+    rawBlocks.push({
+      raw: text.slice(start, match.index),
+      startOffset: start,
+      endOffset: match.index,
+    });
+    start = match.index + match[0].length;
+    match = separator.exec(text);
+  }
+  rawBlocks.push({
+    raw: text.slice(start),
+    startOffset: start,
+    endOffset: text.length,
+  });
 
-  return text
-    .split(/\n[^\S\n]*\n+/)
-    .map((raw) => raw.replace(/\s*\n\s*/g, " ").trim())
-    .filter(Boolean)
-    .map((body): Block => {
+  return rawBlocks
+    .map(({ raw, startOffset, endOffset }) => ({
+      body: raw.replace(/\s*\n\s*/g, " ").trim(),
+      startOffset,
+      endOffset,
+    }))
+    .filter(({ body }) => Boolean(body))
+    .map(({ body, startOffset, endOffset }): Block => {
       const prefix = body.slice(0, 40);
       const occ = seen.get(prefix) ?? 0;
       seen.set(prefix, occ + 1);
@@ -100,6 +124,8 @@ export function parseBlocks(text: string): Block[] {
           num: numbered[1],
           body: numbered[2],
           id: paragraphOcc === 0 ? base : `${base}-${paragraphOcc + 1}`,
+          startOffset,
+          endOffset,
         };
       }
 
@@ -112,10 +138,12 @@ export function parseBlocks(text: string): Block[] {
           kind: "heading",
           body,
           sectionId: headingOcc === 0 ? base : `${base}-${headingOcc + 1}`,
+          startOffset,
+          endOffset,
         };
       }
 
-      return { key, kind: "para", body };
+      return { key, kind: "para", body, startOffset, endOffset };
     });
 }
 

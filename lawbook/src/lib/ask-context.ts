@@ -7,7 +7,11 @@
  * context-less chat rather than 404-ing — /ask works on its own too).
  */
 import type { ChatContext } from "@/lib/agent";
-import { sgjudge } from "@/lib/sgjudge";
+import {
+  sgjudge,
+  sortStatuteSections,
+  statuteSectionText,
+} from "@/lib/sgjudge";
 
 /** Cap the excerpt so the preamble doesn't dominate the context window. */
 const MAX_EXCERPT = 6000;
@@ -56,10 +60,10 @@ export async function loadChatContext(
       { cache: "no-store" },
     );
     const title = s.short_title || cite;
-    const sections = (s.sections ?? [])
+    const sections = sortStatuteSections(s.sections)
       .map((sec) => {
         const h = sec.heading ? ` — ${sec.heading}` : "";
-        return `## ${sec.section_no}${h}\n${sec.text ?? ""}`;
+        return `## ${sec.section_no}${h}\n${statuteSectionText(sec)}`;
       })
       .join("\n\n");
     return {

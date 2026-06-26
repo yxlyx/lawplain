@@ -1,12 +1,14 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { CopyActions } from "@/components/CopyActions";
 import {
   ArrowLeftIcon,
   ExternalLinkIcon,
   SparkleIcon,
 } from "@/components/icons";
 import { JudgmentBody } from "@/components/JudgmentBody";
+import { SavedAuthorityButton } from "@/components/SavedAuthorityButton";
 import {
   ApiError,
   type JudgmentDetail,
@@ -55,9 +57,12 @@ export default async function JudgmentPage({
   searchParams,
 }: {
   params: Promise<{ citation: string }>;
-  searchParams: Promise<{ q?: string }>;
+  searchParams: Promise<{ q?: string; returnTo?: string }>;
 }) {
-  const [{ citation }, { q }] = await Promise.all([params, searchParams]);
+  const [{ citation }, { q, returnTo }] = await Promise.all([
+    params,
+    searchParams,
+  ]);
   const decoded = decodeURIComponent(citation);
   const j = await load(decoded);
 
@@ -66,6 +71,16 @@ export default async function JudgmentPage({
   const counsel = parseJsonField<CounselEntry[]>(j.counsel_json, []);
   const counselGroups = groupCounsel(counsel);
   const initialLoaded = (j.body_offset ?? 0) + (j.body_text?.length ?? 0);
+  const title = (j.title as string) || j.neutral_cite || decoded;
+  const source = {
+    kind: "judgment" as const,
+    title,
+    citation: j.neutral_cite || j.citation || decoded,
+    court: j.court ? courtName(j.court) : undefined,
+    date: j.decision_date ? formatDate(j.decision_date) : undefined,
+    year: j.year,
+  };
+  const pagePath = `/judgment/${encodeURIComponent(decoded)}`;
 
   const metaRows: { label: string; value: React.ReactNode }[] = [];
   if (j.court) metaRows.push({ label: "Tribunal", value: courtName(j.court) });
@@ -95,9 +110,9 @@ export default async function JudgmentPage({
     });
 
   return (
-    <main className="mx-auto w-full max-w-3xl px-5 py-10 sm:px-8">
+    <main className="mx-auto w-full max-w-[calc(68ch+16rem+1.5rem+4rem)] px-5 py-10 sm:px-8">
       <Link
-        href="/?tab=judgments"
+        href={safeReturnTo(returnTo) ?? "/?tab=judgments"}
         className="mb-6 inline-flex items-center gap-1.5 text-sm font-medium text-muted transition-colors hover:text-foreground"
       >
         <ArrowLeftIcon className="h-4 w-4" />
@@ -116,7 +131,7 @@ export default async function JudgmentPage({
           )}
         </div>
         <h1 className="font-serif text-2xl font-medium leading-tight tracking-tight text-foreground sm:text-3xl">
-          {(j.title as string) || j.neutral_cite || decoded}
+          {title}
         </h1>
 
         {metaRows.length > 0 && (
@@ -165,6 +180,15 @@ export default async function JudgmentPage({
             </a>
           )}
 
+          <CopyActions source={source} path={pagePath} />
+
+          <SavedAuthorityButton
+            docType="judgment"
+            docId={decoded}
+            title={title}
+            path={pagePath}
+          />
+
           <Link
             href={`/ask?cite=${encodeURIComponent(decoded)}&kind=judgment`}
             className="inline-flex items-center gap-1.5 rounded-lg border border-accent/40 bg-accent-soft px-3.5 py-2 text-sm font-medium text-accent transition-colors hover:border-accent hover:bg-accent hover:text-primary-fg"
@@ -182,6 +206,7 @@ export default async function JudgmentPage({
           initialLoaded={initialLoaded}
           total={j.body_length ?? initialLoaded}
           query={q ?? ""}
+          initialSections={j.sections}
         />
       </section>
     </main>
@@ -209,6 +234,11 @@ const COURT_NAMES: Record<string, string> = {
 
 function courtName(code: string): string {
   return COURT_NAMES[code] ? `${COURT_NAMES[code]} (${code})` : code;
+}
+
+function safeReturnTo(value?: string): string | null {
+  if (!value || !value.startsWith("/") || value.startsWith("//")) return null;
+  return value;
 }
 
 function formatDate(iso: string): string {
@@ -250,16 +280,14 @@ function conciseSearchTerms(term: string): string[] {
 
   const terms: string[] = [];
 
-  const liabilityMatch = normalized.match(
-    /^liability in (?<field>.+?) for (?<loss>.+)$/i,
-  );
-  if (liabilityMatch?.groups?.field && liabilityMatch.groups.loss) {
-    terms.push(`liability in ${liabilityMatch.groups.field.trim()}`);
-    terms.push(liabilityMatch.groups.loss.trim());
+  const liabilityMatch = normalized.match(/^liability in (.+?) for (.+)$/i);
+  if (liabilityMatch?.[1] && liabilityMatch[2]) {
+    terms.push(`liability in ${liabilityMatch[1].trim()}`);
+    terms.push(liabilityMatch[2].trim());
   }
 
-  const dueToMatch = normalized.match(/\bdue to (?<reason>.+)$/i);
-  if (dueToMatch?.groups?.reason) terms.push(dueToMatch.groups.reason.trim());
+  const dueToMatch = normalized.match(/\bdue to (.+)$/i);
+  if (dueToMatch?.[1]) terms.push(dueToMatch[1].trim());
 
   for (const phrase of [
     "pure economic loss",

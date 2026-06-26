@@ -14,13 +14,47 @@ import { useSectionEngagement } from "@/hooks/useSectionEngagement";
 import {
   type Block,
   buildRegex,
-  extractSections,
+  type DocSection,
   parseBlocks,
   parseTerms,
+  slugify,
 } from "@/lib/sections";
-import { ApiError, sgjudge } from "@/lib/sgjudge";
+import { ApiError, type JudgmentSection, sgjudge } from "@/lib/sgjudge";
 
 const PAGE = 60000;
+
+interface RenderSection extends DocSection {
+  startOffset: number;
+  endOffset?: number;
+}
+
+function normalizeBackendSections(
+  sections?: JudgmentSection[],
+): RenderSection[] {
+  const seen = new Map<string, number>();
+  const normalized: RenderSection[] = [];
+
+  for (const [index, section] of (sections ?? []).entries()) {
+    const label = section.label.replace(/\s+/g, " ").trim();
+    if (!label || typeof section.start_offset !== "number") continue;
+
+    const rawId =
+      typeof section.id === "string" && section.id.trim()
+        ? section.id.trim()
+        : slugify(label) || `section-${index + 1}`;
+    const occ = seen.get(rawId) ?? 0;
+    seen.set(rawId, occ + 1);
+
+    normalized.push({
+      id: occ === 0 ? rawId : `${rawId}-${occ + 1}`,
+      label,
+      startOffset: section.start_offset,
+      endOffset: section.end_offset,
+    });
+  }
+
+  return normalized.sort((a, b) => a.startOffset - b.startOffset);
+}
 
 interface Suggestion {
   count: number;
@@ -38,6 +72,7 @@ export function JudgmentBody({
   initialLoaded,
   total,
   query,
+  initialSections,
   mockSuggestions,
 }: {
   citation: string;
@@ -48,6 +83,7 @@ export function JudgmentBody({
   initialLoaded: number;
   total: number;
   query: string;
+  initialSections?: JudgmentSection[];
   mockSuggestions?: Record<string, Suggestion>;
 }) {
   const [text, setText] = useState(initialText);
@@ -70,7 +106,14 @@ export function JudgmentBody({
   const terms = useMemo(() => parseTerms(query), [query]);
   const regex = useMemo(() => buildRegex(terms), [terms]);
   const blocks = useMemo(() => parseBlocks(text), [text]);
-  const sections = useMemo(() => extractSections(text), [text]);
+  const sections = useMemo(
+    () => normalizeBackendSections(initialSections),
+    [initialSections],
+  );
+  const loadedSections = useMemo(
+    () => sections.filter((section) => section.startOffset < text.length),
+    [sections, text.length],
+  );
 
   const matchCount = useMemo(() => {
     if (!regex) return 0;
@@ -210,7 +253,7 @@ export function JudgmentBody({
   };
 
   const navItems = useMemo<SectionNavItem[]>(() => {
-    return sections.map((section) => {
+    return loadedSections.map((section) => {
       const suggestion = suggestions.get(section.id);
       return suggestion
         ? {
@@ -221,7 +264,7 @@ export function JudgmentBody({
           }
         : { id: section.id, label: section.label };
     });
-  }, [sections, suggestions]);
+  }, [loadedSections, suggestions]);
 
   const searching =
     terms.length > 0 && matchCount === 0 && (loading || hasMore);
@@ -293,7 +336,7 @@ export function JudgmentBody({
           ref={containerRef}
           className="flex max-w-[68ch] flex-col gap-4 font-serif text-[17px] leading-7 text-foreground/90"
         >
-          {renderJudgment(blocks, regex)}
+          {renderJudgment(blocks, regex, loadedSections)}
         </article>
 
         {error && <p className="mt-4 text-sm text-accent">{error}</p>}
@@ -366,47 +409,85 @@ function highlight(
   return out;
 }
 
-function renderJudgment(blocks: Block[], regex: RegExp | null) {
+function renderJudgment(
+  blocks: Block[],
+  regex: RegExp | null,
+  sections: RenderSection[],
+) {
+  const rendered: ReactNode[] = [];
+  let sectionIndex = 0;
   let currentSectionId: string | undefined;
 
-  return blocks.map((b) => {
-    if (b.kind === "heading") {
-      currentSectionId = b.sectionId;
-      return (
-        <h3
-          key={b.key}
-          id={b.sectionId}
-          data-section-id={b.sectionId}
-          className="scroll-mt-24 pt-3 font-sans text-xs font-semibold uppercase tracking-[0.14em] text-accent"
-        >
-          {highlight(b.body, regex, b.key)}
-        </h3>
+  for (const block of blocks) {
+    const anchors: ReactNode[] = [];
+    const blockEnd = block.endOffset ?? Number.MAX_SAFE_INTEGER;
+
+    while (
+      sectionIndex < sections.length &&
+      sections[sectionIndex].startOffset <= blockEnd
+    ) {
+      const section = sections[sectionIndex];
+      currentSectionId = section.id;
+      anchors.push(
+        <span
+          key={`anchor-${section.id}`}
+          id={section.id}
+          data-section-id={section.id}
+          data-section-label={section.label}
+          aria-hidden="true"
+          className="block h-px scroll-mt-24"
+        />,
       );
+      sectionIndex += 1;
     }
-    if (b.kind === "numbered") {
-      return (
-        <p
-          key={b.key}
-          id={b.id}
-          data-section-id={currentSectionId}
-          className="flex scroll-mt-24 gap-3"
-        >
-          <span className="w-7 shrink-0 select-none text-right font-sans text-sm font-medium tabular-nums text-muted-2">
-            {b.num}
-          </span>
-          <span className="flex-1">{highlight(b.body, regex, b.key)}</span>
-        </p>
-      );
-    }
+
+    rendered.push(
+      <Fragment key={block.key}>
+        {anchors}
+        {renderBlock(block, regex, currentSectionId)}
+      </Fragment>,
+    );
+  }
+
+  return rendered;
+}
+
+function renderBlock(
+  b: Block,
+  regex: RegExp | null,
+  currentSectionId?: string,
+): ReactNode {
+  if (b.kind === "heading") {
     return (
-      <p
-        key={b.key}
-        id={b.id}
+      <h3
         data-section-id={currentSectionId}
-        className="scroll-mt-24 pl-10"
+        className="pt-3 font-sans text-xs font-semibold uppercase tracking-[0.14em] text-accent"
       >
         {highlight(b.body, regex, b.key)}
+      </h3>
+    );
+  }
+  if (b.kind === "numbered") {
+    return (
+      <p
+        id={b.id}
+        data-section-id={currentSectionId}
+        className="flex scroll-mt-24 gap-3"
+      >
+        <span className="w-7 shrink-0 select-none text-right font-sans text-sm font-medium tabular-nums text-muted-2">
+          {b.num}
+        </span>
+        <span className="flex-1">{highlight(b.body, regex, b.key)}</span>
       </p>
     );
-  });
+  }
+  return (
+    <p
+      id={b.id}
+      data-section-id={currentSectionId}
+      className="scroll-mt-24 pl-10"
+    >
+      {highlight(b.body, regex, b.key)}
+    </p>
+  );
 }

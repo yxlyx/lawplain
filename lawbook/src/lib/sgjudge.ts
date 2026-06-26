@@ -42,6 +42,15 @@ export interface JudgmentHit extends SearchHit {
   decision_date?: string;
 }
 
+export interface JudgmentSection {
+  id?: string;
+  label: string;
+  level?: number;
+  start_offset?: number;
+  end_offset?: number;
+  [k: string]: unknown;
+}
+
 export interface JudgmentDetail {
   citation: string;
   title?: string;
@@ -57,6 +66,7 @@ export interface JudgmentDetail {
   body_length: number;
   body_offset: number;
   body_text: string;
+  sections?: JudgmentSection[];
   url?: string; // official eLitigation source
   [k: string]: unknown;
 }
@@ -72,6 +82,7 @@ export interface StatuteSection {
   section_no: string;
   heading?: string;
   text?: string;
+  body_text?: string;
   [k: string]: unknown;
 }
 
@@ -258,4 +269,52 @@ export function relevanceFraction(score: number, scores: number[]): number {
   // best -> 1, worst -> ~0.15 (keep a minimum visible sliver)
   const t = (worst - score) / (worst - best);
   return 0.15 + 0.85 * t;
+}
+
+export function statuteSectionText(section: StatuteSection): string {
+  const text = section.text?.trim() ? section.text : undefined;
+  const bodyText = section.body_text?.trim() ? section.body_text : undefined;
+  return text ?? bodyText ?? "";
+}
+
+type SectionNoParts = {
+  numeric: boolean;
+  number: number;
+  suffix: string;
+  rest: string;
+};
+
+function sectionNoParts(sectionNo: string): SectionNoParts {
+  const normalized = sectionNo.trim().toUpperCase();
+  const match = normalized.match(/^(\d+)([A-Z]*)\b(.*)$/);
+  if (!match) return { numeric: false, number: 0, suffix: "", rest: "" };
+  return {
+    numeric: true,
+    number: Number(match[1]),
+    suffix: match[2] ?? "",
+    rest: match[3] ?? "",
+  };
+}
+
+export function compareStatuteSections(
+  a: StatuteSection,
+  b: StatuteSection,
+): number {
+  const aParts = sectionNoParts(a.section_no);
+  const bParts = sectionNoParts(b.section_no);
+  if (!aParts.numeric && !bParts.numeric) return 0;
+  if (!aParts.numeric) return 1;
+  if (!bParts.numeric) return -1;
+  return (
+    aParts.number - bParts.number ||
+    aParts.suffix.localeCompare(bParts.suffix, undefined, { numeric: true }) ||
+    aParts.rest.localeCompare(bParts.rest, undefined, { numeric: true }) ||
+    a.section_no.localeCompare(b.section_no, undefined, { numeric: true })
+  );
+}
+
+export function sortStatuteSections(
+  sections: StatuteSection[] = [],
+): StatuteSection[] {
+  return [...sections].sort(compareStatuteSections);
 }
