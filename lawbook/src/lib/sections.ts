@@ -80,6 +80,7 @@ export function parseBlocks(text: string): Block[] {
   const seen = new Map<string, number>();
   const headingSeen = new Map<string, number>();
   const paragraphSeen = new Map<string, number>();
+  let lastParagraph: number | null = null;
   const rawBlocks: { raw: string; startOffset: number; endOffset: number }[] =
     [];
   const separator = /\n[^\S\n]*\n+/g;
@@ -115,18 +116,27 @@ export function parseBlocks(text: string): Block[] {
 
       const numbered = body.match(/^(\d+)[.)]?\s+([\s\S]+)$/);
       if (numbered) {
-        const base = `p-${slugify(numbered[1]) || numbered[1]}`;
-        const paragraphOcc = paragraphSeen.get(base) ?? 0;
-        paragraphSeen.set(base, paragraphOcc + 1);
-        return {
-          key,
-          kind: "numbered",
-          num: numbered[1],
-          body: numbered[2],
-          id: paragraphOcc === 0 ? base : `${base}-${paragraphOcc + 1}`,
-          startOffset,
-          endOffset,
-        };
+        const n = Number(numbered[1]);
+        // Only treat a leading number as a judgment paragraph number when it
+        // continues the running sequence. Quoted statutory provisions (e.g.
+        // "118 The court may…" after paragraph 12) would otherwise hijack the
+        // gutter and make the visible numbering jump — see issue #69.
+        const sequential = lastParagraph === null || n === lastParagraph + 1;
+        if (sequential) {
+          lastParagraph = n;
+          const base = `p-${slugify(numbered[1]) || numbered[1]}`;
+          const paragraphOcc = paragraphSeen.get(base) ?? 0;
+          paragraphSeen.set(base, paragraphOcc + 1);
+          return {
+            key,
+            kind: "numbered",
+            num: numbered[1],
+            body: numbered[2],
+            id: paragraphOcc === 0 ? base : `${base}-${paragraphOcc + 1}`,
+            startOffset,
+            endOffset,
+          };
+        }
       }
 
       if (isLikelyHeading(body)) {

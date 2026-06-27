@@ -1,6 +1,9 @@
 .DS_Store
 codedb.snapshot
 
+# local dev credentials for kuri/browser testing — never commit
+KURI_CREDENTIALS.md
+
 # codegraff / harness agent artifacts (session data, traces — never commit)
 harness.trace.jsonl
 harness.trajectory.jsonl

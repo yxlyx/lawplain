@@ -115,6 +115,29 @@ export interface StatsResponse {
   judgments_by_court: { court: string; n: number }[];
 }
 
+/** Generic full-detail document (hansard / bills / subsidiary / practice). */
+export interface DocumentDetail {
+  body_text?: string;
+  body_offset?: number;
+  body_length?: number;
+  url?: string;
+  [k: string]: unknown;
+}
+
+/** UI document kind -> backend resource path segment. */
+export const DOCUMENT_KIND_PATHS: Record<string, string> = {
+  hansard: "hansard",
+  bills: "bills",
+  subsidiary: "subsidiary-legislation",
+  practice: "practice-directions",
+};
+
+export type DocumentKind = keyof typeof DOCUMENT_KIND_PATHS;
+
+export function isDocumentKind(value: string): value is DocumentKind {
+  return value in DOCUMENT_KIND_PATHS;
+}
+
 /* ------------------------------------------------------------------ */
 /* Core fetcher                                                        */
 /* ------------------------------------------------------------------ */
@@ -238,6 +261,29 @@ export const sgjudge = {
     init?: RequestInit,
   ) =>
     get<SearchResponse>("/v1/practice-directions/search", { q, ...opts }, init),
+
+  getDocument: (
+    kind: DocumentKind,
+    id: string,
+    opts: {
+      include_body?: boolean;
+      body_offset?: number;
+      body_length?: number;
+    } = {},
+    init?: RequestInit,
+  ) => {
+    const resource = DOCUMENT_KIND_PATHS[kind];
+    if (!resource) {
+      return Promise.reject(
+        new ApiError(404, `unknown document kind: ${kind}`),
+      );
+    }
+    return get<DocumentDetail>(
+      `/v1/${resource}/${encodeURIComponent(id)}`,
+      opts as Params,
+      init,
+    );
+  },
 
   stats: (init?: RequestInit) => get<StatsResponse>("/v1/stats", {}, init),
 };

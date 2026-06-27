@@ -8,6 +8,12 @@
     "directory": ".open-next/assets",
     "binding": "ASSETS"
   },
+  "routes": [
+    { "pattern": "lawplain.com", "custom_domain": true }
+  ],
+  "vars": {
+    "BETTER_AUTH_URL": "https://lawplain.com"
+  },
   "services": [
     {
       "binding": "WORKER_SELF_REFERENCE",
@@ -18,7 +24,7 @@
     {
       "binding": "AUTH_DB",
       "database_name": "lawbook-auth",
-      "database_id": "replace-with-d1-database-id",
+      "database_id": "bd213423-fa34-4bd2-9190-861b77853fd9",
       "migrations_dir": "migrations"
     }
   ]
