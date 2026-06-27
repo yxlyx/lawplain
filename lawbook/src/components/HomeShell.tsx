@@ -1,8 +1,12 @@
 "use client";
 
-import { type ReactNode, useEffect } from "react";
+import { type ReactNode, useEffect, useLayoutEffect, useRef } from "react";
 import { useChrome } from "@/components/chrome/ChromeContext";
 import { SearchExplorer } from "@/components/SearchExplorer";
+
+// useLayoutEffect on the client, useEffect on the server (avoids the SSR warning).
+const useIsoLayoutEffect =
+  typeof window !== "undefined" ? useLayoutEffect : useEffect;
 
 /**
  * Google-style home: the brand + search sit vertically centered when idle, and
@@ -22,11 +26,25 @@ export function HomeShell({
   initialQuery: string;
   stats?: ReactNode;
 }) {
-  const { searchActive: active, setSearchActive } = useChrome();
+  const { searchActive, setSearchActive } = useChrome();
   const ease = "duration-500 ease-[var(--ease-emphasized)]";
+  const initialActive = initialQuery.trim().length > 0;
+  const firstRender = useRef(true);
+  // First paint already reflects the URL query, so returning to a search (Back
+  // from a document) renders collapsed with no big-hero flash. Later renders
+  // follow the live state, so clearing the box still re-expands the hero.
+  const active = firstRender.current
+    ? searchActive || initialActive
+    : searchActive;
 
   // Leaving the home page (e.g. opening a result) must restore the top header.
   useEffect(() => () => setSearchActive(false), [setSearchActive]);
+
+  // Commit the real state before the first paint (drives the sidebar too).
+  useIsoLayoutEffect(() => {
+    firstRender.current = false;
+    setSearchActive(initialActive);
+  }, [initialActive, setSearchActive]);
 
   return (
     <div className="mx-auto flex min-h-0 w-full max-w-2xl flex-1 flex-col">
