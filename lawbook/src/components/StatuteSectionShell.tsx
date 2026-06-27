@@ -114,8 +114,8 @@ export function StatuteSectionShell({
     <div
       className={
         showSectionNav
-          ? "grid gap-6 lg:grid-cols-[minmax(0,68ch)_16rem] lg:items-start"
-          : "grid gap-6"
+          ? "grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,68ch)_16rem] lg:items-start"
+          : "grid grid-cols-1 gap-6"
       }
     >
       <div className="min-w-0">
