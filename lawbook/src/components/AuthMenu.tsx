@@ -32,7 +32,7 @@ export function AuthMenu() {
         </Link>
         <Link
           href={`/sign-up?next=${next}`}
-          className="rounded-lg bg-foreground px-3 py-1.5 text-sm font-medium text-primary-fg transition-opacity hover:opacity-90"
+          className="hidden rounded-lg bg-foreground px-3 py-1.5 text-sm font-medium text-primary-fg transition-opacity hover:opacity-90 sm:inline-block"
         >
           Create account
         </Link>

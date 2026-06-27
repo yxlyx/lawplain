@@ -109,7 +109,7 @@ export function AppShell({
                   }`}
                 >
                   <Icon className="h-4 w-4" />
-                  {tab.label}
+                  <span className="hidden sm:inline">{tab.label}</span>
                 </Link>
               );
             })}
