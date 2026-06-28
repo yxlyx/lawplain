@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono, Lora } from "next/font/google";
+import Link from "next/link";
 import { AnalyticsConsentBanner } from "@/components/AnalyticsConsentBanner";
 import { AppShell } from "@/components/AppShell";
 import { ChromeProvider } from "@/components/chrome/ChromeContext";
@@ -123,6 +124,17 @@ function SiteFooter() {
             read-only projection of the Singapore legal corpus.
           </span>
         </p>
+        <nav className="flex items-center gap-4">
+          <Link href="/faq" className="transition-colors hover:text-foreground">
+            FAQ &amp; Help
+          </Link>
+          <Link
+            href="/developers"
+            className="transition-colors hover:text-foreground"
+          >
+            API
+          </Link>
+        </nav>
         <p>
           Not legal advice. Data via{" "}
           <span className="font-mono">backend.lawplain.com</span>
