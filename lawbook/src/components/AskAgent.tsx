@@ -735,11 +735,6 @@ export function AskAgent({ initialContext }: AskAgentProps = {}) {
             phase: "error",
             error: err instanceof Error ? err.message : String(err),
           }));
-          try {
-            sessionStorage.removeItem("ask:activeRun");
-          } catch {
-            /* ignore */
-          }
         }
       } finally {
         const nextPrompt = queuedPromptRef.current;
