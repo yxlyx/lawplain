@@ -504,6 +504,8 @@ export async function* askLegalAgentSandboxed(
     let announcedAnswering = false;
     let exitCode: number | undefined;
     const seenTools = new Map<string, number>();
+    // Bare non-JSON lines graff writes to stdout (e.g. "api error: ...").
+    let rawNonJson = "";
 
     yield {
       type: "progress",
@@ -554,6 +556,11 @@ export async function* askLegalAgentSandboxed(
           try {
             ev = JSON.parse(line) as Event;
           } catch {
+            // graff prints bare (non-JSON) error lines to stdout before its
+            // JSON error event — keep them so failures aren't silent.
+            if (rawNonJson.length < 2000) {
+              rawNonJson += (rawNonJson ? "\n" : "") + line;
+            }
             nl = lineBuf.indexOf("\n");
             continue;
           }
@@ -639,21 +646,35 @@ export async function* askLegalAgentSandboxed(
     }
 
     if (signal?.aborted) return;
+    const sboxId = sid;
+    // graff writes auth/model errors to STDOUT (graff.out) with exit 0 and an
+    // empty stderr, so fall back through stdout for a non-blank message.
+    const failureDiag = async () =>
+      (
+        rawNonJson.trim() ||
+        stderr.trim() ||
+        ((await readSandboxFile(sboxId, "/tmp/graff.out")) ?? "").trim()
+      ).slice(0, 800);
+
     if (exitCode && exitCode !== 0) {
+      const diag = await failureDiag();
       yield {
         type: "error",
-        message: `sandboxed graff exited with ${exitCode}: ${stderr.trim().slice(0, 500)}`,
+        message: diag
+          ? `sandboxed graff exited with ${exitCode}: ${diag}`
+          : `sandboxed graff exited with ${exitCode}`,
       };
       return;
     }
     if (!sawTurn && streamedText) {
       finalText = streamedText;
     } else if (!sawTurn) {
+      const diag = await failureDiag();
       yield {
         type: "error",
-        message: stderr.trim()
-          ? `sandboxed graff ended before producing an answer: ${stderr.trim().slice(0, 500)}`
-          : "sandboxed graff ended before producing an answer",
+        message: diag
+          ? `sandboxed graff ended before producing an answer: ${diag}`
+          : "sandboxed graff ended before producing an answer (no output)",
       };
       return;
     }
