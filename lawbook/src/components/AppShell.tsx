@@ -45,7 +45,7 @@ export function AppShell({
   children: ReactNode;
   footer: ReactNode;
 }) {
-  const { searchActive } = useChrome();
+  const { searchActive, hideFooter } = useChrome();
   const pathname = usePathname();
   const [collapsed, setCollapsed] = useState(false);
 
@@ -185,7 +185,7 @@ export function AppShell({
         className={`flex min-h-0 flex-1 flex-col transition-[padding] ${EASE} ${contentPad}`}
       >
         <div className="flex min-h-0 flex-1">{children}</div>
-        {footer}
+        {!hideFooter && footer}
       </div>
     </>
   );
