@@ -342,7 +342,9 @@ export function AskAgent({ initialContext }: AskAgentProps = {}) {
   const queueingOpenRef = useRef(false);
   const queuedPromptRef = useRef<string | null>(null);
   const pendingSendAfterCleanupRef = useRef<string | null>(null);
-  const sendRef = useRef<((text: string) => Promise<void>) | null>(null);
+  const sendRef = useRef<
+    ((text: string, resumeRunId?: string) => Promise<void>) | null
+  >(null);
   const historyIndexRef = useRef(-1);
   const draftBeforeHistoryRef = useRef("");
   const msgId = useRef(0);
@@ -543,7 +545,7 @@ export function AskAgent({ initialContext }: AskAgentProps = {}) {
   }, [stop]);
 
   const send = useCallback(
-    async (text: string) => {
+    async (text: string, resumeRunId?: string) => {
       const q = text.trim();
       if (!q) return;
 
@@ -605,6 +607,16 @@ export function AskAgent({ initialContext }: AskAgentProps = {}) {
           .filter((m) => m.text.trim().length > 0)
           .slice(-12)
           .map((m) => ({ role: m.role, text: m.text.slice(0, 6000) }));
+        const runId = resumeRunId ?? crypto.randomUUID();
+        runIdRef.current = runId;
+        try {
+          sessionStorage.setItem(
+            "ask:activeRun",
+            JSON.stringify({ runId, question: q, startedAt }),
+          );
+        } catch {
+          // sessionStorage may be unavailable
+        }
         const res = await fetch("/api/ask", {
           method: "POST",
           headers: { "content-type": "application/json" },
@@ -613,6 +625,8 @@ export function AskAgent({ initialContext }: AskAgentProps = {}) {
             cite: pinnedContext?.citation,
             kind: pinnedContext?.kind,
             history,
+            runId,
+            from: 0,
           }),
           signal: ac.signal,
         });
@@ -693,11 +707,21 @@ export function AskAgent({ initialContext }: AskAgentProps = {}) {
                   phase: "done",
                   cost: { usd: ev.costUsd, tokens: ev.contextTokens },
                 }));
+                try {
+                  sessionStorage.removeItem("ask:activeRun");
+                } catch {
+                  /* ignore */
+                }
                 await reader.cancel().catch(() => {});
                 return;
               case "error":
                 queueingOpenRef.current = false;
                 patch((m) => ({ ...m, phase: "error", error: ev.message }));
+                try {
+                  sessionStorage.removeItem("ask:activeRun");
+                } catch {
+                  /* ignore */
+                }
                 await reader.cancel().catch(() => {});
                 return;
             }
@@ -711,6 +735,11 @@ export function AskAgent({ initialContext }: AskAgentProps = {}) {
             phase: "error",
             error: err instanceof Error ? err.message : String(err),
           }));
+          try {
+            sessionStorage.removeItem("ask:activeRun");
+          } catch {
+            /* ignore */
+          }
         }
       } finally {
         const nextPrompt = queuedPromptRef.current;
@@ -749,7 +778,33 @@ export function AskAgent({ initialContext }: AskAgentProps = {}) {
 
   // ── Saved threads: autosave each turn + resume from History ───────────
   const threadIdRef = useRef<string>("");
+  const runIdRef = useRef<string | null>(null);
   if (!threadIdRef.current) threadIdRef.current = crypto.randomUUID();
+
+  // Reconnect to a DO-hosted run still going after the user navigated away.
+  const reconnectedRef = useRef(false);
+  useEffect(() => {
+    if (reconnectedRef.current || !isSignedIn) return;
+    reconnectedRef.current = true;
+    if (messagesRef.current.length > 0) return;
+    try {
+      const raw = sessionStorage.getItem("ask:activeRun");
+      if (!raw) return;
+      const ar = JSON.parse(raw) as {
+        runId?: string;
+        question?: string;
+        startedAt?: number;
+      };
+      if (!ar.runId || !ar.question) return;
+      if (Date.now() - (ar.startedAt ?? 0) > 6 * 60 * 1000) {
+        sessionStorage.removeItem("ask:activeRun");
+        return;
+      }
+      void sendRef.current?.(ar.question, ar.runId);
+    } catch {
+      // ignore reconnect failures
+    }
+  }, [isSignedIn]);
 
   // Autosave the thread shortly after each turn settles (signed-in only).
   useEffect(() => {
@@ -804,6 +859,12 @@ export function AskAgent({ initialContext }: AskAgentProps = {}) {
     setInput("");
     clearQueuedPrompt();
     threadIdRef.current = crypto.randomUUID();
+    runIdRef.current = null;
+    try {
+      sessionStorage.removeItem("ask:activeRun");
+    } catch {
+      /* ignore */
+    }
   }, [clearDraft, clearQueuedPrompt]);
 
   const loadThread = useCallback(async (threadId: string) => {

@@ -1,7 +1,7 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "lawbook",
-  "main": ".open-next/worker.js",
+  "main": "worker.ts",
   "compatibility_date": "2025-01-01",
   "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
   "assets": {
@@ -20,6 +20,10 @@
       "service": "lawbook"
     }
   ],
+  "durable_objects": {
+    "bindings": [{ "name": "ASK_RUN_DO", "class_name": "AskRunDO" }]
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["AskRunDO"] }],
   "d1_databases": [
     {
       "binding": "AUTH_DB",

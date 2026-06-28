@@ -186,7 +186,7 @@ export interface ChatTurn {
  * Compose the user-turn prompt, optionally grounded in an open document and
  * carrying earlier turns of the same conversation so follow-ups have context.
  */
-function composePrompt(
+export function composePrompt(
   question: string,
   ctx?: ChatContext,
   history?: ChatTurn[],
