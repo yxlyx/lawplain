@@ -356,7 +356,6 @@ export function AskAgent({ initialContext }: AskAgentProps = {}) {
   const draftBeforeHistoryRef = useRef("");
   const msgId = useRef(0);
   const toolId = useRef(0);
-  const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const draftKey = `ask:draft:${pinnedContext?.kind ?? "none"}:${pinnedContext?.citation ?? "none"}`;
 
@@ -455,12 +454,10 @@ export function AskAgent({ initialContext }: AskAgentProps = {}) {
     autosize();
   }, [input, autosize]);
 
-  /** Stick to the bottom while streaming, unless the user scrolled up. */
-  // biome-ignore lint/correctness/useExhaustiveDependencies: re-pin to bottom whenever the transcript changes
+  /** Keep the page pinned to the latest message while the thread grows. */
   useLayoutEffect(() => {
-    const el = scrollRef.current;
-    if (!el) return;
-    el.scrollTop = el.scrollHeight;
+    if (messages.length === 0) return;
+    window.scrollTo({ top: document.documentElement.scrollHeight });
   }, [messages]);
 
   const queuePrompt = useCallback((prompt: string) => {
@@ -747,102 +744,192 @@ export function AskAgent({ initialContext }: AskAgentProps = {}) {
     e.preventDefault();
     void send(input);
   };
-
-  return (
-    <div className="overflow-hidden rounded-2xl border border-border bg-surface shadow-sm">
-      {/* Header */}
-      <div className="flex items-center gap-2.5 border-b border-border px-4 py-3">
-        <span className="inline-flex h-7 w-7 items-center justify-center rounded-lg bg-accent-soft text-accent">
-          <SparkleIcon className="h-4 w-4" />
+  const pinnedChip = pinnedContext ? (
+    <div className="relative mb-4 rounded-xl border border-border bg-surface-2/60 pr-11 transition-colors hover:border-border-strong hover:bg-surface-2">
+      <Link
+        href={pinnedContext.href}
+        className="flex min-w-0 items-center gap-2.5 px-3 py-2 text-left"
+      >
+        <span className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-background text-muted">
+          <BookIcon className="h-3.5 w-3.5" />
         </span>
-        <div className="flex-1">
-          <p className="text-sm font-semibold text-foreground">Ask Lawplain</p>
-          <p className="text-[11px] text-muted-2">
-            An agent searches judgments, statutes &amp; Hansard for you.
-          </p>
-        </div>
-        {messages.length > 0 && (
+        <span className="min-w-0 flex-1">
+          <span className="block text-[10px] font-semibold uppercase tracking-wide text-muted-2">
+            {pinnedContext.kind === "judgment" ? "Judgment" : "Statute"} ·
+            pinned
+          </span>
+          <span className="block truncate text-[13px] font-medium text-foreground">
+            {pinnedContext.title}
+          </span>
+        </span>
+        <span className="shrink-0 font-mono text-[10px] text-muted-2">
+          {pinnedContext.citation}
+        </span>
+      </Link>
+      <button
+        type="button"
+        onClick={removePinnedContext}
+        className="absolute right-3 top-1/2 inline-flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded-full text-muted-2 transition-colors hover:bg-border hover:text-foreground"
+        aria-label={`Remove pinned ${pinnedContext.kind}`}
+        title="Remove pinned source"
+      >
+        <XIcon className="h-3.5 w-3.5" />
+      </button>
+    </div>
+  ) : null;
+
+  const composer = (
+    <>
+      {queuedPrompt && (
+        <div className="mb-2 flex items-center gap-2 rounded-xl border border-border bg-surface-2/70 px-3 py-2 text-xs text-muted">
+          <span className="min-w-0 flex-1 truncate">
+            Queued next prompt: {queuedPrompt}
+          </span>
           <button
             type="button"
-            onClick={() => {
-              setMessages([]);
-              clearDraft();
-              setInput("");
-              clearQueuedPrompt();
-            }}
-            className="rounded-md px-2 py-1 text-xs text-muted-2 hover:bg-surface-2 hover:text-muted"
+            onClick={steerQueuedPrompt}
+            className="shrink-0 rounded-md px-2 py-1 font-medium text-accent hover:bg-border hover:text-foreground"
           >
-            New chat
+            Steer
           </button>
-        )}
-      </div>
+          <button
+            type="button"
+            onClick={clearQueuedPrompt}
+            className="shrink-0 rounded-md px-2 py-1 font-medium text-muted-2 hover:bg-border hover:text-foreground"
+          >
+            Clear
+          </button>
+        </div>
+      )}
+      <form onSubmit={onSubmit} className="flex items-end gap-2">
+        <textarea
+          ref={inputRef}
+          value={input}
+          onChange={(e) => {
+            setInput(e.target.value);
+            resetHistoryNavigation();
+          }}
+          onKeyDown={(e) => {
+            if (e.key === "ArrowUp") {
+              if (navigateQuestionHistory("older", e.currentTarget)) {
+                e.preventDefault();
+              }
+              return;
+            }
 
-      {/* Transcript / empty state */}
-      <div
-        ref={scrollRef}
-        role="log"
-        aria-live="polite"
-        aria-relevant="additions text"
-        className="thin-scroll max-h-[60vh] min-h-[180px] overflow-y-auto px-4 py-4"
-      >
-        {pinnedContext && (
-          <div className="relative mb-4 rounded-xl border border-border bg-surface-2/60 pr-11 transition-colors hover:border-border-strong hover:bg-surface-2">
-            <Link
-              href={pinnedContext.href}
-              className="flex min-w-0 items-center gap-2.5 px-3 py-2 text-left"
+            if (e.key === "ArrowDown") {
+              if (navigateQuestionHistory("newer", e.currentTarget)) {
+                e.preventDefault();
+              }
+              return;
+            }
+
+            if (
+              e.key === "Enter" &&
+              !e.shiftKey &&
+              !e.nativeEvent.isComposing
+            ) {
+              e.preventDefault();
+              void send(input);
+            }
+          }}
+          rows={1}
+          placeholder={
+            messages.length === 0
+              ? "Ask a question about Singapore law…"
+              : busy
+                ? "Ask for follow-up changes…"
+                : "Ask a follow-up…"
+          }
+          className="thin-scroll max-h-40 flex-1 resize-none rounded-xl border border-border bg-background px-3.5 py-2.5 text-sm text-foreground placeholder:text-muted-2 focus:border-accent focus:outline-none"
+        />
+        {busy ? (
+          <>
+            <button
+              type="submit"
+              disabled={!input.trim()}
+              className="inline-flex h-[42px] items-center gap-1.5 rounded-xl bg-foreground px-3 text-sm font-medium text-primary-fg transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-30"
+              aria-label="Queue prompt"
             >
-              <span className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-background text-muted">
-                <BookIcon className="h-3.5 w-3.5" />
-              </span>
-              <span className="min-w-0 flex-1">
-                <span className="block text-[10px] font-semibold uppercase tracking-wide text-muted-2">
-                  {pinnedContext.kind === "judgment" ? "Judgment" : "Statute"} ·
-                  pinned
-                </span>
-                <span className="block truncate text-[13px] font-medium text-foreground">
-                  {pinnedContext.title}
-                </span>
-              </span>
-              <span className="shrink-0 font-mono text-[10px] text-muted-2">
-                {pinnedContext.citation}
-              </span>
-            </Link>
+              Queue
+            </button>
             <button
               type="button"
-              onClick={removePinnedContext}
-              className="absolute right-3 top-1/2 inline-flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded-full text-muted-2 transition-colors hover:bg-border hover:text-foreground"
-              aria-label={`Remove pinned ${pinnedContext.kind}`}
-              title="Remove pinned source"
+              onClick={stop}
+              className="inline-flex h-[42px] items-center gap-1.5 rounded-xl border border-border px-3 text-sm font-medium text-muted hover:bg-surface-2"
             >
-              <XIcon className="h-3.5 w-3.5" />
+              <StopIcon className="h-4 w-4" /> Stop
+            </button>
+          </>
+        ) : (
+          <button
+            type="submit"
+            disabled={!input.trim()}
+            className="inline-flex h-[42px] w-[42px] items-center justify-center rounded-xl bg-foreground text-primary-fg transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-30"
+            aria-label="Send"
+          >
+            <ArrowUpIcon className="h-4 w-4" />
+          </button>
+        )}
+      </form>
+    </>
+  );
+
+  return (
+    <div className="flex flex-col">
+      {messages.length === 0 ? (
+        <div className="flex flex-col items-center pt-2 text-center sm:pt-4">
+          <span className="mb-4 inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-accent-soft text-accent">
+            <SparkleIcon className="h-6 w-6" />
+          </span>
+          <h1 className="font-serif text-4xl font-medium tracking-tight text-foreground sm:text-5xl">
+            Ask Lawplain
+          </h1>
+          <p className="mt-3 max-w-md text-balance text-sm text-muted">
+            {pinnedContext
+              ? `Grounded in ${pinnedContext.kind === "judgment" ? "judgment" : "statute"}: ${pinnedContext.title}`
+              : "Ask a question about Singapore law in plain English — the agent searches judgments, statutes & Hansard, then writes a cited answer."}
+          </p>
+          {pinnedChip && (
+            <div className="mt-5 w-full text-left">{pinnedChip}</div>
+          )}
+          <div className="mt-7 w-full">{composer}</div>
+          <div className="mt-3 grid w-full gap-1.5 sm:grid-cols-2">
+            {SUGGESTIONS.map((s) => (
+              <button
+                key={s}
+                type="button"
+                onClick={() => void send(s)}
+                className="rounded-xl border border-border bg-surface px-3.5 py-2.5 text-left text-[13px] text-foreground transition-colors hover:border-border-strong hover:bg-surface-2"
+              >
+                {s}
+              </button>
+            ))}
+          </div>
+        </div>
+      ) : (
+        <div className="flex min-h-[calc(100dvh-12rem)] flex-col">
+          <div className="mb-3 flex justify-end">
+            <button
+              type="button"
+              onClick={() => {
+                setMessages([]);
+                clearDraft();
+                setInput("");
+                clearQueuedPrompt();
+              }}
+              className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-xs font-medium text-muted-2 transition-colors hover:bg-surface-2 hover:text-foreground"
+            >
+              New chat
             </button>
           </div>
-        )}
-        {messages.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-8 text-center">
-            <span className="mb-3 inline-flex h-10 w-10 items-center justify-center rounded-xl bg-accent-soft text-accent">
-              <SparkleIcon className="h-5 w-5" />
-            </span>
-            <p className="max-w-sm text-sm text-muted">
-              Ask a question about Singapore law in plain English. The agent
-              will search the corpus, read the most relevant sources, and write
-              a cited answer.
-            </p>
-            <div className="mt-5 flex w-full max-w-md flex-col gap-1.5">
-              {SUGGESTIONS.map((s) => (
-                <button
-                  key={s}
-                  type="button"
-                  onClick={() => void send(s)}
-                  className="rounded-lg border border-border bg-background px-3.5 py-2.5 text-left text-[13px] text-foreground transition-colors hover:border-border-strong hover:bg-surface-2"
-                >
-                  {s}
-                </button>
-              ))}
-            </div>
-          </div>
-        ) : (
-          <div className="space-y-5">
+          {pinnedChip}
+          <div
+            role="log"
+            aria-live="polite"
+            aria-relevant="additions text"
+            className="flex-1 space-y-6 pb-24"
+          >
             {messages.map((m, i) =>
               m.role === "user" ? (
                 <MessageRow key={m.id} align="end">
@@ -875,100 +962,11 @@ export function AskAgent({ initialContext }: AskAgentProps = {}) {
               ),
             )}
           </div>
-        )}
-      </div>
-
-      {/* Composer */}
-      <div className="border-t border-border bg-surface px-3 py-3">
-        {queuedPrompt && (
-          <div className="mb-2 flex items-center gap-2 rounded-xl border border-border bg-surface-2/70 px-3 py-2 text-xs text-muted">
-            <span className="min-w-0 flex-1 truncate">
-              Queued next prompt: {queuedPrompt}
-            </span>
-            <button
-              type="button"
-              onClick={steerQueuedPrompt}
-              className="shrink-0 rounded-md px-2 py-1 font-medium text-accent hover:bg-border hover:text-foreground"
-            >
-              Steer
-            </button>
-            <button
-              type="button"
-              onClick={clearQueuedPrompt}
-              className="shrink-0 rounded-md px-2 py-1 font-medium text-muted-2 hover:bg-border hover:text-foreground"
-            >
-              Clear
-            </button>
+          <div className="sticky bottom-0 -mx-5 border-t border-border bg-background/90 px-5 py-3 backdrop-blur sm:-mx-8 sm:px-8">
+            {composer}
           </div>
-        )}
-        <form onSubmit={onSubmit} className="flex items-end gap-2">
-          <textarea
-            ref={inputRef}
-            value={input}
-            onChange={(e) => {
-              setInput(e.target.value);
-              resetHistoryNavigation();
-            }}
-            onKeyDown={(e) => {
-              if (e.key === "ArrowUp") {
-                if (navigateQuestionHistory("older", e.currentTarget)) {
-                  e.preventDefault();
-                }
-                return;
-              }
-
-              if (e.key === "ArrowDown") {
-                if (navigateQuestionHistory("newer", e.currentTarget)) {
-                  e.preventDefault();
-                }
-                return;
-              }
-
-              if (
-                e.key === "Enter" &&
-                !e.shiftKey &&
-                !e.nativeEvent.isComposing
-              ) {
-                e.preventDefault();
-                void send(input);
-              }
-            }}
-            rows={1}
-            placeholder={
-              busy ? "Ask for follow-up changes…" : "Ask a follow-up…"
-            }
-            className="thin-scroll max-h-40 flex-1 resize-none rounded-xl border border-border bg-background px-3.5 py-2.5 text-sm text-foreground placeholder:text-muted-2 focus:border-accent focus:outline-none"
-          />
-          {busy ? (
-            <>
-              <button
-                type="submit"
-                disabled={!input.trim()}
-                className="inline-flex h-[42px] items-center gap-1.5 rounded-xl bg-foreground px-3 text-sm font-medium text-primary-fg transition-opacity disabled:cursor-not-allowed disabled:opacity-30 hover:opacity-90"
-                aria-label="Queue prompt"
-              >
-                Queue
-              </button>
-              <button
-                type="button"
-                onClick={stop}
-                className="inline-flex h-[42px] items-center gap-1.5 rounded-xl border border-border px-3 text-sm font-medium text-muted hover:bg-surface-2"
-              >
-                <StopIcon className="h-4 w-4" /> Stop
-              </button>
-            </>
-          ) : (
-            <button
-              type="submit"
-              disabled={!input.trim()}
-              className="inline-flex h-[42px] w-[42px] items-center justify-center rounded-xl bg-foreground text-primary-fg transition-opacity disabled:cursor-not-allowed disabled:opacity-30 hover:opacity-90"
-              aria-label="Send"
-            >
-              <ArrowUpIcon className="h-4 w-4" />
-            </button>
-          )}
-        </form>
-      </div>
+        </div>
+      )}
     </div>
   );
 }

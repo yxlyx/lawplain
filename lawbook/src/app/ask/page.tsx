@@ -9,7 +9,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { AskAgent } from "@/components/AskAgent";
-import { ArrowLeftIcon, SparkleIcon } from "@/components/icons";
+import { ArrowLeftIcon } from "@/components/icons";
 import { loadChatContext } from "@/lib/ask-context";
 import { buildMetadata } from "@/lib/seo";
 
@@ -55,20 +55,6 @@ export default async function AskPage({
           Back to search
         </Link>
       </div>
-
-      <header className="pb-4 pt-5 text-center">
-        <h1 className="inline-flex items-center gap-2.5 font-serif text-4xl font-medium tracking-tight text-foreground sm:text-5xl">
-          <span className="inline-flex h-9 w-9 items-center justify-center rounded-xl bg-accent-soft text-accent">
-            <SparkleIcon className="h-5 w-5" />
-          </span>
-          Ask Lawplain
-        </h1>
-        <p className="mt-3 text-sm text-muted">
-          {context
-            ? `Grounded in ${context.kind === "judgment" ? "judgment" : "statute"}: ${context.title}`
-            : "Natural-language research across the Singapore legal corpus."}
-        </p>
-      </header>
 
       <AskAgent initialContext={context ?? undefined} />
     </main>
