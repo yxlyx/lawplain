@@ -17,6 +17,7 @@ import {
   askLegalAgent,
   askLegalAgentSandboxed,
   type ChatContext,
+  type ChatTurn,
 } from "@/lib/agent";
 import { loadChatContext } from "@/lib/ask-context";
 import { recordAskQuestion } from "@/lib/ask-history";
@@ -48,15 +49,31 @@ export async function POST(req: Request): Promise<Response> {
   let question = "";
   let cite: string | undefined;
   let kind: string | undefined;
+  let history: ChatTurn[] | undefined;
   try {
     const body = (await req.json()) as {
       question?: unknown;
       cite?: unknown;
       kind?: unknown;
+      history?: unknown;
     };
     question = typeof body.question === "string" ? body.question.trim() : "";
     cite = typeof body.cite === "string" ? body.cite : undefined;
     kind = typeof body.kind === "string" ? body.kind : undefined;
+    history = Array.isArray(body.history)
+      ? body.history
+          .filter(
+            (t): t is { role: unknown; text: string } =>
+              !!t &&
+              typeof t === "object" &&
+              typeof (t as { text?: unknown }).text === "string",
+          )
+          .slice(-12)
+          .map<ChatTurn>((t) => ({
+            role: t.role === "user" ? "user" : "assistant",
+            text: String(t.text).slice(0, 6000),
+          }))
+      : undefined;
   } catch {
     return new Response(JSON.stringify({ error: "Invalid JSON body" }), {
       status: 400,
@@ -128,7 +145,7 @@ export async function POST(req: Request): Promise<Response> {
         }
 
         const agent = useSandbox ? askLegalAgentSandboxed : askLegalAgent;
-        for await (const ev of agent(question, req.signal, context)) {
+        for await (const ev of agent(question, req.signal, context, history)) {
           safeEnqueue(ev);
           if (ev.type === "error") break;
         }

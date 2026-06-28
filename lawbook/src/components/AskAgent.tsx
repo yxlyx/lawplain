@@ -9,6 +9,8 @@ import {
   useRef,
   useState,
 } from "react";
+import ReactMarkdown, { type Components } from "react-markdown";
+import remarkGfm from "remark-gfm";
 import {
   Bubble,
   MessageAvatar,
@@ -180,104 +182,89 @@ function mapProgressPhase(phase: string): Phase {
   return "thinking";
 }
 
-/* ── minimal inline markdown: links + bold ─────────────────────────────── */
+/* ── Markdown answer rendering (react-markdown + GFM) ───────────────── */
 
-function renderInline(text: string): React.ReactNode[] {
-  const re = /\[([^\]]+)\]\(([^)\s]+)\)|\*\*([^*]+)\*\*/g;
-  const nodes: React.ReactNode[] = [];
-  let last = 0;
-  let key = 0;
-  for (const m of text.matchAll(re)) {
-    const idx = m.index ?? 0;
-    if (idx > last)
-      nodes.push(<span key={`t${key++}`}>{text.slice(last, idx)}</span>);
-    if (m[1] !== undefined) {
-      const href = m[2];
-      const isInternal = href.startsWith("/");
-      nodes.push(
-        isInternal ? (
-          <a
-            key={`l${key++}`}
-            href={href}
-            className="text-accent underline decoration-accent/30 underline-offset-2 hover:decoration-accent"
-          >
-            {m[1]}
-          </a>
-        ) : (
-          <a
-            key={`l${key++}`}
-            href={href}
-            target="_blank"
-            rel="noreferrer noopener"
-            className="text-accent underline decoration-accent/30 underline-offset-2 hover:decoration-accent"
-          >
-            {m[1]}
-          </a>
-        ),
-      );
-    } else {
-      nodes.push(
-        <strong key={`b${key++}`} className="font-semibold">
-          {m[3]}
-        </strong>,
-      );
-    }
-    last = idx + m[0].length;
-  }
-  if (last < text.length)
-    nodes.push(<span key={`t${key++}`}>{text.slice(last)}</span>);
-  return nodes;
-}
-
-function renderMarkdown(text: string): React.ReactNode {
-  const blocks = text.split(/\n\n+/).filter(Boolean);
-  let key = 0;
-  let liKey = 0;
-  return blocks.map((block) => {
-    // numbered list
-    if (/^\d+\.\s/.test(block)) {
-      const items = block.split(/\n(?=\d+\.\s)/);
-      return (
-        <ol key={`o${key++}`} className="ml-1 space-y-1.5">
-          {items.map((item) => {
-            const body = item.replace(/^\d+\.\s*/, "");
-            const k = liKey++;
-            return (
-              <li key={`li${k}`} className="flex gap-2.5">
-                <span className="mt-0.5 inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-surface-2 text-[11px] font-semibold tabular-nums text-muted">
-                  {k + 1}
-                </span>
-                <span className="flex-1">{renderInline(body)}</span>
-              </li>
-            );
-          })}
-        </ol>
-      );
-    }
-    // bullet list
-    if (/^\s*[-*]\s/.test(block)) {
-      const items = block.split(/\n(?=\s*[-*]\s)/);
-      return (
-        <ul key={`u${key++}`} className="ml-1 space-y-1.5">
-          {items.map((item) => {
-            const body = item.replace(/^\s*[-*]\s*/, "");
-            const k = liKey++;
-            return (
-              <li key={`li${k}`} className="flex gap-2.5">
-                <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-accent" />
-                <span className="flex-1">{renderInline(body)}</span>
-              </li>
-            );
-          })}
-        </ul>
-      );
-    }
+const mdComponents: Components = {
+  h1: ({ children }) => (
+    <h2 className="mt-1 font-serif text-xl font-semibold text-foreground">
+      {children}
+    </h2>
+  ),
+  h2: ({ children }) => (
+    <h2 className="mt-1 font-serif text-lg font-semibold text-foreground">
+      {children}
+    </h2>
+  ),
+  h3: ({ children }) => (
+    <h3 className="mt-1 font-serif text-base font-semibold text-foreground">
+      {children}
+    </h3>
+  ),
+  p: ({ children }) => <p className="leading-relaxed">{children}</p>,
+  strong: ({ children }) => (
+    <strong className="font-semibold text-foreground">{children}</strong>
+  ),
+  em: ({ children }) => <em className="italic">{children}</em>,
+  a: ({ href, children }) => {
+    const h = href ?? "";
+    const internal = h.startsWith("/") || h.startsWith("#");
     return (
-      <p key={`p${key++}`} className="leading-relaxed">
-        {renderInline(block)}
-      </p>
+      <a
+        href={h}
+        className="text-accent underline decoration-accent/30 underline-offset-2 hover:decoration-accent"
+        {...(internal ? {} : { target: "_blank", rel: "noreferrer noopener" })}
+      >
+        {children}
+      </a>
     );
-  });
+  },
+  ol: ({ children }) => <ol className="ask-ol space-y-1.5">{children}</ol>,
+  ul: ({ children }) => (
+    <ul className="ask-ul space-y-1.5 pl-5 marker:text-accent">{children}</ul>
+  ),
+  li: ({ children }) => <li className="leading-relaxed">{children}</li>,
+  code: ({ className, children }) =>
+    (className ?? "").includes("language-") ? (
+      <code className="font-mono text-[13px]">{children}</code>
+    ) : (
+      <code className="rounded bg-surface-2 px-1 py-0.5 font-mono text-[0.85em] text-foreground">
+        {children}
+      </code>
+    ),
+  pre: ({ children }) => (
+    <pre className="thin-scroll overflow-x-auto rounded-lg bg-surface-2 p-3 text-[13px]">
+      {children}
+    </pre>
+  ),
+  blockquote: ({ children }) => (
+    <blockquote className="border-l-2 border-border pl-3 text-muted">
+      {children}
+    </blockquote>
+  ),
+  hr: () => <hr className="border-border" />,
+  table: ({ children }) => (
+    <div className="thin-scroll overflow-x-auto">
+      <table className="w-full border-collapse text-[13px]">{children}</table>
+    </div>
+  ),
+  th: ({ children }) => (
+    <th className="border border-border bg-surface-2 px-2 py-1 text-left font-semibold">
+      {children}
+    </th>
+  ),
+  td: ({ children }) => (
+    <td className="border border-border px-2 py-1 align-top">{children}</td>
+  ),
+};
+
+function AnswerMarkdown({ text }: { text: string }) {
+  return (
+    <div className="ask-md space-y-3">
+      <ReactMarkdown remarkPlugins={[remarkGfm]} components={mdComponents}>
+        {text}
+      </ReactMarkdown>
+    </div>
+  );
 }
 
 const SUGGESTIONS = [
@@ -356,6 +343,8 @@ export function AskAgent({ initialContext }: AskAgentProps = {}) {
   const draftBeforeHistoryRef = useRef("");
   const msgId = useRef(0);
   const toolId = useRef(0);
+  const messagesRef = useRef<Message[]>([]);
+  messagesRef.current = messages;
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const draftKey = `ask:draft:${pinnedContext?.kind ?? "none"}:${pinnedContext?.citation ?? "none"}`;
 
@@ -604,6 +593,10 @@ export function AskAgent({ initialContext }: AskAgentProps = {}) {
         setMessages((ms) => ms.map((m) => (m.id === aId ? fn(m) : m)));
 
       try {
+        const history = messagesRef.current
+          .filter((m) => m.text.trim().length > 0)
+          .slice(-12)
+          .map((m) => ({ role: m.role, text: m.text.slice(0, 6000) }));
         const res = await fetch("/api/ask", {
           method: "POST",
           headers: { "content-type": "application/json" },
@@ -611,6 +604,7 @@ export function AskAgent({ initialContext }: AskAgentProps = {}) {
             question: q,
             cite: pinnedContext?.citation,
             kind: pinnedContext?.kind,
+            history,
           }),
           signal: ac.signal,
         });
@@ -1220,7 +1214,7 @@ function AssistantMessage({
             variant="assistant"
             className="space-y-3 px-4 py-3 font-serif text-[15px] leading-relaxed"
           >
-            {renderMarkdown(m.text)}
+            <AnswerMarkdown text={m.text} />
             {live && (
               <span className="ml-0.5 inline-block h-4 w-[3px] animate-pulse rounded-full bg-accent align-middle" />
             )}

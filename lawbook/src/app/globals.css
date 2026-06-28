@@ -147,3 +147,31 @@ mark[data-match][data-active] {
 .motion-fade-up {
   animation: motion-fade-up 360ms var(--ease-emphasized) both;
 }
+
+/* Ask Lawplain answer markdown — numbered-circle badges for ordered lists */
+.ask-md .ask-ol {
+  counter-reset: ask-item;
+}
+.ask-md .ask-ol > li {
+  counter-increment: ask-item;
+  position: relative;
+  padding-left: 2.25rem;
+}
+.ask-md .ask-ol > li::before {
+  content: counter(ask-item);
+  position: absolute;
+  left: 0;
+  top: 0.1em;
+  display: inline-flex;
+  height: 1.25rem;
+  width: 1.25rem;
+  align-items: center;
+  justify-content: center;
+  border-radius: 9999px;
+  background: var(--surface-2);
+  color: var(--muted);
+  font-family: var(--font-geist-mono), ui-monospace, monospace;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}

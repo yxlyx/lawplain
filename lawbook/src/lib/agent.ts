@@ -176,8 +176,42 @@ export interface ChatContext {
 }
 
 /** Compose the user-turn prompt, optionally grounded in an open document. */
-function composePrompt(question: string, ctx?: ChatContext): string {
-  if (!ctx) return question;
+/** A prior turn in the same conversation, for multi-turn context. */
+export interface ChatTurn {
+  role: "user" | "assistant";
+  text: string;
+}
+
+/**
+ * Compose the user-turn prompt, optionally grounded in an open document and
+ * carrying earlier turns of the same conversation so follow-ups have context.
+ */
+function composePrompt(
+  question: string,
+  ctx?: ChatContext,
+  history?: ChatTurn[],
+): string {
+  const priorTurns = (history ?? []).filter((t) => t.text.trim().length > 0);
+  const historyBlock =
+    priorTurns.length > 0
+      ? `# Conversation so far
+These are earlier turns in THIS same conversation. Use them as context: when the
+user says "it", "that", "this", "the case above", or asks a follow-up, they refer
+to what was discussed below. Do not claim you lack the earlier conversation.
+
+${priorTurns
+  .map((t) => `${t.role === "user" ? "User" : "Assistant"}: ${t.text}`)
+  .join("\n\n")}
+
+`
+      : "";
+
+  if (!ctx) {
+    return historyBlock
+      ? `${historyBlock}# Current question
+${question}`
+      : question;
+  }
   const kindLabel = ctx.kind === "judgment" ? "Judgment" : "Statute";
   const encodedCitation = encodeURIComponent(ctx.citation);
   const fetchHint =
@@ -206,7 +240,7 @@ research, and clearly distinguish them from the pinned source.
 # Excerpt
 ${ctx.excerpt}
 
-# Question
+${historyBlock}# Question
 ${question}`;
 }
 
@@ -346,12 +380,13 @@ export async function* askLegalAgent(
   question: string,
   signal?: AbortSignal,
   context?: ChatContext,
+  history?: ChatTurn[],
 ): AsyncGenerator<AgentEvent> {
   // Isolated cwd so yolo bash can't touch the project tree.
   const cwd = mkdtempSync(join(tmpdir(), "lawplain-agent-"));
   try {
     const stream = runAgent({
-      prompt: composePrompt(question, context),
+      prompt: composePrompt(question, context, history),
       model: AGENT_MODEL,
       yolo: true,
       binary: AGENT_BINARY,
@@ -431,6 +466,7 @@ export async function* askLegalAgentSandboxed(
   question: string,
   signal?: AbortSignal,
   context?: ChatContext,
+  history?: ChatTurn[],
 ): AsyncGenerator<AgentEvent> {
   const gw = process.env.CUBESANDBOX_GATEWAY_URL;
   const tenantKey = process.env.CUBESANDBOX_TENANT_KEY;
@@ -478,7 +514,7 @@ export async function* askLegalAgentSandboxed(
     // 3. Run graff --json inside the VM, piping the prompt via stdin.
     //    envd doesn't support process stdin, so we use a bash pipe.
     //    All dynamic values are env vars to avoid shell-escaping issues.
-    const prompt = composePrompt(question, context);
+    const prompt = composePrompt(question, context, history);
     const systemPrompt = legalResearchPrompt();
     const promptJson = JSON.stringify({ type: "user", text: prompt });
 
