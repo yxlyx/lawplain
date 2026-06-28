@@ -699,6 +699,35 @@ export function AskAgent({
         } catch {
           // sessionStorage may be unavailable
         }
+        // Persist the thread at run-start so the owner's OTHER tabs can see it
+        // (and reconnect to the live run) while it's still researching — not
+        // only once it settles. Fresh runs only; reconnects already exist.
+        if (isSignedIn && !resumeRunId) {
+          const priorPlusUser = [...messagesRef.current, userMsg].map((m) => ({
+            id: m.id,
+            role: m.role,
+            text: m.text,
+            tools: m.tools,
+            phase: m.phase,
+          }));
+          const startTitle = shortTitle(
+            messagesRef.current.find((m) => m.role === "user")?.text ?? q,
+          );
+          void fetch("/api/ask-threads", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({
+              id: threadIdRef.current,
+              title: startTitle,
+              messages: priorPlusUser,
+              cite: pinnedContext?.citation,
+              kind: pinnedContext?.kind,
+              sourceHref: pinnedContext?.href,
+              runId,
+              status: "running",
+            }),
+          }).catch(() => {});
+        }
         const res = await fetch("/api/ask", {
           method: "POST",
           headers: { "content-type": "application/json" },
@@ -917,6 +946,8 @@ export function AskAgent({
           cite: pinnedContext?.citation,
           kind: pinnedContext?.kind,
           sourceHref: pinnedContext?.href,
+          runId: runIdRef.current ?? undefined,
+          status: "done",
         }),
         signal: ac.signal,
       }).catch(() => {
@@ -956,6 +987,8 @@ export function AskAgent({
       if (!res.ok) return;
       const data = (await res.json()) as {
         thread?: {
+          runId?: string | null;
+          status?: string | null;
           messages?: Array<{
             id?: number;
             role?: string;
@@ -981,6 +1014,23 @@ export function AskAgent({
       abortRef.current?.abort();
       msgId.current = loaded.reduce((mx, m) => Math.max(mx, m.id), 0) + 1;
       threadIdRef.current = threadId;
+
+      // Still researching? Reconnect to the live Durable Object run rather than
+      // showing a frozen transcript. We persisted [...prior, runningUserMsg] at
+      // start, so drop that trailing user turn and let send() re-add it and tail
+      // the DO stream from the beginning (replay + live). This is what makes a
+      // running thread visible in the owner's other tabs.
+      const last = loaded[loaded.length - 1];
+      const runId = data.thread?.runId;
+      if (data.thread?.status === "running" && runId && last?.role === "user") {
+        activeRef.current = false;
+        runIdRef.current = runId;
+        setBusy(true);
+        setMessages(loaded.slice(0, -1));
+        void sendRef.current?.(last.text, runId);
+        return;
+      }
+
       setBusy(false);
       setMessages(loaded);
     } catch {
@@ -1264,6 +1314,7 @@ interface ThreadListItem {
   id: string;
   title: string;
   updatedAt: number;
+  status?: string | null;
 }
 
 function ThreadSidebar({
@@ -1403,7 +1454,7 @@ function ThreadSidebar({
                     <span className="truncate text-[13px]">
                       {t.title || "Untitled"}
                     </span>
-                    {t.id === busyId && (
+                    {(t.id === busyId || t.status === "running") && (
                       <span className="inline-flex items-center gap-1 text-[10px] font-medium uppercase tracking-wide text-accent">
                         <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-accent" />
                         researching…

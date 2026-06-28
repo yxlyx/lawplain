@@ -12,6 +12,8 @@ export interface ThreadSummary {
   sourceHref: string | null;
   messageCount: number;
   updatedAt: number;
+  runId: string | null;
+  status: string | null; // 'running' | 'done' | null (legacy = done)
 }
 
 export interface ThreadDetail extends ThreadSummary {
@@ -42,6 +44,8 @@ export async function saveThread(input: {
   cite?: string;
   kind?: string;
   sourceHref?: string;
+  runId?: string;
+  status?: string;
 }): Promise<{ id: string; updatedAt: number }> {
   const db = await getDb();
   const now = Date.now();
@@ -57,8 +61,8 @@ export async function saveThread(input: {
   await db
     .prepare(
       `INSERT INTO ask_threads
-        (id, userId, title, messages, messageCount, cite, kind, sourceHref, createdAt, updatedAt)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        (id, userId, title, messages, messageCount, cite, kind, sourceHref, runId, status, createdAt, updatedAt)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(id) DO UPDATE SET
          title = excluded.title,
          messages = excluded.messages,
@@ -66,6 +70,8 @@ export async function saveThread(input: {
          cite = excluded.cite,
          kind = excluded.kind,
          sourceHref = excluded.sourceHref,
+         runId = excluded.runId,
+         status = excluded.status,
          updatedAt = excluded.updatedAt
        WHERE ask_threads.userId = excluded.userId`,
     )
@@ -78,6 +84,8 @@ export async function saveThread(input: {
       input.cite || null,
       input.kind || null,
       input.sourceHref || null,
+      input.runId || null,
+      input.status || null,
       now,
       now,
     )
@@ -94,13 +102,15 @@ interface SummaryRow {
   sourceHref: string | null;
   messageCount: number;
   updatedAt: number;
+  runId: string | null;
+  status: string | null;
 }
 
 export async function listThreads(userId: string): Promise<ThreadSummary[]> {
   const db = await getDb();
   const { results } = await db
     .prepare(
-      `SELECT id, title, cite, kind, sourceHref, messageCount, updatedAt
+      `SELECT id, title, cite, kind, sourceHref, messageCount, updatedAt, runId, status
        FROM ask_threads
        WHERE userId = ?
        ORDER BY updatedAt DESC, id DESC
@@ -116,6 +126,8 @@ export async function listThreads(userId: string): Promise<ThreadSummary[]> {
     sourceHref: r.sourceHref,
     messageCount: Number(r.messageCount),
     updatedAt: Number(r.updatedAt),
+    runId: r.runId,
+    status: r.status,
   }));
 }
 
@@ -131,7 +143,7 @@ export async function getThread(
   const db = await getDb();
   const row = await db
     .prepare(
-      `SELECT id, title, messages, messageCount, cite, kind, sourceHref, createdAt, updatedAt
+      `SELECT id, title, messages, messageCount, cite, kind, sourceHref, runId, status, createdAt, updatedAt
        FROM ask_threads
        WHERE userId = ? AND id = ?`,
     )
@@ -154,6 +166,8 @@ export async function getThread(
     messageCount: Number(row.messageCount),
     updatedAt: Number(row.updatedAt),
     createdAt: Number(row.createdAt),
+    runId: row.runId,
+    status: row.status,
     messages,
   };
 }
