@@ -91,6 +91,7 @@ interface Message {
   progress: ProgressStep[];
   startedAt?: number;
   elapsedMs?: number;
+  eventCursor?: number;
   error?: string;
   cost?: { usd: number; tokens: number };
 }
@@ -481,6 +482,7 @@ function serializeMessages(messages: Message[]) {
     phase: m.phase,
     startedAt: m.startedAt,
     elapsedMs: m.elapsedMs,
+    eventCursor: m.eventCursor,
     cost: m.cost,
     error: m.error,
   }));
@@ -490,6 +492,10 @@ function isLiveAssistant(m: Message): boolean {
   return (
     m.role === "assistant" && !["done", "error", "stopped"].includes(m.phase)
   );
+}
+
+function latestAssistantMessage(messages: Message[]): Message | undefined {
+  return [...messages].reverse().find((m) => m.role === "assistant");
 }
 
 export function AskAgent({
@@ -523,7 +529,12 @@ export function AskAgent({
   const queuedPromptRef = useRef<string | null>(null);
   const pendingSendAfterCleanupRef = useRef<string | null>(null);
   const sendRef = useRef<
-    ((text: string, resumeRunId?: string) => Promise<void>) | null
+    | ((
+        text: string,
+        resumeRunId?: string,
+        resumeFrom?: number,
+      ) => Promise<void>)
+    | null
   >(null);
   const historyIndexRef = useRef(-1);
   const draftBeforeHistoryRef = useRef("");
@@ -756,7 +767,7 @@ export function AskAgent({
   }, [stop]);
 
   const send = useCallback(
-    async (text: string, resumeRunId?: string) => {
+    async (text: string, resumeRunId?: string, resumeFrom = 0) => {
       const q = text.trim();
       if (!q) return;
 
@@ -859,6 +870,7 @@ export function AskAgent({
               },
             ],
             startedAt,
+            eventCursor: 0,
             phase: "starting",
           };
       if (!reuseRunningAssistant) {
@@ -933,7 +945,7 @@ export function AskAgent({
             kind: pinnedContext?.kind,
             history,
             runId,
-            from: 0,
+            from: resumeFrom,
           }),
           signal: ac.signal,
         });
@@ -948,7 +960,8 @@ export function AskAgent({
         const reader = res.body.getReader();
         const decoder = new TextDecoder();
         let buf = "";
-        let acc = "";
+        let acc = reuseRunningAssistant ? assistantMsg.text : "";
+        let eventCursor = resumeFrom;
 
         for (;;) {
           const { done, value } = await reader.read();
@@ -964,6 +977,8 @@ export function AskAgent({
             } catch {
               continue;
             }
+            eventCursor += 1;
+            patch((m) => ({ ...m, eventCursor }));
             switch (ev.type) {
               case "delta":
                 if (acc === "") patch((m) => ({ ...m, phase: "answering" }));
@@ -1101,7 +1116,8 @@ export function AskAgent({
     if (!isSignedIn || snapshot.length === 0) return;
     if (!snapshot.some((m) => m.role === "user")) return;
 
-    const running = snapshot.some(isLiveAssistant);
+    const latestAssistant = latestAssistantMessage(snapshot);
+    const running = latestAssistant ? isLiveAssistant(latestAssistant) : false;
     if (!running) return;
 
     void fetch("/api/ask-threads", {
@@ -1163,10 +1179,8 @@ export function AskAgent({
       messages.find((m) => m.role === "user")?.text ?? "",
     );
     const persisted = serializeMessages(messages);
-    const latestAssistant = [...messages]
-      .reverse()
-      .find((m) => m.role === "assistant");
-    const running = messages.some(isLiveAssistant);
+    const latestAssistant = latestAssistantMessage(messages);
+    const running = latestAssistant ? isLiveAssistant(latestAssistant) : false;
     const status = running
       ? "running"
       : latestAssistant?.phase === "stopped"
@@ -1245,6 +1259,7 @@ export function AskAgent({
               phase?: Phase;
               startedAt?: number;
               elapsedMs?: number;
+              eventCursor?: number;
               cost?: { usd: number; tokens: number };
               error?: string;
             }>;
@@ -1260,6 +1275,8 @@ export function AskAgent({
           phase: m.phase ?? "done",
           startedAt: typeof m.startedAt === "number" ? m.startedAt : undefined,
           elapsedMs: typeof m.elapsedMs === "number" ? m.elapsedMs : undefined,
+          eventCursor:
+            typeof m.eventCursor === "number" ? m.eventCursor : undefined,
           cost: m.cost,
           error: m.error,
         }));
@@ -1283,7 +1300,7 @@ export function AskAgent({
             setMessages(loaded);
             if (user) {
               window.setTimeout(() => {
-                void sendRef.current?.(user.text, runId);
+                void sendRef.current?.(user.text, runId, last.eventCursor ?? 0);
               }, 0);
             }
             return;
@@ -1444,9 +1461,11 @@ export function AskAgent({
     </>
   );
 
-  const liveAssistantThreadId = messages.some(isLiveAssistant)
-    ? threadIdRef.current
-    : null;
+  const latestAssistantForBusy = latestAssistantMessage(messages);
+  const liveAssistantThreadId =
+    latestAssistantForBusy && isLiveAssistant(latestAssistantForBusy)
+      ? threadIdRef.current
+      : null;
 
   return (
     <div className="flex flex-col">

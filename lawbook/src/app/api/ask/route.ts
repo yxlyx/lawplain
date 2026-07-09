@@ -28,6 +28,11 @@ import {
 import { loadChatContext } from "@/lib/ask-context";
 import { recordAskQuestion } from "@/lib/ask-history";
 import { getSession } from "@/lib/auth";
+import {
+  hasMemoryAskRun,
+  startMemoryAskRun,
+  streamMemoryAskRun,
+} from "@/server/ask-run-memory";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -171,7 +176,31 @@ export async function POST(req: Request): Promise<Response> {
     }
   }
 
-  // Fallback — request-scoped generator (no Durable Object).
+  // Node/local fallback with runId — host the run in this server process so
+  // client disconnect/navigation only detaches the SSE reader. This is not as
+  // durable as the Cloudflare DO path (it won't survive process restarts or
+  // multi-instance routing), but it fixes background runs for next dev/start.
+  if (runId) {
+    if (from > 0 && !hasMemoryAskRun(session.user.id, runId)) {
+      return errorStream(
+        "This research run is no longer available on the server; please start it again.",
+      );
+    }
+
+    startMemoryAskRun({
+      userId: session.user.id,
+      runId,
+      question,
+      context,
+      history,
+      kind,
+      useSandbox,
+    });
+    const response = streamMemoryAskRun(session.user.id, runId, from);
+    if (response) return response;
+  }
+
+  // Last-resort fallback — request-scoped generator (no runId to reconnect).
   const encoder = new TextEncoder();
   const stream = new ReadableStream<Uint8Array>({
     async start(controller) {

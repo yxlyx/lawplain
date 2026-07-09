@@ -1,6 +1,7 @@
 import { getCloudflareContext } from "@opennextjs/cloudflare";
 import { getThread } from "@/lib/ask-threads";
 import { getSession } from "@/lib/auth";
+import { stopMemoryAskRun } from "@/server/ask-run-memory";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -40,13 +41,23 @@ export async function POST(req: Request): Promise<Response> {
   }
 
   if (!useSandbox) {
-    return Response.json({ ok: true, status: "not-hosted" });
+    const stopped = stopMemoryAskRun(session.user.id, runId);
+    return Response.json({
+      ok: true,
+      status: stopped ? "stopped" : "not-hosted",
+    });
   }
 
   try {
     const { env } = await getCloudflareContext({ async: true });
     const ns = (env as { ASK_RUN_DO?: DurableObjectNamespace }).ASK_RUN_DO;
-    if (!ns) return Response.json({ ok: true, status: "not-hosted" });
+    if (!ns) {
+      const stopped = stopMemoryAskRun(session.user.id, runId);
+      return Response.json({
+        ok: true,
+        status: stopped ? "stopped" : "not-hosted",
+      });
+    }
 
     const stub = ns.get(ns.idFromName(runId));
     const res = await stub.fetch("https://ask-run-do/stop", {
