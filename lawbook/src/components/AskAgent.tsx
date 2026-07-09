@@ -525,6 +525,7 @@ export function AskAgent({
   const [now, setNow] = useState(() => Date.now());
   const abortRef = useRef<AbortController | null>(null);
   const activeRef = useRef(false);
+  const sendGenerationRef = useRef(0);
   const queueingOpenRef = useRef(false);
   const queuedPromptRef = useRef<string | null>(null);
   const pendingSendAfterCleanupRef = useRef<string | null>(null);
@@ -820,6 +821,8 @@ export function AskAgent({
         return;
       }
 
+      const sendGeneration = sendGenerationRef.current + 1;
+      sendGenerationRef.current = sendGeneration;
       activeRef.current = true;
       queueingOpenRef.current = true;
       resetHistoryNavigation();
@@ -1059,21 +1062,23 @@ export function AskAgent({
           }));
         }
       } finally {
-        const nextPrompt = queuedPromptRef.current;
-        const pendingPrompt = pendingSendAfterCleanupRef.current;
-        queuedPromptRef.current = null;
-        pendingSendAfterCleanupRef.current = null;
-        queueingOpenRef.current = false;
-        setQueuedPrompt(null);
-        activeRef.current = false;
-        setBusy(false);
-        abortRef.current = null;
+        if (sendGenerationRef.current === sendGeneration) {
+          const nextPrompt = queuedPromptRef.current;
+          const pendingPrompt = pendingSendAfterCleanupRef.current;
+          queuedPromptRef.current = null;
+          pendingSendAfterCleanupRef.current = null;
+          queueingOpenRef.current = false;
+          setQueuedPrompt(null);
+          activeRef.current = false;
+          setBusy(false);
+          abortRef.current = null;
 
-        const promptToSend = nextPrompt ?? pendingPrompt;
-        if (promptToSend) {
-          window.setTimeout(() => {
-            void sendRef.current?.(promptToSend);
-          }, 0);
+          const promptToSend = nextPrompt ?? pendingPrompt;
+          if (promptToSend) {
+            window.setTimeout(() => {
+              void sendRef.current?.(promptToSend);
+            }, 0);
+          }
         }
       }
     },
@@ -1108,36 +1113,60 @@ export function AskAgent({
   // ── Saved threads: autosave each turn + resume from History ───────────
   const threadIdRef = useRef<string>("");
   const runIdRef = useRef<string | null>(null);
+  const creatingNewChatRef = useRef(false);
   if (!threadIdRef.current)
     threadIdRef.current = initialThreadId ?? crypto.randomUUID();
 
+  const persistThreadSnapshot = useCallback(
+    async (
+      snapshot = messagesRef.current,
+      options: { keepalive?: boolean } = {},
+    ): Promise<boolean> => {
+      if (!isSignedIn || snapshot.length === 0) return true;
+      if (!snapshot.some((m) => m.role === "user")) return true;
+
+      const latestAssistant = latestAssistantMessage(snapshot);
+      const running = latestAssistant
+        ? isLiveAssistant(latestAssistant)
+        : false;
+      const status = running
+        ? "running"
+        : latestAssistant?.phase === "stopped"
+          ? "stopped"
+          : "done";
+
+      try {
+        const res = await fetch("/api/ask-threads", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          keepalive: options.keepalive,
+          body: JSON.stringify({
+            id: threadIdRef.current,
+            title: shortTitle(
+              snapshot.find((m) => m.role === "user")?.text ?? "",
+            ),
+            messages: serializeMessages(snapshot),
+            cite: pinnedContext?.citation,
+            kind: pinnedContext?.kind,
+            sourceHref: pinnedContext?.href,
+            runId: running ? (runIdRef.current ?? undefined) : undefined,
+            status,
+          }),
+        });
+        return res.ok;
+      } catch {
+        return false;
+      }
+    },
+    [isSignedIn, pinnedContext],
+  );
+
   const flushRunningThread = useCallback(() => {
     const snapshot = messagesRef.current;
-    if (!isSignedIn || snapshot.length === 0) return;
-    if (!snapshot.some((m) => m.role === "user")) return;
-
     const latestAssistant = latestAssistantMessage(snapshot);
-    const running = latestAssistant ? isLiveAssistant(latestAssistant) : false;
-    if (!running) return;
-
-    void fetch("/api/ask-threads", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      keepalive: true,
-      body: JSON.stringify({
-        id: threadIdRef.current,
-        title: shortTitle(snapshot.find((m) => m.role === "user")?.text ?? ""),
-        messages: serializeMessages(snapshot),
-        cite: pinnedContext?.citation,
-        kind: pinnedContext?.kind,
-        sourceHref: pinnedContext?.href,
-        runId: runIdRef.current ?? undefined,
-        status: "running",
-      }),
-    }).catch(() => {
-      // best-effort flush before detaching from a running research stream
-    });
-  }, [isSignedIn, pinnedContext]);
+    if (!latestAssistant || !isLiveAssistant(latestAssistant)) return;
+    void persistThreadSnapshot(snapshot, { keepalive: true });
+  }, [persistThreadSnapshot]);
 
   useEffect(() => {
     return () => flushRunningThread();
@@ -1212,31 +1241,52 @@ export function AskAgent({
     return () => window.clearTimeout(timer);
   }, [messages, isSignedIn, pinnedContext]);
 
-  const newChat = useCallback(() => {
-    // Detach this UI stream only. Durable Object-backed research keeps running
-    // in the background; explicit Stop is the only path that cancels backend work.
-    flushRunningThread();
-    queuedPromptRef.current = null;
-    pendingSendAfterCleanupRef.current = null;
-    queueingOpenRef.current = false;
-    activeRef.current = false;
-    abortRef.current?.abort();
-    setBusy(false);
-    setMessages([]);
-    clearDraft();
-    setInput("");
-    clearQueuedPrompt();
-    threadIdRef.current = crypto.randomUUID();
-    if (typeof window !== "undefined" && window.location.pathname !== "/ask") {
-      window.history.replaceState(null, "", "/ask");
-    }
-    runIdRef.current = null;
+  const newChat = useCallback(async () => {
+    if (creatingNewChatRef.current) return;
+    creatingNewChatRef.current = true;
     try {
-      sessionStorage.removeItem("ask:activeRun");
-    } catch {
-      /* ignore */
+      // Do not clear the visible transcript until the current thread is safely
+      // persisted. Otherwise New chat can make an in-progress conversation look
+      // deleted if the best-effort flush is dropped or fails.
+      const saved = await persistThreadSnapshot();
+      if (!saved) {
+        if (typeof window !== "undefined") {
+          window.alert(
+            "We couldn't save this chat yet. Please try New chat again in a moment.",
+          );
+        }
+        return;
+      }
+
+      // Detach this UI stream only. Durable Object-backed research keeps running
+      // in the background; explicit Stop is the only path that cancels backend work.
+      queuedPromptRef.current = null;
+      pendingSendAfterCleanupRef.current = null;
+      queueingOpenRef.current = false;
+      activeRef.current = false;
+      abortRef.current?.abort();
+      setBusy(false);
+      setMessages([]);
+      clearDraft();
+      setInput("");
+      clearQueuedPrompt();
+      threadIdRef.current = crypto.randomUUID();
+      if (
+        typeof window !== "undefined" &&
+        window.location.pathname !== "/ask"
+      ) {
+        window.history.replaceState(null, "", "/ask");
+      }
+      runIdRef.current = null;
+      try {
+        sessionStorage.removeItem("ask:activeRun");
+      } catch {
+        /* ignore */
+      }
+    } finally {
+      creatingNewChatRef.current = false;
     }
-  }, [clearDraft, clearQueuedPrompt, flushRunningThread]);
+  }, [clearDraft, clearQueuedPrompt, persistThreadSnapshot]);
 
   const loadThread = useCallback(
     async (threadId: string) => {
