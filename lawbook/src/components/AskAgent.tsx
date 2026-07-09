@@ -567,6 +567,9 @@ export function AskAgent({
   >([]);
   const [busy, setBusy] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [activeThreadId, setActiveThreadId] = useState(
+    () => initialThreadId ?? crypto.randomUUID(),
+  );
   const [threadListVersion, setThreadListVersion] = useState(0);
   const [optimisticThread, setOptimisticThread] =
     useState<ThreadListItem | null>(null);
@@ -1292,8 +1295,7 @@ export function AskAgent({
   const threadIdRef = useRef<string>("");
   const runIdRef = useRef<string | null>(null);
   const creatingNewChatRef = useRef(false);
-  if (!threadIdRef.current)
-    threadIdRef.current = initialThreadId ?? crypto.randomUUID();
+  if (!threadIdRef.current) threadIdRef.current = activeThreadId;
 
   const persistThreadSnapshot = useCallback(
     async (
@@ -1373,6 +1375,7 @@ export function AskAgent({
       }
       if (ar.threadId) {
         threadIdRef.current = ar.threadId;
+        setActiveThreadId(ar.threadId);
         if (window.location.pathname === "/ask") {
           window.history.replaceState(null, "", `/ask/${ar.threadId}`);
         }
@@ -1453,12 +1456,13 @@ export function AskAgent({
       clearDraft();
       setInput("");
       clearQueuedPrompt();
-      threadIdRef.current = crypto.randomUUID();
-      deletedThreadIdsRef.current.delete(threadIdRef.current);
+      const nextThreadId = crypto.randomUUID();
+      threadIdRef.current = nextThreadId;
+      setActiveThreadId(nextThreadId);
       setOptimisticThread(
         createPlaceholder
           ? {
-              id: threadIdRef.current,
+              id: nextThreadId,
               title: "New Chat",
               updatedAt: Date.now(),
               status: null,
@@ -2083,7 +2087,8 @@ function ThreadSidebar({
           ) : (
             <div className="flex flex-col gap-0.5">
               {filtered.map((t) => {
-                const researching = t.status === "running" || t.id === busyId;
+                const status = t.id === activeId ? activeStatus : t.status;
+                const researching = status === "running" || t.id === busyId;
                 const unreadDone = !researching && t.unread;
                 return (
                   <div
@@ -2125,7 +2130,7 @@ function ThreadSidebar({
                           researching…
                         </span>
                       )}
-                      {!researching && t.status === "stopped" && (
+                      {!researching && status === "stopped" && (
                         <span className="inline-flex items-center gap-1 text-[10px] font-medium uppercase tracking-wide text-amber-700">
                           <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
                           exited
