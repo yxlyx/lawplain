@@ -2,13 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import {
-  useCallback,
-  useEffect,
-  useLayoutEffect,
-  useRef,
-  useState,
-} from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import {
@@ -299,6 +293,7 @@ const TOOL_DOT: Record<ToolStep["kind"], string> = {
 };
 
 const ASK_HISTORY_LIMIT = 50;
+const STICKY_BOTTOM_RESUME_PX = 24;
 const PENDING_ASK_KEY = "ask:pendingAfterAuth";
 const PENDING_ASK_TTL_MS = 30 * 60 * 1000;
 
@@ -548,6 +543,9 @@ export function AskAgent({
     return () => setHideFooter(false);
   }, [messages.length, setHideFooter]);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const stickToBottomRef = useRef(true);
+  const lastScrollYRef = useRef(0);
+  const handledHashRef = useRef<string | null>(null);
   const [highlightedMessageId, setHighlightedMessageId] = useState<
     number | null
   >(null);
@@ -648,30 +646,82 @@ export function AskAgent({
     autosize();
   }, [input, autosize]);
 
-  /** Keep the page pinned to the latest message, unless opened to a saved answer. */
-  useLayoutEffect(() => {
+  useEffect(() => {
+    const distanceFromBottom = () => {
+      const doc = document.documentElement;
+      return Math.max(
+        0,
+        doc.scrollHeight - Math.max(0, window.scrollY) - window.innerHeight,
+      );
+    };
+
+    const updateStickiness = () => {
+      const y = Math.max(0, window.scrollY);
+
+      if (y < lastScrollYRef.current) {
+        stickToBottomRef.current = false;
+      } else if (distanceFromBottom() <= STICKY_BOTTOM_RESUME_PX) {
+        stickToBottomRef.current = true;
+      }
+
+      lastScrollYRef.current = y;
+    };
+
+    const updateStickinessAfterResize = () => {
+      if (distanceFromBottom() <= STICKY_BOTTOM_RESUME_PX) {
+        stickToBottomRef.current = true;
+      }
+      lastScrollYRef.current = Math.max(0, window.scrollY);
+    };
+
+    lastScrollYRef.current = Math.max(0, window.scrollY);
+    stickToBottomRef.current = distanceFromBottom() <= STICKY_BOTTOM_RESUME_PX;
+    window.addEventListener("scroll", updateStickiness, { passive: true });
+    window.addEventListener("resize", updateStickinessAfterResize);
+
+    return () => {
+      window.removeEventListener("scroll", updateStickiness);
+      window.removeEventListener("resize", updateStickinessAfterResize);
+    };
+  }, []);
+
+  /** Handle saved-answer deep links once, without fighting user scroll during streaming. */
+  useEffect(() => {
     if (messages.length === 0) return;
 
     const hash = window.location.hash.replace(/^#/, "");
-    const match = /^(?:answer|message)-(\d+)$/.exec(hash);
-    if (match) {
-      const id = Number(match[1]);
-      const target =
-        document.getElementById(`answer-${id}`) ??
-        document.getElementById(`ask-message-${id}`);
-      if (target) {
-        target.scrollIntoView({ block: "start" });
-        setHighlightedMessageId(id);
-        const timer = window.setTimeout(() => {
-          setHighlightedMessageId((current) =>
-            current === id ? null : current,
-          );
-        }, 3000);
-        return () => window.clearTimeout(timer);
-      }
-    }
+    if (!hash || handledHashRef.current === hash) return;
 
-    window.scrollTo({ top: document.documentElement.scrollHeight });
+    const match = /^(?:answer|message)-(\d+)$/.exec(hash);
+    if (!match) return;
+
+    const id = Number(match[1]);
+    const target =
+      document.getElementById(`answer-${id}`) ??
+      document.getElementById(`ask-message-${id}`);
+    if (!target) return;
+
+    handledHashRef.current = hash;
+    stickToBottomRef.current = false;
+    target.scrollIntoView({ block: "start" });
+    setHighlightedMessageId(id);
+
+    const timer = window.setTimeout(() => {
+      setHighlightedMessageId((current) => (current === id ? null : current));
+    }, 3000);
+    return () => window.clearTimeout(timer);
+  }, [messages.length]);
+
+  /** Follow streaming output only while the user is already near the bottom. */
+  useEffect(() => {
+    if (messages.length === 0 || !stickToBottomRef.current) return;
+
+    const frame = window.requestAnimationFrame(() => {
+      if (!stickToBottomRef.current) return;
+      window.scrollTo({ top: document.documentElement.scrollHeight });
+    });
+
+    return () => window.cancelAnimationFrame(frame);
   }, [messages]);
 
   const queuePrompt = useCallback((prompt: string) => {
@@ -803,6 +853,7 @@ export function AskAgent({
         };
 
         resetHistoryNavigation();
+        stickToBottomRef.current = true;
         setMessages((m) => [...m, userMsg, authMsg]);
         if (saved) {
           clearDraft();
@@ -877,6 +928,7 @@ export function AskAgent({
             phase: "starting",
           };
       if (!reuseRunningAssistant) {
+        stickToBottomRef.current = true;
         setMessages((m) => [...m, userMsg, assistantMsg]);
       }
       if (
