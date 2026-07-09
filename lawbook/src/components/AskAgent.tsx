@@ -1573,6 +1573,7 @@ export function AskAgent({
         abortRef.current?.abort();
         msgId.current = loaded.reduce((mx, m) => Math.max(mx, m.id), 0) + 1;
         threadIdRef.current = threadId;
+        setActiveThreadId(threadId);
         setOptimisticThread(null);
 
         // Still researching? Show the persisted in-flight transcript immediately,
@@ -1623,6 +1624,7 @@ export function AskAgent({
     if (loadedThreadRef.current || !initialThreadId) return;
     loadedThreadRef.current = true;
     threadIdRef.current = initialThreadId;
+    setActiveThreadId(initialThreadId);
     void loadThread(initialThreadId);
   }, [initialThreadId, loadThread]);
   const pinnedChip = pinnedContext ? (
@@ -1765,7 +1767,7 @@ export function AskAgent({
         : "done"
     : null;
   const liveAssistantThreadId =
-    activeThreadStatus === "running" ? threadIdRef.current : null;
+    activeThreadStatus === "running" ? activeThreadId : null;
 
   return (
     <div className="flex flex-col">
@@ -1773,10 +1775,12 @@ export function AskAgent({
         <ThreadSidebar
           open={sidebarOpen}
           onClose={() => setSidebarOpen(false)}
-          activeId={threadIdRef.current}
+          activeId={activeThreadId}
           activeStatus={activeThreadStatus}
           busyId={liveAssistantThreadId}
           onResume={(id) => {
+            threadIdRef.current = id;
+            setActiveThreadId(id);
             void loadThread(id);
             if (typeof window !== "undefined") {
               window.history.replaceState(null, "", `/ask/${id}`);
@@ -1897,7 +1901,7 @@ export function AskAgent({
                     cite={pinnedContext?.citation}
                     kind={pinnedContext?.kind}
                     sourceHref={pinnedContext?.href}
-                    threadId={threadIdRef.current}
+                    threadId={activeThreadId}
                     messageId={m.id}
                     isSignedIn={isSignedIn}
                   />
