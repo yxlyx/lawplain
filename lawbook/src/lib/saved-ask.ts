@@ -17,6 +17,40 @@ export interface SavedAskAnswer {
 
 const LIST_LIMIT = 200;
 
+let schemaReady: Promise<void> | null = null;
+
+async function ensureSavedAskSchema(db: D1Database): Promise<void> {
+  schemaReady ??= (async () => {
+    await db
+      .prepare(
+        `CREATE TABLE IF NOT EXISTS saved_ask_answers (
+          id TEXT PRIMARY KEY,
+          userId TEXT NOT NULL REFERENCES user(id) ON DELETE CASCADE,
+          question TEXT NOT NULL,
+          answer TEXT NOT NULL,
+          cite TEXT,
+          kind TEXT,
+          sourceHref TEXT,
+          tools TEXT,
+          createdAt INTEGER NOT NULL
+        )`,
+      )
+      .run();
+
+    await db
+      .prepare(
+        `CREATE INDEX IF NOT EXISTS idx_saved_ask_answers_user_created
+          ON saved_ask_answers (userId, createdAt DESC, id DESC)`,
+      )
+      .run();
+  })().catch((error) => {
+    schemaReady = null;
+    throw error;
+  });
+
+  return schemaReady;
+}
+
 async function getDb(): Promise<D1Database> {
   const { env } = await getCloudflareContext({ async: true });
   const db = (env as SavedAskEnv).AUTH_DB;
@@ -25,6 +59,7 @@ async function getDb(): Promise<D1Database> {
       "Missing Cloudflare D1 binding AUTH_DB. Apply migrations before using saved Ask answers.",
     );
   }
+  await ensureSavedAskSchema(db);
   return db;
 }
 
