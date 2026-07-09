@@ -96,6 +96,12 @@ interface AskQuestionHistoryEntry {
   createdAt: number;
 }
 
+interface OptimisticThreadSnapshot {
+  messages: Message[];
+  runId: string | null;
+  status: "running" | "stopped" | "done";
+}
+
 /** Map a raw tool_call into a typed, human-readable step. */
 function describeTool(ev: Extract<ChatEvent, { type: "tool" }>): ToolStep {
   const { name, summary } = ev;
@@ -571,8 +577,9 @@ export function AskAgent({
     () => initialThreadId ?? crypto.randomUUID(),
   );
   const [threadListVersion, setThreadListVersion] = useState(0);
-  const [optimisticThread, setOptimisticThread] =
-    useState<ThreadListItem | null>(null);
+  const [optimisticThreads, setOptimisticThreads] = useState<ThreadListItem[]>(
+    [],
+  );
   const { setHideFooter } = useChrome();
   const [queuedPrompt, setQueuedPrompt] = useState<string | null>(null);
   const [pinnedContext, setPinnedContext] = useState(initialContext);
@@ -597,7 +604,11 @@ export function AskAgent({
   const msgId = useRef(0);
   const toolId = useRef(0);
   const messagesRef = useRef<Message[]>([]);
+  const optimisticThreadSnapshotsRef = useRef<
+    Map<string, OptimisticThreadSnapshot>
+  >(new Map());
   const deletedThreadIdsRef = useRef<Set<string>>(new Set());
+  const loadThreadSeqRef = useRef(0);
   messagesRef.current = messages;
   useEffect(() => {
     setHideFooter(messages.length > 0);
@@ -650,6 +661,13 @@ export function AskAgent({
     setThreadListVersion((version) => version + 1);
   }, []);
 
+  const upsertOptimisticThread = useCallback((thread: ThreadListItem) => {
+    setOptimisticThreads((threads) => [
+      thread,
+      ...threads.filter((item) => item.id !== thread.id),
+    ]);
+  }, []);
+
   useEffect(() => {
     if (!isSignedIn) {
       setQuestionHistory([]);
@@ -694,6 +712,7 @@ export function AskAgent({
 
   useEffect(() => {
     if (!busy) return;
+    setNow(Date.now());
     const id = window.setInterval(() => setNow(Date.now()), 1000);
     return () => window.clearInterval(id);
   }, [busy]);
@@ -944,6 +963,8 @@ export function AskAgent({
 
       const sendGeneration = sendGenerationRef.current + 1;
       sendGenerationRef.current = sendGeneration;
+      const runThreadId = threadIdRef.current;
+      const runContext = pinnedContext;
       activeRef.current = true;
       queueingOpenRef.current = true;
       resetHistoryNavigation();
@@ -1005,8 +1026,8 @@ export function AskAgent({
           };
       if (!reuseRunningAssistant) {
         if (messagesRef.current.length === 0) {
-          setOptimisticThread({
-            id: threadIdRef.current,
+          upsertOptimisticThread({
+            id: runThreadId,
             title: shortTitle(q),
             updatedAt: Date.now(),
             status: "running",
@@ -1021,7 +1042,7 @@ export function AskAgent({
         typeof window !== "undefined" &&
         window.location.pathname === "/ask"
       ) {
-        window.history.replaceState(null, "", `/ask/${threadIdRef.current}`);
+        window.history.replaceState(null, "", `/ask/${runThreadId}`);
       }
       clearDraft();
       setInput("");
@@ -1030,8 +1051,10 @@ export function AskAgent({
       const ac = new AbortController();
       abortRef.current = ac;
 
-      const patch = (fn: (m: Message) => Message) =>
+      const patch = (fn: (m: Message) => Message) => {
+        if (sendGenerationRef.current !== sendGeneration) return;
         setMessages((ms) => ms.map((m) => (m.id === aId ? fn(m) : m)));
+      };
 
       try {
         const history = messagesRef.current
@@ -1047,7 +1070,7 @@ export function AskAgent({
               runId,
               question: q,
               startedAt,
-              threadId: threadIdRef.current,
+              threadId: runThreadId,
             }),
           );
         } catch {
@@ -1057,7 +1080,7 @@ export function AskAgent({
         // (and reconnect to the live run) while it's still researching — not
         // only once it settles. Fresh runs only; reconnects already exist.
         if (isSignedIn && !resumeRunId) {
-          const saveThreadId = threadIdRef.current;
+          const saveThreadId = runThreadId;
           const runningTranscript = serializeMessages([
             ...messagesRef.current,
             userMsg,
@@ -1074,9 +1097,9 @@ export function AskAgent({
                 id: saveThreadId,
                 title: startTitle,
                 messages: runningTranscript,
-                cite: pinnedContext?.citation,
-                kind: pinnedContext?.kind,
-                sourceHref: pinnedContext?.href,
+                cite: runContext?.citation,
+                kind: runContext?.kind,
+                sourceHref: runContext?.href,
                 runId,
                 status: "running",
               }),
@@ -1094,8 +1117,8 @@ export function AskAgent({
           headers: { "content-type": "application/json" },
           body: JSON.stringify({
             question: q,
-            cite: pinnedContext?.citation,
-            kind: pinnedContext?.kind,
+            cite: runContext?.citation,
+            kind: runContext?.kind,
             history,
             runId,
             from: resumeFrom,
@@ -1129,6 +1152,10 @@ export function AskAgent({
               ev = JSON.parse(line.slice(6)) as ChatEvent;
             } catch {
               continue;
+            }
+            if (sendGenerationRef.current !== sendGeneration) {
+              await reader.cancel().catch(() => {});
+              return;
             }
             eventCursor += 1;
             patch((m) => ({ ...m, eventCursor }));
@@ -1201,11 +1228,11 @@ export function AskAgent({
                   messagesRef.current = finalSnapshot;
                   return finalSnapshot;
                 });
-                const finalThreadId = threadIdRef.current;
+                const finalThreadId = runThreadId;
                 const finalTitle = shortTitle(
                   finalSnapshot.find((m) => m.role === "user")?.text ?? q,
                 );
-                setOptimisticThread({
+                upsertOptimisticThread({
                   id: finalThreadId,
                   title: finalTitle,
                   updatedAt: Date.now(),
@@ -1222,9 +1249,9 @@ export function AskAgent({
                       id: finalThreadId,
                       title: finalTitle,
                       messages: serializeMessages(finalSnapshot),
-                      cite: pinnedContext?.citation,
-                      kind: pinnedContext?.kind,
-                      sourceHref: pinnedContext?.href,
+                      cite: runContext?.citation,
+                      kind: runContext?.kind,
+                      sourceHref: runContext?.href,
                       status: "done",
                     }),
                   })
@@ -1292,6 +1319,7 @@ export function AskAgent({
       refreshThreadList,
       resetHistoryNavigation,
       sessionPending,
+      upsertOptimisticThread,
     ],
   );
 
@@ -1322,12 +1350,17 @@ export function AskAgent({
   const persistThreadSnapshot = useCallback(
     async (
       snapshot = messagesRef.current,
-      options: { keepalive?: boolean } = {},
+      options: {
+        keepalive?: boolean;
+        threadId?: string;
+        runId?: string | null;
+        context?: ChatContext;
+      } = {},
     ): Promise<boolean> => {
       if (!isSignedIn || snapshot.length === 0) return true;
       if (!snapshot.some((m) => m.role === "user")) return true;
 
-      const threadId = threadIdRef.current;
+      const threadId = options.threadId ?? threadIdRef.current;
       if (deletedThreadIdsRef.current.has(threadId)) return true;
 
       const latestAssistant = latestAssistantMessage(snapshot);
@@ -1351,10 +1384,10 @@ export function AskAgent({
               snapshot.find((m) => m.role === "user")?.text ?? "",
             ),
             messages: serializeMessages(snapshot),
-            cite: pinnedContext?.citation,
-            kind: pinnedContext?.kind,
-            sourceHref: pinnedContext?.href,
-            runId: running ? (runIdRef.current ?? undefined) : undefined,
+            cite: (options.context ?? pinnedContext)?.citation,
+            kind: (options.context ?? pinnedContext)?.kind,
+            sourceHref: (options.context ?? pinnedContext)?.href,
+            runId: options.runId ?? runIdRef.current ?? undefined,
             status,
           }),
         });
@@ -1429,11 +1462,12 @@ export function AskAgent({
     const id = threadIdRef.current;
     if (deletedThreadIdsRef.current.has(id)) return;
     const runId = running ? (runIdRef.current ?? undefined) : undefined;
-    setOptimisticThread((current) =>
-      current?.id === id &&
-      (current.title !== title || current.status !== status)
-        ? { ...current, title, status, updatedAt: Date.now() }
-        : current,
+    setOptimisticThreads((threads) =>
+      threads.map((thread) =>
+        thread.id === id && (thread.title !== title || thread.status !== status)
+          ? { ...thread, title, status, updatedAt: Date.now() }
+          : thread,
+      ),
     );
     const timer = window.setTimeout(
       () => {
@@ -1466,6 +1500,7 @@ export function AskAgent({
   const resetChatState = useCallback(
     (options: { createPlaceholder?: boolean } = {}) => {
       const { createPlaceholder = false } = options;
+      sendGenerationRef.current += 1;
       queuedPromptRef.current = null;
       pendingSendAfterCleanupRef.current = null;
       queueingOpenRef.current = false;
@@ -1481,16 +1516,14 @@ export function AskAgent({
       const nextThreadId = crypto.randomUUID();
       threadIdRef.current = nextThreadId;
       setActiveThreadId(nextThreadId);
-      setOptimisticThread(
-        createPlaceholder
-          ? {
-              id: nextThreadId,
-              title: "New Chat",
-              updatedAt: Date.now(),
-              status: null,
-            }
-          : null,
-      );
+      if (createPlaceholder) {
+        upsertOptimisticThread({
+          id: nextThreadId,
+          title: "New Chat",
+          updatedAt: Date.now(),
+          status: null,
+        });
+      }
       if (
         typeof window !== "undefined" &&
         window.location.pathname !== "/ask"
@@ -1504,7 +1537,7 @@ export function AskAgent({
         /* ignore */
       }
     },
-    [clearDraft, clearQueuedPrompt],
+    [clearDraft, clearQueuedPrompt, upsertOptimisticThread],
   );
 
   const newChat = useCallback(() => {
@@ -1515,8 +1548,37 @@ export function AskAgent({
     // it: a failed or stalled persistence request must never make the New chat
     // button unusable. The visible snapshot is captured before resetChatState
     // swaps to a fresh thread; running threads are also saved at run start.
-    const snapshot = messagesRef.current;
-    void persistThreadSnapshot(snapshot)
+    const snapshot = [...messagesRef.current];
+    const currentThreadId = threadIdRef.current;
+    const currentRunId = runIdRef.current;
+    const currentContext = pinnedContext;
+    if (snapshot.some((m) => m.role === "user")) {
+      const latestAssistant = latestAssistantMessage(snapshot);
+      const running = latestAssistant
+        ? isLiveAssistant(latestAssistant)
+        : false;
+      const status = running
+        ? "running"
+        : latestAssistant?.phase === "stopped"
+          ? "stopped"
+          : "done";
+      optimisticThreadSnapshotsRef.current.set(currentThreadId, {
+        messages: snapshot,
+        runId: currentRunId,
+        status,
+      });
+      upsertOptimisticThread({
+        id: currentThreadId,
+        title: shortTitle(snapshot.find((m) => m.role === "user")?.text ?? ""),
+        updatedAt: Date.now(),
+        status,
+      });
+    }
+    void persistThreadSnapshot(snapshot, {
+      threadId: currentThreadId,
+      runId: currentRunId,
+      context: currentContext,
+    })
       .then((saved) => {
         if (!saved) {
           console.warn("Failed to persist current ask thread before New chat");
@@ -1530,7 +1592,12 @@ export function AskAgent({
     // in the background; explicit Stop is the only path that cancels backend work.
     resetChatState({ createPlaceholder: true });
     setSidebarOpen(true);
-  }, [persistThreadSnapshot, resetChatState]);
+  }, [
+    persistThreadSnapshot,
+    resetChatState,
+    upsertOptimisticThread,
+    pinnedContext,
+  ]);
 
   const deleteActiveChat = useCallback(
     (id: string, wasActive = false) => {
@@ -1546,6 +1613,10 @@ export function AskAgent({
         return;
       }
       deletedThreadIdsRef.current.add(id);
+      optimisticThreadSnapshotsRef.current.delete(id);
+      setOptimisticThreads((threads) =>
+        threads.filter((thread) => thread.id !== id),
+      );
       stopBackendRun(runIdRef.current, id);
       resetChatState({ createPlaceholder: false });
       setSidebarOpen(true);
@@ -1555,12 +1626,49 @@ export function AskAgent({
 
   const loadThread = useCallback(
     async (threadId: string) => {
+      const loadSeq = ++loadThreadSeqRef.current;
+      const restoreOptimisticSnapshot = () => {
+        const snapshot = optimisticThreadSnapshotsRef.current.get(threadId);
+        if (!snapshot || loadSeq !== loadThreadSeqRef.current) return false;
+        abortRef.current?.abort();
+        const loaded = snapshot.messages;
+        msgId.current = loaded.reduce((mx, m) => Math.max(mx, m.id), 0) + 1;
+        threadIdRef.current = threadId;
+        setActiveThreadId(threadId);
+        runIdRef.current = snapshot.runId;
+        const latestAssistant = latestAssistantMessage(loaded);
+        const running = latestAssistant
+          ? isLiveAssistant(latestAssistant)
+          : false;
+        setBusy(running);
+        messagesRef.current = loaded;
+        setMessages(loaded);
+        if (running && snapshot.runId) {
+          const user = [...loaded]
+            .reverse()
+            .find((m) => m.role === "user" && m.text.trim());
+          if (user) {
+            window.setTimeout(() => {
+              void sendRef.current?.(
+                user.text,
+                snapshot.runId ?? undefined,
+                latestAssistant?.eventCursor ?? 0,
+                latestAssistant?.startedAt,
+              );
+            }, 0);
+          }
+        }
+        return true;
+      };
       flushThread();
       try {
         const res = await fetch(
           `/api/ask-threads?id=${encodeURIComponent(threadId)}`,
         );
-        if (!res.ok) return;
+        if (!res.ok || loadSeq !== loadThreadSeqRef.current) {
+          restoreOptimisticSnapshot();
+          return;
+        }
         const data = (await res.json()) as {
           thread?: {
             runId?: string | null;
@@ -1580,16 +1688,28 @@ export function AskAgent({
             }>;
           };
         };
+        if (loadSeq !== loadThreadSeqRef.current) return;
         const raw = data.thread?.messages ?? [];
+        const threadStatus = data.thread?.status;
         const loaded = collapseDuplicateRunningTurns(
-          raw.map(
-            (m, i): Message => ({
+          raw.map((m, i): Message => {
+            const role = m.role === "user" ? "user" : "assistant";
+            const rawPhase = m.phase ?? "done";
+            const phase =
+              role === "assistant" &&
+              threadStatus !== "running" &&
+              !["done", "error", "stopped"].includes(rawPhase)
+                ? threadStatus === "stopped"
+                  ? "stopped"
+                  : "done"
+                : rawPhase;
+            return {
               id: typeof m.id === "number" ? m.id : i,
-              role: m.role === "user" ? "user" : "assistant",
+              role,
               text: typeof m.text === "string" ? m.text : "",
               tools: Array.isArray(m.tools) ? m.tools : [],
               progress: Array.isArray(m.progress) ? m.progress : [],
-              phase: m.phase ?? "done",
+              phase,
               startedAt:
                 typeof m.startedAt === "number" ? m.startedAt : undefined,
               elapsedMs:
@@ -1598,14 +1718,16 @@ export function AskAgent({
                 typeof m.eventCursor === "number" ? m.eventCursor : undefined,
               cost: m.cost,
               error: m.error,
-            }),
-          ),
+            };
+          }),
         );
         abortRef.current?.abort();
         msgId.current = loaded.reduce((mx, m) => Math.max(mx, m.id), 0) + 1;
         threadIdRef.current = threadId;
         setActiveThreadId(threadId);
-        setOptimisticThread(null);
+        setOptimisticThreads((threads) =>
+          threads.filter((thread) => thread.id !== threadId),
+        );
 
         // Still researching? Show the persisted in-flight transcript immediately,
         // then reconnect to the same run. Newer rows include the assistant
@@ -1613,7 +1735,12 @@ export function AskAgent({
         // that fallback for older saved running threads.
         const last = loaded[loaded.length - 1];
         const runId = data.thread?.runId;
-        if (data.thread?.status === "running" && runId) {
+        const shouldReconnectRun = Boolean(
+          runId &&
+            (data.thread?.status === "running" ||
+              (last && isLiveAssistant(last))),
+        );
+        if (shouldReconnectRun && runId) {
           activeRef.current = false;
           runIdRef.current = runId;
           if (last && isLiveAssistant(last)) {
@@ -1643,7 +1770,7 @@ export function AskAgent({
         messagesRef.current = loaded;
         setMessages(loaded);
       } catch {
-        // ignore load failures
+        restoreOptimisticSnapshot();
       }
     },
     [flushThread],
@@ -1821,7 +1948,7 @@ export function AskAgent({
           onNewChat={newChat}
           onDeleteActive={deleteActiveChat}
           refreshKey={threadListVersion}
-          optimisticThread={optimisticThread}
+          optimisticThreads={optimisticThreads}
         />
       )}
       {isSignedIn && (
@@ -1968,7 +2095,7 @@ function ThreadSidebar({
   onNewChat,
   onDeleteActive,
   refreshKey,
-  optimisticThread,
+  optimisticThreads,
 }: {
   open: boolean;
   onClose: () => void;
@@ -1979,33 +2106,33 @@ function ThreadSidebar({
   onNewChat: () => void;
   onDeleteActive: (id: string, wasActive?: boolean) => void;
   refreshKey: number;
-  optimisticThread: ThreadListItem | null;
+  optimisticThreads: ThreadListItem[];
 }) {
   const [items, setItems] = useState<ThreadListItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [query, setQuery] = useState("");
   const fetchSeqRef = useRef(0);
   const q = query.trim().toLowerCase();
-  const allItems = optimisticThread
-    ? [
-        {
-          ...items.find((item) => item.id === optimisticThread.id),
-          ...optimisticThread,
-        },
-        ...items.filter((item) => item.id !== optimisticThread.id),
-      ]
-    : items;
+  const allItems = [
+    ...optimisticThreads.map((thread) => ({
+      ...items.find((item) => item.id === thread.id),
+      ...thread,
+    })),
+    ...items.filter(
+      (item) => !optimisticThreads.some((thread) => thread.id === item.id),
+    ),
+  ];
   const filtered = q
     ? allItems.filter(
         (t) =>
-          t.id === optimisticThread?.id ||
+          optimisticThreads.some((thread) => thread.id === t.id) ||
           (t.title || "").toLowerCase().includes(q),
       )
     : allItems;
 
   useEffect(() => {
-    if (optimisticThread) setQuery("");
-  }, [optimisticThread]);
+    if (optimisticThreads.length > 0) setQuery("");
+  }, [optimisticThreads.length]);
 
   useEffect(() => {
     // refreshKey is intentionally read so parent saves can refetch an already-open sidebar.
@@ -2408,9 +2535,9 @@ function AssistantMessage({
   const live = !["done", "error", "stopped"].includes(m.phase);
   const elapsed = m.startedAt
     ? live
-      ? now - m.startedAt
+      ? Math.max(now - m.startedAt, m.elapsedMs ?? 0)
       : (m.elapsedMs ?? now - m.startedAt)
-    : undefined;
+    : m.elapsedMs;
   return (
     <MessageRow align="start">
       <MessageAvatar>
