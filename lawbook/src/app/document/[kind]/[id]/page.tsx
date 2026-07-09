@@ -21,6 +21,7 @@ import {
 } from "@/lib/sgjudge";
 
 const PAGE = 60000;
+const FALLBACK_SNIPPET_PATH_LIMIT = 360;
 
 const KIND_LABELS: Record<DocumentKind, string> = {
   hansard: "Hansard",
@@ -103,6 +104,17 @@ export default async function DocumentResultPage({
   const sourceUrl = typeof detail?.url === "string" ? detail.url : undefined;
   const hasBody = Boolean(detail && initialText);
   const pagePath = `/document/${encodeURIComponent(decodedKind)}/${encodeURIComponent(decodedId)}`;
+  const fallbackPath = buildFallbackDocumentPath(pagePath, {
+    q,
+    title,
+    snippet: truncateText(
+      stripHtml(snippet ?? ""),
+      FALLBACK_SNIPPET_PATH_LIMIT,
+    ),
+    meta,
+  });
+  const recentlyViewedPath = detail ? pagePath : fallbackPath;
+  const canRecordRecentlyViewed = Boolean(detail || (title && snippet));
   const description = detail
     ? documentDescription(decodedKind, detail, displayTitle)
     : metaDescription(
@@ -111,12 +123,16 @@ export default async function DocumentResultPage({
 
   return (
     <>
-      <RecentlyViewedRecorder
-        docType={decodedKind as "hansard" | "bills" | "subsidiary" | "practice"}
-        docId={decodedId}
-        title={displayTitle}
-        path={pagePath}
-      />
+      {canRecordRecentlyViewed && (
+        <RecentlyViewedRecorder
+          docType={
+            decodedKind as "hansard" | "bills" | "subsidiary" | "practice"
+          }
+          docId={decodedId}
+          title={displayTitle}
+          path={recentlyViewedPath}
+        />
+      )}
       {detail && (
         <script
           type="application/ld+json"
@@ -336,6 +352,36 @@ function detailMeta(
   return rows;
 }
 
+function buildFallbackDocumentPath(
+  basePath: string,
+  params: {
+    q?: string;
+    title?: string;
+    snippet?: string;
+    meta?: string;
+  },
+): string {
+  const searchParams = new URLSearchParams();
+  for (const [key, value] of Object.entries(params)) {
+    const clean = value?.trim();
+    if (clean) searchParams.set(key, clean);
+  }
+
+  const query = searchParams.toString();
+  return query ? `${basePath}?${query}` : basePath;
+}
+
+function truncateText(value: string, maxLength: number): string | undefined {
+  const clean = value.trim();
+  if (!clean) return undefined;
+  if (clean.length <= maxLength) return clean;
+  return `${clean.slice(0, maxLength).trimEnd()}…`;
+}
+
+function stripHtml(value: string): string {
+  return value.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ");
+}
+
 function parseMeta(value?: string): [string, string][] {
   if (!value) return [];
   try {
@@ -355,6 +401,6 @@ function parseMeta(value?: string): [string, string][] {
 }
 
 function safeReturnTo(value?: string): string | null {
-  if (!value || !value.startsWith("/") || value.startsWith("//")) return null;
+  if (!value?.startsWith("/") || value.startsWith("//")) return null;
   return value;
 }
