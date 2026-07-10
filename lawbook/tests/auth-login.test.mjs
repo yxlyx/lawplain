@@ -73,3 +73,14 @@ test("sign-up account-check failures are explicit and actionable", () => {
   assert.match(route, /ACCOUNT_CHECK_FAILED/);
   assert.match(route, /status: 503/);
 });
+
+test("successful sign-up replaces the form with useful next actions", () => {
+  const form = read("src/components/AuthForm.tsx");
+
+  assert.match(form, /setCreatedUsername\(cleanUsername\)/);
+  assert.match(form, /Account created/);
+  assert.match(form, /Welcome, \{createdUsername\}/);
+  assert.match(form, /href="\/"[\s\S]*Go to Search/);
+  assert.match(form, /href="\/ask"[\s\S]*Ask Lawplain/);
+  assert.match(form, /href="\/saved"[\s\S]*View saved research/);
+});
