@@ -29,6 +29,32 @@ test("ask history button toggles the thread sidebar", () => {
   assert.match(source, /onClose=\{\(\) => setSidebarOpen\(false\)\}/);
 });
 
+test("selecting a history thread returns focus to the prompt composer", () => {
+  const source = read("src/components/AskAgent.tsx");
+
+  assert.match(source, /const pendingHistoryFocusRef = useRef<string \| null>/);
+  assert.match(source, /data-ask-history-thread=\{t\.id\}/);
+  assert.match(
+    source,
+    /pendingHistoryFocusRef\.current = id;[\s\S]*inputRef\.current\?\.focus\(\{ preventScroll: true \}\)/,
+  );
+  assert.match(
+    source,
+    /window\.matchMedia\("\(max-width: 1023px\)"\)\.matches[\s\S]*setSidebarOpen\(false\)/,
+  );
+  assert.match(
+    source,
+    /const threadLoad = loadThread\(id\);[\s\S]*focusComposerAfterHistorySelection\(id\);[\s\S]*threadLoad\.then\(settleHistoryFocus, settleHistoryFocus\)/,
+  );
+  assert.match(source, /ref=\{bindComposerInput\}/);
+  assert.match(
+    source,
+    /document\.activeElement === previousComposer[\s\S]*composer\.focus\(\{ preventScroll: true \}\)/,
+  );
+  assert.match(source, /!loadComplete && focused === document\.body/);
+  assert.match(source, /composer\?\.focus\(\{ preventScroll: true \}\)/);
+});
+
 test("ask places the sidebar toggle before the Lawplain header logo", () => {
   const source = read("src/components/AskAgent.tsx");
   const appShell = read("src/components/AppShell.tsx");

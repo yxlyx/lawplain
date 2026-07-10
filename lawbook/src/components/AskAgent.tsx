@@ -915,6 +915,8 @@ export function AskAgent({
     return () => setHideFooter(false);
   }, [messages.length, setHideFooter]);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const pendingHistoryFocusRef = useRef<string | null>(null);
+  const restoreComposerFocusOnMountRef = useRef(false);
   const chatScrollRef = useRef<HTMLDivElement>(null);
   const stickToBottomRef = useRef(true);
   const lastScrollYRef = useRef(0);
@@ -1035,6 +1037,58 @@ export function AskAgent({
     el.style.height = "auto";
     el.style.height = `${Math.min(el.scrollHeight, 160)}px`;
   }, []);
+
+  // The composer moves between the empty and loaded layouts. Carry focus to
+  // its replacement only when the detached textarea was still focused.
+  const bindComposerInput = useCallback(
+    (composer: HTMLTextAreaElement | null) => {
+      const previousComposer = inputRef.current;
+      if (!composer) {
+        restoreComposerFocusOnMountRef.current = Boolean(
+          pendingHistoryFocusRef.current &&
+            previousComposer &&
+            document.activeElement === previousComposer,
+        );
+        inputRef.current = null;
+        return;
+      }
+
+      inputRef.current = composer;
+      if (
+        pendingHistoryFocusRef.current &&
+        restoreComposerFocusOnMountRef.current
+      ) {
+        restoreComposerFocusOnMountRef.current = false;
+        composer.focus({ preventScroll: true });
+      }
+    },
+    [],
+  );
+
+  const focusComposerAfterHistorySelection = useCallback(
+    (threadId: string, loadComplete = false) => {
+      window.requestAnimationFrame(() => {
+        if (pendingHistoryFocusRef.current !== threadId) return;
+
+        const composer = inputRef.current;
+        const focused = document.activeElement;
+        const selectionStillOwnsFocus =
+          focused === composer ||
+          (!loadComplete && focused === document.body) ||
+          (focused instanceof HTMLElement &&
+            focused.dataset.askHistoryThread === threadId);
+
+        if (selectionStillOwnsFocus) {
+          composer?.focus({ preventScroll: true });
+        }
+        if (loadComplete || !selectionStillOwnsFocus) {
+          pendingHistoryFocusRef.current = null;
+          restoreComposerFocusOnMountRef.current = false;
+        }
+      });
+    },
+    [],
+  );
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: input changes the textarea's rendered text, so re-measure
   useEffect(() => {
@@ -2355,7 +2409,7 @@ export function AskAgent({
       )}
       <form onSubmit={onSubmit} className="flex items-end gap-2">
         <textarea
-          ref={inputRef}
+          ref={bindComposerInput}
           value={input}
           onChange={(e) => {
             setInput(e.target.value);
@@ -2455,7 +2509,17 @@ export function AskAgent({
             // loadThread() first flushes the currently-visible thread. Do not
             // point threadIdRef at the target before that flush, or the current
             // transcript can overwrite the selected history item.
-            void loadThread(id);
+            pendingHistoryFocusRef.current = id;
+            restoreComposerFocusOnMountRef.current = false;
+            inputRef.current?.focus({ preventScroll: true });
+            if (window.matchMedia("(max-width: 1023px)").matches) {
+              setSidebarOpen(false);
+            }
+            const threadLoad = loadThread(id);
+            focusComposerAfterHistorySelection(id);
+            const settleHistoryFocus = () =>
+              focusComposerAfterHistorySelection(id, true);
+            void threadLoad.then(settleHistoryFocus, settleHistoryFocus);
             if (typeof window !== "undefined") {
               window.history.replaceState(null, "", `/ask/${id}`);
             }
@@ -2854,6 +2918,7 @@ function ThreadSidebar({
                     >
                       <button
                         type="button"
+                        data-ask-history-thread={t.id}
                         onClick={() => {
                           setItems((xs) =>
                             xs.map((x) =>
