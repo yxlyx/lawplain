@@ -106,6 +106,8 @@ test("successful sign-up replaces the form with useful next actions", () => {
 
 test("successful sign-in replaces the form with the same useful next actions", () => {
   const form = read("src/components/AuthForm.tsx");
+  const signInPage = read("src/app/sign-in/page.tsx");
+  const signUpPage = read("src/app/sign-up/page.tsx");
 
   assert.match(
     form,
@@ -114,4 +116,6 @@ test("successful sign-in replaces the form with the same useful next actions", (
   assert.match(form, /Signed in successfully/);
   assert.match(form, /Welcome back/);
   assert.match(form, /Continue exploring Singapore law/);
+  assert.match(signInPage, /max-w-5xl/);
+  assert.match(signUpPage, /max-w-5xl/);
 });

@@ -11,7 +11,12 @@ import {
   SearchIcon,
   SparkleIcon,
 } from "@/components/icons";
-import { authClient } from "@/lib/auth-client";
+import {
+  authClient,
+  SIGN_OUT_TRANSITION_END,
+  SIGN_OUT_TRANSITION_START,
+  signOutWithTransition,
+} from "@/lib/auth-client";
 
 const NAV = [
   {
@@ -68,10 +73,11 @@ export function AppShell({
   const pathname = usePathname();
   const askRoute = pathname.startsWith("/ask");
   const [collapsed, setCollapsed] = useState(false);
+  const [signingOut, setSigningOut] = useState(false);
   const { data: session, isPending: sessionPending } = authClient.useSession();
   const sessionUserId = session?.user?.id;
   const visibleNav = NAV.filter(
-    (tab) => tab.href !== "/ask" || Boolean(sessionUserId),
+    (tab) => tab.href !== "/ask" || Boolean(sessionUserId) || signingOut,
   );
 
   useEffect(() => {
@@ -81,6 +87,29 @@ export function AppShell({
       // localStorage may be unavailable; keep the default.
     }
   }, []);
+
+  useEffect(() => {
+    let safetyTimer: number | undefined;
+    const begin = () => {
+      setSigningOut(true);
+      if (safetyTimer !== undefined) window.clearTimeout(safetyTimer);
+      safetyTimer = window.setTimeout(() => setSigningOut(false), 1200);
+    };
+    const end = () => setSigningOut(false);
+
+    window.addEventListener(SIGN_OUT_TRANSITION_START, begin);
+    window.addEventListener(SIGN_OUT_TRANSITION_END, end);
+    return () => {
+      window.removeEventListener(SIGN_OUT_TRANSITION_START, begin);
+      window.removeEventListener(SIGN_OUT_TRANSITION_END, end);
+      if (safetyTimer !== undefined) window.clearTimeout(safetyTimer);
+    };
+  }, []);
+
+  useEffect(() => {
+    void pathname;
+    setSigningOut(false);
+  }, [pathname]);
 
   useEffect(() => {
     // Recheck immediately after navigation as well as on the polling cadence.
@@ -93,8 +122,15 @@ export function AppShell({
 
     let cancelled = false;
     let timer: number | undefined;
+    let refreshing = false;
 
     const refreshAskCompletion = async () => {
+      if (cancelled || refreshing) return;
+      refreshing = true;
+      if (timer !== undefined) {
+        window.clearTimeout(timer);
+        timer = undefined;
+      }
       let nextPollMs = 30_000;
       try {
         const response = await fetch("/api/ask-threads", {
@@ -111,22 +147,35 @@ export function AppShell({
         );
         setAskSidebarUnread(
           threads.some(
-            (thread) => thread.status !== "running" && thread.unread === true,
+            (thread) => thread.status === "done" && thread.unread === true,
           ),
         );
         if (hasRunningThread) nextPollMs = 5_000;
       } catch {
         // Keep the last known notification through transient network failures.
       } finally {
+        refreshing = false;
         if (!cancelled) {
           timer = window.setTimeout(refreshAskCompletion, nextPollMs);
         }
       }
     };
 
+    const refreshWhenVisible = () => {
+      if (document.visibilityState === "visible") {
+        void refreshAskCompletion();
+      }
+    };
+
+    window.addEventListener("focus", refreshWhenVisible);
+    window.addEventListener("pageshow", refreshWhenVisible);
+    document.addEventListener("visibilitychange", refreshWhenVisible);
     void refreshAskCompletion();
     return () => {
       cancelled = true;
+      window.removeEventListener("focus", refreshWhenVisible);
+      window.removeEventListener("pageshow", refreshWhenVisible);
+      document.removeEventListener("visibilitychange", refreshWhenVisible);
       if (timer !== undefined) window.clearTimeout(timer);
     };
   }, [pathname, sessionUserId, sessionPending, setAskSidebarUnread]);
@@ -208,17 +257,24 @@ export function AppShell({
                 <Link
                   key={tab.href}
                   href={tab.href}
-                  className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium transition-colors ${
+                  className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium transition-[color,background-color,opacity] duration-[50ms] ${
                     active
                       ? "bg-accent-soft text-accent"
                       : "text-muted-2 hover:bg-surface-2 hover:text-foreground"
+                  } ${
+                    tab.href === "/ask" && signingOut
+                      ? "pointer-events-none opacity-0"
+                      : "opacity-100"
                   }`}
                 >
                   <Icon className="h-4 w-4" />
                   <span className="hidden sm:inline">{tab.label}</span>
                   {tab.href === "/ask" && askSidebarUnread && (
-                    <span className="rounded-full bg-accent-soft px-1.5 py-0.5 text-[10px] font-semibold uppercase leading-none text-accent">
-                      Done
+                    <span
+                      title="Completed chat"
+                      className="ml-0.5 h-2 w-2 shrink-0 rounded-full bg-accent"
+                    >
+                      <span className="sr-only">Completed chat</span>
                     </span>
                   )}
                 </Link>
@@ -275,23 +331,28 @@ export function AppShell({
                 key={tab.href}
                 href={tab.href}
                 title={tab.label}
-                className={`relative flex items-center gap-3 rounded-lg px-2.5 py-2 text-sm font-medium transition-colors ${
+                className={`relative flex items-center gap-3 rounded-lg px-2.5 py-2 text-sm font-medium transition-[color,background-color,opacity] duration-[50ms] ${
                   active
                     ? "bg-accent-soft text-accent"
                     : "text-muted-2 hover:bg-surface-2 hover:text-foreground"
+                } ${
+                  tab.href === "/ask" && signingOut
+                    ? "pointer-events-none opacity-0"
+                    : "opacity-100"
                 }`}
               >
                 <Icon className="h-5 w-5 shrink-0" />
                 <span className={`truncate ${labelCls}`}>{tab.label}</span>
                 {tab.href === "/ask" && askSidebarUnread && (
                   <span
+                    title="Completed chat"
                     className={
                       collapsed
                         ? "absolute right-1 top-1 h-2 w-2 rounded-full bg-accent"
-                        : "ml-auto hidden rounded-full bg-accent-soft px-1.5 py-0.5 text-[10px] font-semibold uppercase leading-none text-accent lg:inline-flex"
+                        : "ml-auto hidden h-2 w-2 shrink-0 rounded-full bg-accent lg:inline-flex"
                     }
                   >
-                    {collapsed ? null : "Done"}
+                    <span className="sr-only">Completed chat</span>
                   </span>
                 )}
               </Link>
@@ -310,7 +371,14 @@ export function AppShell({
           askRoute && askSidebarOpen ? "lg:ml-72 lg:rounded-l-2xl" : ""
         }`}
       >
-        <div className="flex min-h-0 flex-1">{children}</div>
+        <div
+          aria-hidden={signingOut || undefined}
+          className={`flex min-h-0 flex-1 transition-opacity duration-[50ms] ${
+            signingOut ? "pointer-events-none opacity-0" : "opacity-100"
+          }`}
+        >
+          {children}
+        </div>
         {!hideFooter && footer}
       </div>
     </>
@@ -321,12 +389,20 @@ function SidebarAuth({ labelCls }: { labelCls: string }) {
   const pathname = usePathname();
   const router = useRouter();
   const { data: session, isPending } = authClient.useSession();
+  const [signingOut, setSigningOut] = useState(false);
   const next = encodeURIComponent(pathname || "/");
 
   const signOut = async () => {
-    await authClient.signOut();
-    router.replace("/");
-    router.refresh();
+    if (signingOut) return;
+    setSigningOut(true);
+    try {
+      await signOutWithTransition(() => {
+        router.replace("/");
+        router.refresh();
+      });
+    } finally {
+      setSigningOut(false);
+    }
   };
 
   if (isPending) {
@@ -370,6 +446,8 @@ function SidebarAuth({ labelCls }: { labelCls: string }) {
       <button
         type="button"
         onClick={() => void signOut()}
+        disabled={signingOut}
+        aria-busy={signingOut}
         title="Sign out"
         className="flex items-center gap-2 rounded-lg px-2.5 py-2 text-sm font-medium text-muted-2 transition-colors hover:bg-surface-2 hover:text-foreground"
       >

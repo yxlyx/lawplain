@@ -14,9 +14,9 @@ test("the whole pane beside history scrolls while chat content stays readable", 
   for (const page of [askPage, threadPage]) {
     assert.match(
       page,
-      /<main className="mx-auto h-\[calc\(100dvh-3\.5rem\)\] min-h-0 w-full max-w-\[850px\] overflow-hidden px-5 sm:px-8">/,
+      /<main className="h-\[calc\(100dvh-3\.5rem\)\] min-h-0 w-full overflow-hidden">/,
     );
-    assert.doesNotMatch(page, /<main className="[^"]*max-w-2xl/);
+    assert.doesNotMatch(page, /<main className="[^"]*max-w-/);
   }
 
   assert.match(

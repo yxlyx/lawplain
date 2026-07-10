@@ -2,12 +2,14 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { authClient } from "@/lib/auth-client";
+import { useState } from "react";
+import { authClient, signOutWithTransition } from "@/lib/auth-client";
 
 export function AuthMenu() {
   const pathname = usePathname();
   const router = useRouter();
   const { data: session, isPending } = authClient.useSession();
+  const [signingOut, setSigningOut] = useState(false);
   const next = encodeURIComponent(pathname || "/");
   const username = session?.user
     ? ((session.user as { username?: string; name?: string }).username ??
@@ -15,9 +17,16 @@ export function AuthMenu() {
     : null;
 
   const signOut = async () => {
-    await authClient.signOut();
-    router.replace("/");
-    router.refresh();
+    if (signingOut) return;
+    setSigningOut(true);
+    try {
+      await signOutWithTransition(() => {
+        router.replace("/");
+        router.refresh();
+      });
+    } finally {
+      setSigningOut(false);
+    }
   };
 
   if (isPending) {
@@ -55,6 +64,8 @@ export function AuthMenu() {
       <button
         type="button"
         onClick={() => void signOut()}
+        disabled={signingOut}
+        aria-busy={signingOut}
         className="rounded-lg px-3 py-1.5 text-sm font-medium text-muted-2 transition-colors hover:bg-surface-2 hover:text-foreground"
       >
         Sign out

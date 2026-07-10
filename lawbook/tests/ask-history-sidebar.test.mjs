@@ -138,12 +138,17 @@ test("ask places the sidebar toggle before the Lawplain header logo", () => {
   assert.match(source, /hover:bg-background\/70/);
   assert.match(appShell, /const askRoute = pathname\.startsWith\("\/ask"\)/);
   assert.match(appShell, /askRoute \? "" : "mx-auto max-w-6xl"/);
-  assert.match(askPage, /w-full max-w-\[850px\] overflow-hidden/);
-  assert.match(threadPage, /w-full max-w-\[850px\] overflow-hidden/);
+  assert.match(askPage, /min-h-0 w-full overflow-hidden/);
+  assert.match(threadPage, /min-h-0 w-full overflow-hidden/);
   assert.match(
     appShell,
     /askRoute && askSidebarOpen \? "lg:ml-72 lg:rounded-l-2xl" : ""/,
   );
+  assert.match(
+    appShell,
+    /transition-opacity duration-\[50ms\][\s\S]*signingOut[\s\S]*\? "pointer-events-none opacity-0"[\s\S]*: "opacity-100"/,
+  );
+  assert.doesNotMatch(appShell, /blur-\[2px\]|scale-\[0\.995\]/);
   assert.match(appShell, /flex h-14 w-full items-center justify-between/);
   assert.match(appShell, /h-5 w-5 translate-y-px/);
   assert.doesNotMatch(askPage, /Back to search/);
@@ -183,7 +188,11 @@ test("ask history accepts reconciled terminal status over stale optimistic runni
 
   assert.match(
     source,
-    /fetched\?\.status[\s\S]*thread\.status === "running"[\s\S]*fetched\.status !== "running"[\s\S]*fetchedLastPromptAt >= thread\.lastPromptAt/,
+    /const fetchedMatchesOptimisticRun =[\s\S]*fetched\?\.runId === thread\.runId/,
+  );
+  assert.match(
+    source,
+    /fetched\?\.status[\s\S]*thread\.status === "running"[\s\S]*fetched\.status !== "running"[\s\S]*fetchedMatchesOptimisticRun[\s\S]*!thread\.runId && fetchedLastPromptAt >= thread\.lastPromptAt/,
   );
   assert.match(source, /return \{\s*\.\.\.thread,\s*\.\.\.fetched,\s*\}/);
   assert.match(source, /return \{\s*\.\.\.fetched,\s*\.\.\.thread,\s*\}/);
@@ -205,6 +214,13 @@ test("a follow-up prompt immediately outranks stale completed server state", () 
   assert.match(
     source,
     /fetchedLastPromptAt >= thread\.lastPromptAt[\s\S]*return \{\s*\.\.\.thread,\s*\.\.\.fetched/,
+  );
+  assert.match(source, /runId\?: string \| null/);
+  assert.match(source, /runId: snapshot\.runId/);
+  assert.match(source, /const runId = resumeRunId \?\? crypto\.randomUUID\(\)/);
+  assert.match(
+    source,
+    /upsertOptimisticThread\(\{[\s\S]*runId,[\s\S]*status: "running"/,
   );
   assert.match(source, /return \{\s*\.\.\.fetched,\s*\.\.\.thread,\s*\}/);
 });
@@ -259,24 +275,25 @@ test("ask history polls running threads while closed and advertises unread done"
   assert.match(source, /loadThreads\(open, \(\) => cancelled\)/);
   assert.match(
     source,
-    /const hasUnreadDoneThread = allItems\.some\([\s\S]*thread\.id !== activeId[\s\S]*thread\.status !== "running" &&[\s\S]*thread\.unread/,
+    /const hasUnreadDoneThread = allItems\.some\([\s\S]*thread\.status === "done" && thread\.unread/,
   );
   assert.match(source, /onUnreadDoneChange\(hasUnreadDoneThread\)/);
+  assert.doesNotMatch(source, /completedInBackground/);
+  assert.match(source, /status: "done",\s*unread: true/);
   assert.match(
     source,
-    /const isViewingCompletedThread =[\s\S]*finalThreadId === threadIdRef\.current[\s\S]*window\.location\.pathname ===[\s\S]*`\/ask\/\$\{encodeURIComponent\(finalThreadId\)\}`/,
-  );
-  assert.match(
-    source,
-    /const completedInBackground = !isViewingCompletedThread/,
-  );
-  assert.match(source, /unread: completedInBackground/);
-  assert.match(
-    source,
-    /const unreadDone =[\s\S]*t\.id !== activeId && !researching && t\.unread/,
+    /const unreadDone =[\s\S]*!researching && status === "done" && t\.unread/,
   );
   assert.match(source, /if \(!hasRunningThreads\) return/);
   assert.doesNotMatch(source, /if \(!open \|\| !hasRunningThreads\) return/);
+  assert.match(
+    source,
+    /pollRunningThreads\(\)[\s\S]*setInterval\(pollRunningThreads, 2_000\)/,
+  );
+  assert.match(
+    source,
+    /window\.addEventListener\("focus", pollWhenVisible\)[\s\S]*document\.addEventListener\("visibilitychange", pollWhenVisible\)/,
+  );
   assert.match(appShell, /askSidebarUnread && !askSidebarOpen/);
   assert.match(
     source,
@@ -284,20 +301,29 @@ test("ask history polls running threads while closed and advertises unread done"
   );
 });
 
-test("the persistent app header discovers and labels background completions", () => {
+test("the persistent app header discovers and dots completions", () => {
   const source = read("src/components/AskAgent.tsx");
   const appShell = read("src/components/AppShell.tsx");
 
   assert.match(appShell, /fetch\("\/api\/ask-threads"/);
   assert.match(
     appShell,
-    /thread\.status !== "running" && thread\.unread === true/,
+    /thread\.status === "done" && thread\.unread === true/,
   );
   assert.match(appShell, /hasRunningThread[\s\S]*nextPollMs = 5_000/);
   assert.match(
     appShell,
-    /tab\.href === "\/ask" && askSidebarUnread[\s\S]*Done/,
+    /window\.addEventListener\("focus", refreshWhenVisible\)[\s\S]*document\.addEventListener\("visibilitychange", refreshWhenVisible\)/,
   );
+  assert.match(
+    appShell,
+    /window\.removeEventListener\("focus", refreshWhenVisible\)[\s\S]*document\.removeEventListener\("visibilitychange", refreshWhenVisible\)/,
+  );
+  assert.match(
+    appShell,
+    /tab\.href === "\/ask" && askSidebarUnread[\s\S]*title="Completed chat"[\s\S]*bg-accent/,
+  );
+  assert.doesNotMatch(appShell, />\s*Done\s*</);
   assert.match(
     source,
     /return \(\) => \{\s*setAskSidebarAvailable\(false\);\s*setSidebarOpen\(false\);\s*\}/,
@@ -393,7 +419,7 @@ test("Ask is account-only and browser caches are partitioned by user id", () => 
   assert.match(threadPage, /redirect\(`\/sign-in\?next=/);
   assert.match(
     authMenu,
-    /await authClient\.signOut\(\);[\s\S]*router\.replace\("\/"\)/,
+    /await signOutWithTransition\(\(\) => \{[\s\S]*router\.replace\("\/"\)/,
   );
 });
 

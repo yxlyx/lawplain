@@ -53,7 +53,7 @@ export default async function AskPage({
   const context = await loadChatContext(params);
 
   return (
-    <main className="mx-auto h-[calc(100dvh-3.5rem)] min-h-0 w-full max-w-[850px] overflow-hidden px-5 sm:px-8">
+    <main className="h-[calc(100dvh-3.5rem)] min-h-0 w-full overflow-hidden">
       <AskAgent initialContext={context ?? undefined} />
     </main>
   );

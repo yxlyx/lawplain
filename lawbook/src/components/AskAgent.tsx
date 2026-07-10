@@ -604,6 +604,7 @@ interface ThreadListItem {
   lastPromptAt: number;
   createdAt: number;
   updatedAt: number;
+  runId?: string | null;
   status?: string | null;
   unread?: boolean;
 }
@@ -703,6 +704,7 @@ function localThreadSummaries(
       ? snapshot.createdAt
       : snapshot.updatedAt,
     updatedAt: snapshot.updatedAt,
+    runId: snapshot.runId,
     status: snapshot.status,
   }));
 }
@@ -1426,6 +1428,7 @@ export function AskAgent({
       const sendGeneration = sendGenerationRef.current + 1;
       sendGenerationRef.current = sendGeneration;
       const runThreadId = threadIdRef.current;
+      const runId = resumeRunId ?? crypto.randomUUID();
       const runContext = pinnedContext;
       activeRef.current = true;
       queueingOpenRef.current = true;
@@ -1503,6 +1506,7 @@ export function AskAgent({
           lastPromptAt: promptAt,
           createdAt: existingSnapshot?.createdAt ?? promptAt,
           updatedAt: promptAt,
+          runId,
           status: "running",
         });
         stickToBottomRef.current = true;
@@ -1545,7 +1549,6 @@ export function AskAgent({
           .filter((m) => m.text.trim().length > 0)
           .slice(-12)
           .map((m) => ({ role: m.role, text: m.text.slice(0, 6000) }));
-        const runId = resumeRunId ?? crypto.randomUUID();
         runIdRef.current = runId;
         optimisticThreadSnapshotsRef.current.set(runThreadId, {
           messages: runSnapshot,
@@ -1743,12 +1746,6 @@ export function AskAgent({
                 const finalTitle = shortTitle(
                   finalSnapshot.find((m) => m.role === "user")?.text ?? q,
                 );
-                const isViewingCompletedThread =
-                  typeof window !== "undefined" &&
-                  finalThreadId === threadIdRef.current &&
-                  window.location.pathname ===
-                    `/ask/${encodeURIComponent(finalThreadId)}`;
-                const completedInBackground = !isViewingCompletedThread;
                 upsertOptimisticThread({
                   id: finalThreadId,
                   title: finalTitle,
@@ -1759,8 +1756,9 @@ export function AskAgent({
                   ),
                   createdAt: Date.now(),
                   updatedAt: Date.now(),
+                  runId,
                   status: "done",
-                  unread: completedInBackground,
+                  unread: true,
                 });
                 if (
                   isSignedIn &&
@@ -1778,7 +1776,7 @@ export function AskAgent({
                       sourceHref: runContext?.href,
                       runId,
                       status: "done",
-                      unread: completedInBackground,
+                      unread: true,
                     }),
                   })
                     .then((res) => {
@@ -2179,6 +2177,7 @@ export function AskAgent({
         ),
         createdAt: localSnapshot?.createdAt ?? Date.now(),
         updatedAt: Date.now(),
+        runId: currentRunId,
         status,
       });
     }
@@ -2872,11 +2871,14 @@ function ThreadSidebar({
           ? fetched.lastPromptAt
           : fetched.createdAt
         : 0;
+      const fetchedMatchesOptimisticRun =
+        Boolean(fetched?.runId) && fetched?.runId === thread.runId;
       if (
         fetched?.status &&
         thread.status === "running" &&
         fetched.status !== "running" &&
-        fetchedLastPromptAt >= thread.lastPromptAt
+        (fetchedMatchesOptimisticRun ||
+          (!thread.runId && fetchedLastPromptAt >= thread.lastPromptAt))
       ) {
         // A terminal server result should reconcile a stale optimistic copy of
         // the same run. It must not overwrite a newer prompt that has just
@@ -2904,8 +2906,7 @@ function ThreadSidebar({
     (thread) => thread.status === "running",
   );
   const hasUnreadDoneThread = allItems.some(
-    (thread) =>
-      thread.id !== activeId && thread.status !== "running" && thread.unread,
+    (thread) => thread.status === "done" && thread.unread,
   );
 
   useEffect(() => {
@@ -2978,13 +2979,20 @@ function ThreadSidebar({
     if (!hasRunningThreads) return;
 
     let cancelled = false;
-    const id = window.setInterval(
-      () => loadThreads(false, () => cancelled),
-      5000,
-    );
+    const pollRunningThreads = () => loadThreads(false, () => cancelled);
+    const pollWhenVisible = () => {
+      if (document.visibilityState === "visible") pollRunningThreads();
+    };
+
+    pollRunningThreads();
+    const id = window.setInterval(pollRunningThreads, 2_000);
+    window.addEventListener("focus", pollWhenVisible);
+    document.addEventListener("visibilitychange", pollWhenVisible);
     return () => {
       cancelled = true;
       window.clearInterval(id);
+      window.removeEventListener("focus", pollWhenVisible);
+      document.removeEventListener("visibilitychange", pollWhenVisible);
     };
   }, [hasRunningThreads, loadThreads]);
 
@@ -3092,7 +3100,7 @@ function ThreadSidebar({
                       t.status !== "done" &&
                       t.status !== "stopped");
                   const unreadDone =
-                    t.id !== activeId && !researching && t.unread;
+                    !researching && status === "done" && t.unread;
                   return (
                     <div
                       key={t.id}
