@@ -3,6 +3,12 @@
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useState } from "react";
+import {
+  BookIcon,
+  CheckIcon,
+  SearchIcon,
+  SparkleIcon,
+} from "@/components/icons";
 import { authClient } from "@/lib/auth-client";
 
 type AuthFormProps = {
@@ -129,6 +135,47 @@ function safeNextPath(value: string | null): string {
   return value;
 }
 
+function SuccessDestination({
+  href,
+  icon,
+  title,
+  description,
+  last = false,
+}: {
+  href: string;
+  icon: React.ReactNode;
+  title: string;
+  description: string;
+  last?: boolean;
+}) {
+  return (
+    <Link
+      href={href}
+      className={`group flex min-h-20 items-center gap-4 py-3 transition-colors hover:text-accent ${
+        last ? "" : "border-b border-border"
+      }`}
+    >
+      <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-surface-2 text-muted transition-colors group-hover:bg-accent-soft group-hover:text-accent">
+        {icon}
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className="block text-sm font-semibold text-foreground">
+          {title}
+        </span>
+        <span className="mt-0.5 block text-xs leading-5 text-muted">
+          {description}
+        </span>
+      </span>
+      <span
+        aria-hidden="true"
+        className="text-lg text-muted-2 transition-transform group-hover:translate-x-1 group-hover:text-accent"
+      >
+        →
+      </span>
+    </Link>
+  );
+}
+
 export function AuthForm({ mode }: AuthFormProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -138,6 +185,7 @@ export function AuthForm({ mode }: AuthFormProps) {
   const [confirmPassword, setConfirmPassword] = useState("");
   const [error, setError] = useState<AuthErrorState | null>(null);
   const [loading, setLoading] = useState(false);
+  const [createdUsername, setCreatedUsername] = useState<string | null>(null);
 
   const isSignUp = mode === "sign-up";
 
@@ -196,6 +244,12 @@ export function AuthForm({ mode }: AuthFormProps) {
           }
           throw error;
         }
+
+        setPassword("");
+        setConfirmPassword("");
+        setCreatedUsername(cleanUsername);
+        router.refresh();
+        return;
       } else {
         const exists = await accountExists(cleanUsername);
         if (exists === false) {
@@ -242,8 +296,66 @@ export function AuthForm({ mode }: AuthFormProps) {
     }
   }
 
+  if (createdUsername) {
+    return (
+      <section
+        aria-labelledby="account-created-title"
+        className="motion-fade-up mx-auto w-full max-w-4xl py-8 sm:py-12"
+      >
+        <div className="grid items-center gap-8 md:grid-cols-[minmax(0,1.1fr)_minmax(18rem,0.9fr)] md:gap-14">
+          <div>
+            <div className="mb-5 flex h-12 w-12 items-center justify-center rounded-full bg-accent-soft text-accent">
+              <CheckIcon className="h-6 w-6" />
+            </div>
+            <p className="text-xs font-semibold uppercase tracking-[0.12em] text-accent">
+              Account created successfully
+            </p>
+            <h1
+              id="account-created-title"
+              className="mt-2 max-w-xl font-serif text-4xl font-medium leading-tight tracking-tight text-foreground sm:text-5xl"
+            >
+              Welcome, {createdUsername}.
+            </h1>
+            <p className="mt-4 max-w-xl text-base leading-7 text-muted">
+              Your account is ready. Start exploring Singapore law, ask a
+              research question, or build your saved workspace.
+            </p>
+          </div>
+
+          <nav
+            aria-label="Account created next steps"
+            className="border-t border-border pt-5 md:border-l md:border-t-0 md:pl-10 md:pt-0"
+          >
+            <p className="pb-2 text-xs font-semibold uppercase tracking-[0.12em] text-muted-2">
+              Choose where to begin
+            </p>
+            <SuccessDestination
+              href="/"
+              icon={<SearchIcon className="h-5 w-5" />}
+              title="Go to Search"
+              description="Find judgments, legislation, and legal materials."
+            />
+            <SuccessDestination
+              href="/ask"
+              icon={<SparkleIcon className="h-5 w-5" />}
+              title="Ask Lawplain"
+              description="Research a legal question with cited answers."
+            />
+            <SuccessDestination
+              href="/saved"
+              icon={<BookIcon className="h-5 w-5" />}
+              title="View saved research"
+              description="Organise the authorities and answers you keep."
+              last
+            />
+          </nav>
+        </div>
+      </section>
+    );
+  }
+
   return (
-    <div className="w-full rounded-2xl border border-border bg-surface p-6 shadow-sm">
+    <div className="mx-auto w-full max-w-md rounded-2xl border border-border bg-surface p-6 shadow-sm">
       <div className="mb-6">
         <p className="text-xs font-semibold uppercase tracking-wide text-muted-2">
           Lawplain account
