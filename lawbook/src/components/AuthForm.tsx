@@ -186,7 +186,9 @@ export function AuthForm({ mode }: AuthFormProps) {
   const [error, setError] = useState<AuthErrorState | null>(null);
   const [loading, setLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
-  const [createdUsername, setCreatedUsername] = useState<string | null>(null);
+  const [authenticatedUsername, setAuthenticatedUsername] = useState<
+    string | null
+  >(null);
 
   const isSignUp = mode === "sign-up";
 
@@ -270,7 +272,7 @@ export function AuthForm({ mode }: AuthFormProps) {
 
         setPassword("");
         setConfirmPassword("");
-        setCreatedUsername(cleanUsername);
+        setAuthenticatedUsername(cleanUsername);
         router.refresh();
         return;
       } else {
@@ -292,10 +294,12 @@ export function AuthForm({ mode }: AuthFormProps) {
               : "Invalid username or password.",
           );
         }
-      }
 
-      router.push(next);
-      router.refresh();
+        setPassword("");
+        setAuthenticatedUsername(cleanUsername);
+        router.refresh();
+        return;
+      }
     } catch (err) {
       const message = errorMessage(
         err,
@@ -319,10 +323,14 @@ export function AuthForm({ mode }: AuthFormProps) {
     }
   }
 
-  if (createdUsername) {
+  if (authenticatedUsername) {
+    const successLabel = isSignUp
+      ? "Account created successfully"
+      : "Signed in successfully";
+
     return (
       <section
-        aria-labelledby="account-created-title"
+        aria-labelledby="authentication-success-title"
         className="motion-fade-up mx-auto w-full max-w-4xl py-8 sm:py-12"
       >
         <div className="grid items-center gap-8 md:grid-cols-[minmax(0,1.1fr)_minmax(18rem,0.9fr)] md:gap-14">
@@ -331,22 +339,23 @@ export function AuthForm({ mode }: AuthFormProps) {
               <CheckIcon className="h-6 w-6" />
             </div>
             <p className="text-xs font-semibold uppercase tracking-[0.12em] text-accent">
-              Account created successfully
+              {successLabel}
             </p>
             <h1
-              id="account-created-title"
+              id="authentication-success-title"
               className="mt-2 max-w-xl font-serif text-4xl font-medium leading-tight tracking-tight text-foreground sm:text-5xl"
             >
-              Welcome, {createdUsername}.
+              {isSignUp ? "Welcome" : "Welcome back"}, {authenticatedUsername}.
             </h1>
             <p className="mt-4 max-w-xl text-base leading-7 text-muted">
-              Your account is ready. Start exploring Singapore law, ask a
-              research question, or build your saved workspace.
+              {isSignUp
+                ? "Your account is ready. Start exploring Singapore law, ask a research question, or build your saved workspace."
+                : "You're signed in. Continue exploring Singapore law, ask a research question, or return to your saved workspace."}
             </p>
           </div>
 
           <nav
-            aria-label="Account created next steps"
+            aria-label={`${successLabel} next steps`}
             className="border-t border-border pt-5 md:border-l md:border-t-0 md:pl-10 md:pt-0"
           >
             <p className="pb-2 text-xs font-semibold uppercase tracking-[0.12em] text-muted-2">

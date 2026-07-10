@@ -323,9 +323,9 @@ const TOOL_DOT: Record<ToolStep["kind"], string> = {
 
 const ASK_HISTORY_LIMIT = 50;
 const STICKY_BOTTOM_RESUME_PX = 24;
-const THREAD_LIST_CACHE_KEY = "ask:threadListCache";
-const THREAD_SNAPSHOT_CACHE_KEY = "ask:threadSnapshots";
-const LAST_THREAD_ID_KEY = "ask:lastThreadId";
+const THREAD_LIST_CACHE_KEY = "threadListCache";
+const THREAD_SNAPSHOT_CACHE_KEY = "threadSnapshots";
+const LAST_THREAD_ID_KEY = "lastThreadId";
 const PENDING_ASK_KEY = "ask:pendingAfterAuth";
 const PENDING_ASK_TTL_MS = 30 * 60 * 1000;
 
@@ -620,25 +620,38 @@ interface LocalThreadSnapshot {
   context?: ChatContext;
 }
 
-function readLocalThreadSnapshots(): LocalThreadSnapshot[] {
+/** Browser caches are only a resilience layer; namespace them by account so
+ * a shared browser can never show one user's Ask history to another user. */
+function askCacheKey(
+  userId: string | null | undefined,
+  key: string,
+): string | null {
+  return userId ? `ask:v2:${userId}:${key}` : null;
+}
+
+function readLocalThreadSnapshots(
+  userId: string | null | undefined,
+): LocalThreadSnapshot[] {
   if (typeof window === "undefined") return [];
+  const key = askCacheKey(userId, THREAD_SNAPSHOT_CACHE_KEY);
+  if (!key) return [];
   try {
-    const parsed = JSON.parse(
-      localStorage.getItem(THREAD_SNAPSHOT_CACHE_KEY) ?? "[]",
-    );
+    const parsed = JSON.parse(localStorage.getItem(key) ?? "[]");
     return Array.isArray(parsed) ? (parsed as LocalThreadSnapshot[]) : [];
   } catch {
     return [];
   }
 }
 
-function writeLocalThreadSnapshots(snapshots: LocalThreadSnapshot[]): void {
+function writeLocalThreadSnapshots(
+  userId: string | null | undefined,
+  snapshots: LocalThreadSnapshot[],
+): void {
   if (typeof window === "undefined") return;
+  const key = askCacheKey(userId, THREAD_SNAPSHOT_CACHE_KEY);
+  if (!key) return;
   try {
-    localStorage.setItem(
-      THREAD_SNAPSHOT_CACHE_KEY,
-      JSON.stringify(snapshots.slice(0, 50)),
-    );
+    localStorage.setItem(key, JSON.stringify(snapshots.slice(0, 50)));
   } catch {
     // Best-effort browser cache only.
   }
@@ -675,8 +688,10 @@ function compareThreadsByLastPromptDesc(
   return String(b.id).localeCompare(String(a.id));
 }
 
-function localThreadSummaries(): ThreadListItem[] {
-  return readLocalThreadSnapshots().map((snapshot) => ({
+function localThreadSummaries(
+  userId: string | null | undefined,
+): ThreadListItem[] {
+  return readLocalThreadSnapshots(userId).map((snapshot) => ({
     id: snapshot.id,
     title: snapshot.title,
     lastPromptAt: Number.isFinite(snapshot.lastPromptAt)
@@ -692,33 +707,49 @@ function localThreadSummaries(): ThreadListItem[] {
   }));
 }
 
-function getLocalThreadSnapshot(id: string): LocalThreadSnapshot | null {
+function getLocalThreadSnapshot(
+  userId: string | null | undefined,
+  id: string,
+): LocalThreadSnapshot | null {
   return (
-    readLocalThreadSnapshots().find((snapshot) => snapshot.id === id) ?? null
+    readLocalThreadSnapshots(userId).find((snapshot) => snapshot.id === id) ??
+    null
   );
 }
 
-function upsertLocalThreadSnapshot(snapshot: LocalThreadSnapshot): void {
-  const snapshots = readLocalThreadSnapshots().filter(
+function upsertLocalThreadSnapshot(
+  userId: string | null | undefined,
+  snapshot: LocalThreadSnapshot,
+): void {
+  const snapshots = readLocalThreadSnapshots(userId).filter(
     (existing) => existing.id !== snapshot.id,
   );
   writeLocalThreadSnapshots(
+    userId,
     [snapshot, ...snapshots].sort(compareThreadsByLastPromptDesc),
   );
+  const lastThreadKey = askCacheKey(userId, LAST_THREAD_ID_KEY);
+  if (!lastThreadKey) return;
   try {
-    localStorage.setItem(LAST_THREAD_ID_KEY, snapshot.id);
+    localStorage.setItem(lastThreadKey, snapshot.id);
   } catch {
     // Best-effort browser cache only.
   }
 }
 
-function removeLocalThreadSnapshot(id: string): void {
+function removeLocalThreadSnapshot(
+  userId: string | null | undefined,
+  id: string,
+): void {
   writeLocalThreadSnapshots(
-    readLocalThreadSnapshots().filter((snapshot) => snapshot.id !== id),
+    userId,
+    readLocalThreadSnapshots(userId).filter((snapshot) => snapshot.id !== id),
   );
+  const lastThreadKey = askCacheKey(userId, LAST_THREAD_ID_KEY);
+  if (!lastThreadKey) return;
   try {
-    if (localStorage.getItem(LAST_THREAD_ID_KEY) === id) {
-      localStorage.removeItem(LAST_THREAD_ID_KEY);
+    if (localStorage.getItem(lastThreadKey) === id) {
+      localStorage.removeItem(lastThreadKey);
     }
   } catch {
     // Best-effort browser cache only.
@@ -773,7 +804,8 @@ export function AskAgent({
   const { data: session, isPending: sessionPending } = authClient.useSession();
   const [sessionWaitExpired, setSessionWaitExpired] = useState(false);
   const authBlocking = sessionPending && !sessionWaitExpired;
-  const isSignedIn = Boolean(session?.user);
+  const sessionUserId = session?.user?.id;
+  const isSignedIn = Boolean(sessionUserId);
   const query = searchParams.toString();
   const currentPath = `${pathname || "/"}${query ? `?${query}` : ""}`;
   const next = encodeURIComponent(currentPath);
@@ -823,7 +855,6 @@ export function AskAgent({
     return () => {
       setAskSidebarAvailable(false);
       setSidebarOpen(false);
-      setAskSidebarUnread(false);
     };
   }, [isSignedIn, setAskSidebarAvailable, setAskSidebarUnread, setSidebarOpen]);
   const abortRef = useRef<AbortController | null>(null);
@@ -887,14 +918,14 @@ export function AskAgent({
       const title = shortTitle(
         snapshot.find((m) => m.role === "user")?.text ?? "",
       );
-      const existingSnapshot = getLocalThreadSnapshot(threadId);
+      const existingSnapshot = getLocalThreadSnapshot(sessionUserId, threadId);
       const updatedAt = Date.now();
       const fallbackCreatedAt = existingSnapshot?.createdAt ?? updatedAt;
       const lastPromptAt = latestPromptTimestamp(
         snapshot,
         existingSnapshot?.lastPromptAt ?? fallbackCreatedAt,
       );
-      upsertLocalThreadSnapshot({
+      upsertLocalThreadSnapshot(sessionUserId, {
         id: threadId,
         title,
         lastPromptAt,
@@ -920,7 +951,7 @@ export function AskAgent({
         return [next, ...rest].sort(compareThreadsByLastPromptDesc);
       });
     },
-    [pinnedContext],
+    [pinnedContext, sessionUserId],
   );
   messagesRef.current = messages;
   useEffect(() => {
@@ -938,7 +969,11 @@ export function AskAgent({
   const [highlightedMessageId, setHighlightedMessageId] = useState<
     number | null
   >(null);
-  const draftKey = `ask:draft:${pinnedContext?.kind ?? "none"}:${pinnedContext?.citation ?? "none"}`;
+  const draftKey = askCacheKey(
+    sessionUserId,
+    `draft:${pinnedContext?.kind ?? "none"}:${pinnedContext?.citation ?? "none"}`,
+  );
+  const activeRunKey = askCacheKey(sessionUserId, "activeRun");
 
   useEffect(() => {
     setPinnedContext(initialContext);
@@ -946,7 +981,7 @@ export function AskAgent({
 
   useEffect(() => {
     try {
-      setInput(sessionStorage.getItem(draftKey) ?? "");
+      setInput(draftKey ? (sessionStorage.getItem(draftKey) ?? "") : "");
     } catch {
       // Ignore unavailable storage.
     }
@@ -954,6 +989,7 @@ export function AskAgent({
 
   useEffect(() => {
     try {
+      if (!draftKey) return;
       if (input) sessionStorage.setItem(draftKey, input);
       else sessionStorage.removeItem(draftKey);
     } catch {
@@ -963,7 +999,7 @@ export function AskAgent({
 
   const clearDraft = useCallback(() => {
     try {
-      sessionStorage.removeItem(draftKey);
+      if (draftKey) sessionStorage.removeItem(draftKey);
     } catch {
       // Ignore unavailable storage.
     }
@@ -1287,7 +1323,7 @@ export function AskAgent({
     setBusy(false);
     runIdRef.current = null;
     try {
-      sessionStorage.removeItem("ask:activeRun");
+      if (activeRunKey) sessionStorage.removeItem(activeRunKey);
     } catch {
       /* ignore */
     }
@@ -1310,7 +1346,7 @@ export function AskAgent({
           : m,
       ),
     );
-  }, []);
+  }, [activeRunKey]);
 
   const steerQueuedPrompt = useCallback(() => {
     if (!queuedPromptRef.current) return;
@@ -1446,7 +1482,10 @@ export function AskAgent({
             phase: "starting",
           };
       if (!reuseRunningAssistant) {
-        const existingSnapshot = getLocalThreadSnapshot(runThreadId);
+        const existingSnapshot = getLocalThreadSnapshot(
+          sessionUserId,
+          runThreadId,
+        );
         upsertOptimisticThread({
           id: runThreadId,
           title: shortTitle(
@@ -1511,15 +1550,17 @@ export function AskAgent({
           status: "running",
         });
         try {
-          sessionStorage.setItem(
-            "ask:activeRun",
-            JSON.stringify({
-              runId,
-              question: q,
-              startedAt,
-              threadId: runThreadId,
-            }),
-          );
+          if (activeRunKey) {
+            sessionStorage.setItem(
+              activeRunKey,
+              JSON.stringify({
+                runId,
+                question: q,
+                startedAt,
+                threadId: runThreadId,
+              }),
+            );
+          }
         } catch {
           // sessionStorage may be unavailable
         }
@@ -1693,14 +1734,19 @@ export function AskAgent({
                 const finalTitle = shortTitle(
                   finalSnapshot.find((m) => m.role === "user")?.text ?? q,
                 );
-                const completedInBackground =
-                  finalThreadId !== threadIdRef.current;
+                const isViewingCompletedThread =
+                  typeof window !== "undefined" &&
+                  finalThreadId === threadIdRef.current &&
+                  window.location.pathname ===
+                    `/ask/${encodeURIComponent(finalThreadId)}`;
+                const completedInBackground = !isViewingCompletedThread;
                 upsertOptimisticThread({
                   id: finalThreadId,
                   title: finalTitle,
                   lastPromptAt: latestPromptTimestamp(
                     finalSnapshot,
-                    getLocalThreadSnapshot(finalThreadId)?.lastPromptAt ?? 0,
+                    getLocalThreadSnapshot(sessionUserId, finalThreadId)
+                      ?.lastPromptAt ?? 0,
                   ),
                   createdAt: Date.now(),
                   updatedAt: Date.now(),
@@ -1732,7 +1778,7 @@ export function AskAgent({
                     .catch(() => {});
                 }
                 try {
-                  sessionStorage.removeItem("ask:activeRun");
+                  if (activeRunKey) sessionStorage.removeItem(activeRunKey);
                 } catch {
                   /* ignore */
                 }
@@ -1743,7 +1789,7 @@ export function AskAgent({
                 queueingOpenRef.current = false;
                 patch((m) => ({ ...m, phase: "error", error: ev.message }));
                 try {
-                  sessionStorage.removeItem("ask:activeRun");
+                  if (activeRunKey) sessionStorage.removeItem(activeRunKey);
                 } catch {
                   /* ignore */
                 }
@@ -1786,6 +1832,7 @@ export function AskAgent({
     [
       cacheThreadSnapshot,
       clearDraft,
+      activeRunKey,
       isSignedIn,
       pinnedContext,
       queuePrompt,
@@ -1794,6 +1841,7 @@ export function AskAgent({
       authBlocking,
       upsertOptimisticThread,
       loadingThreadId,
+      sessionUserId,
     ],
   );
 
@@ -1908,7 +1956,8 @@ export function AskAgent({
     reconnectedRef.current = true;
     if (messagesRef.current.length > 0) return;
     try {
-      const raw = sessionStorage.getItem("ask:activeRun");
+      if (!activeRunKey) return;
+      const raw = sessionStorage.getItem(activeRunKey);
       if (!raw) return;
       const ar = JSON.parse(raw) as {
         runId?: string;
@@ -1918,7 +1967,7 @@ export function AskAgent({
       };
       if (!ar.runId || !ar.question) return;
       if (Date.now() - (ar.startedAt ?? 0) > 6 * 60 * 1000) {
-        sessionStorage.removeItem("ask:activeRun");
+        sessionStorage.removeItem(activeRunKey);
         return;
       }
       if (ar.threadId) {
@@ -1930,7 +1979,7 @@ export function AskAgent({
         void loadThreadRef.current?.(ar.threadId);
         return;
       }
-      const cachedRunThread = readLocalThreadSnapshots().find(
+      const cachedRunThread = readLocalThreadSnapshots(sessionUserId).find(
         (snapshot) => snapshot.runId === ar.runId,
       );
       if (cachedRunThread) {
@@ -1942,11 +1991,11 @@ export function AskAgent({
         void loadThreadRef.current?.(cachedRunThread.id);
         return;
       }
-      sessionStorage.removeItem("ask:activeRun");
+      sessionStorage.removeItem(activeRunKey);
     } catch {
       // ignore reconnect failures
     }
-  }, [isSignedIn, initialThreadId]);
+  }, [activeRunKey, isSignedIn, initialThreadId, sessionUserId]);
 
   // Autosave both settled and in-flight transcripts so navigating away or
   // starting another chat can later reopen the same running research with its
@@ -2058,17 +2107,24 @@ export function AskAgent({
       }
       runIdRef.current = null;
       try {
-        localStorage.removeItem(LAST_THREAD_ID_KEY);
+        const lastThreadKey = askCacheKey(sessionUserId, LAST_THREAD_ID_KEY);
+        if (lastThreadKey) localStorage.removeItem(lastThreadKey);
       } catch {
         /* ignore */
       }
       try {
-        sessionStorage.removeItem("ask:activeRun");
+        if (activeRunKey) sessionStorage.removeItem(activeRunKey);
       } catch {
         /* ignore */
       }
     },
-    [clearDraft, clearQueuedPrompt, upsertOptimisticThread],
+    [
+      clearDraft,
+      clearQueuedPrompt,
+      activeRunKey,
+      sessionUserId,
+      upsertOptimisticThread,
+    ],
   );
 
   const newChat = useCallback(() => {
@@ -2098,7 +2154,10 @@ export function AskAgent({
         runId: currentRunId,
         status,
       });
-      const localSnapshot = getLocalThreadSnapshot(currentThreadId);
+      const localSnapshot = getLocalThreadSnapshot(
+        sessionUserId,
+        currentThreadId,
+      );
       upsertOptimisticThread({
         id: currentThreadId,
         title: shortTitle(snapshot.find((m) => m.role === "user")?.text ?? ""),
@@ -2135,6 +2194,7 @@ export function AskAgent({
     resetChatState,
     upsertOptimisticThread,
     pinnedContext,
+    sessionUserId,
     setSidebarOpen,
   ]);
 
@@ -2152,7 +2212,7 @@ export function AskAgent({
         return;
       }
       deletedThreadIdsRef.current.add(id);
-      removeLocalThreadSnapshot(id);
+      removeLocalThreadSnapshot(sessionUserId, id);
       optimisticThreadSnapshotsRef.current.delete(id);
       setOptimisticThreads((threads) =>
         threads.filter((thread) => thread.id !== id),
@@ -2161,7 +2221,7 @@ export function AskAgent({
       resetChatState({ createPlaceholder: false });
       setSidebarOpen(true);
     },
-    [activeThreadId, resetChatState, setSidebarOpen],
+    [activeThreadId, resetChatState, sessionUserId, setSidebarOpen],
   );
 
   const loadThread = useCallback(
@@ -2180,7 +2240,7 @@ export function AskAgent({
       const restoreOptimisticSnapshot = (reconnect = true) => {
         const memorySnapshot =
           optimisticThreadSnapshotsRef.current.get(threadId);
-        const localSnapshot = getLocalThreadSnapshot(threadId);
+        const localSnapshot = getLocalThreadSnapshot(sessionUserId, threadId);
         const loaded = memorySnapshot
           ? memorySnapshot.messages
           : localSnapshot
@@ -2294,7 +2354,7 @@ export function AskAgent({
         );
         const localSnapshot =
           optimisticThreadSnapshotsRef.current.get(threadId);
-        const browserSnapshot = getLocalThreadSnapshot(threadId);
+        const browserSnapshot = getLocalThreadSnapshot(sessionUserId, threadId);
         const browserMessages = browserSnapshot
           ? deserializeLocalMessages(browserSnapshot.messages)
           : null;
@@ -2377,7 +2437,7 @@ export function AskAgent({
         if (loadSeq === loadThreadSeqRef.current) setLoadingThreadId(null);
       }
     },
-    [flushThread],
+    [flushThread, sessionUserId],
   );
   loadThreadRef.current = loadThread;
 
@@ -2403,8 +2463,11 @@ export function AskAgent({
     if (messagesRef.current.length > 0 || hasPendingAsk()) return;
     restoredLastThreadRef.current = true;
     try {
-      const lastThreadId = localStorage.getItem(LAST_THREAD_ID_KEY);
-      if (!lastThreadId || !getLocalThreadSnapshot(lastThreadId)) return;
+      const lastThreadKey = askCacheKey(sessionUserId, LAST_THREAD_ID_KEY);
+      if (!lastThreadKey) return;
+      const lastThreadId = localStorage.getItem(lastThreadKey);
+      if (!lastThreadId || !getLocalThreadSnapshot(sessionUserId, lastThreadId))
+        return;
       threadIdRef.current = lastThreadId;
       setActiveThreadId(lastThreadId);
       if (window.location.pathname === "/ask") {
@@ -2414,7 +2477,7 @@ export function AskAgent({
     } catch {
       // Best-effort local restore only.
     }
-  }, [initialThreadId, loadThread]);
+  }, [initialThreadId, loadThread, sessionUserId]);
   const pinnedChip = pinnedContext ? (
     <div className="relative mb-4 rounded-xl border border-border bg-surface-2/60 pr-11 transition-colors hover:border-border-strong hover:bg-surface-2">
       <Link
@@ -2561,10 +2624,38 @@ export function AskAgent({
   const liveAssistantThreadId =
     activeThreadStatus === "running" ? activeThreadId : null;
 
+  // A sign-out can happen while this client component is still mounted. Hide
+  // the research surface before navigating away so no transcript remains on
+  // screen during the auth transition.
+  useEffect(() => {
+    if (sessionPending || sessionUserId) return;
+    abortRef.current?.abort();
+    abortRef.current = null;
+    setBusy(false);
+    setMessages([]);
+    messagesRef.current = [];
+    setInput("");
+    setQuestionHistory([]);
+    setOptimisticThreads([]);
+    setSidebarOpen(false);
+    setAskSidebarUnread(false);
+    router.replace("/");
+    router.refresh();
+  }, [
+    router,
+    sessionPending,
+    sessionUserId,
+    setAskSidebarUnread,
+    setSidebarOpen,
+  ]);
+
+  if (!sessionPending && !sessionUserId) return null;
+
   return (
     <div className="flex h-full min-h-0 flex-col">
       {isSignedIn && (
         <ThreadSidebar
+          userId={sessionUserId ?? ""}
           open={sidebarOpen}
           onClose={() => setSidebarOpen(false)}
           activeId={activeThreadId}
@@ -2602,7 +2693,7 @@ export function AskAgent({
         }`}
       >
         {messages.length === 0 ? (
-          <div className="flex flex-col items-center pt-2 text-center sm:pt-4">
+          <div className="mx-auto flex w-full max-w-2xl flex-col items-center px-5 pt-28 text-center sm:px-8 sm:pt-32">
             <span className="mb-4 inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-accent-soft text-accent">
               <SparkleIcon className="h-6 w-6" />
             </span>
@@ -2634,66 +2725,74 @@ export function AskAgent({
           </div>
         ) : (
           <div className="flex h-full min-h-0 flex-col">
-            {pinnedChip}
+            {pinnedChip && (
+              <div className="mx-auto w-full max-w-[850px] px-5 sm:px-8">
+                {pinnedChip}
+              </div>
+            )}
             <div
               ref={chatScrollRef}
               role="log"
               aria-live="polite"
               aria-relevant="additions text"
-              className="thin-scroll min-h-0 flex-1 space-y-6 overflow-y-auto overscroll-contain py-4 [scrollbar-gutter:stable]"
+              className="thin-scroll min-h-0 flex-1 overflow-y-auto overscroll-contain [scrollbar-gutter:stable]"
             >
-              {messages.map((m, i) => {
-                const liveAssistant = isLiveAssistant(m);
+              <div className="mx-auto w-full max-w-[850px] space-y-6 px-5 py-4 sm:px-8">
+                {messages.map((m, i) => {
+                  const liveAssistant = isLiveAssistant(m);
 
-                return (
-                  <div
-                    key={`${activeThreadId}:${m.id}`}
-                    id={`ask-message-${m.id}`}
-                    className={`motion-fade-up scroll-mt-24 rounded-2xl transition-colors duration-700 ${
-                      highlightedMessageId === m.id ? "bg-accent-soft/60" : ""
-                    }`}
-                  >
-                    {m.role === "user" ? (
-                      <MessageRow align="end">
-                        <MessageAvatar>
-                          <span className="inline-flex h-7 w-7 items-center justify-center rounded-lg bg-surface-2 text-muted-2">
-                            <UserIcon className="h-4 w-4" />
-                          </span>
-                        </MessageAvatar>
-                        <MessageContent>
-                          <Bubble
-                            variant="user"
-                            className="px-3.5 py-2 text-sm"
-                          >
-                            {m.text}
-                          </Bubble>
-                        </MessageContent>
-                      </MessageRow>
-                    ) : (
-                      <AssistantMessage
-                        m={m}
-                        now={liveAssistant ? now : (m.elapsedMs ?? 0)}
-                        signInHref={signInHref}
-                        signUpHref={signUpHref}
-                        question={
-                          messages[i - 1]?.role === "user"
-                            ? messages[i - 1].text
-                            : ""
-                        }
-                        cite={pinnedContext?.citation}
-                        kind={pinnedContext?.kind}
-                        sourceHref={pinnedContext?.href}
-                        threadId={activeThreadId}
-                        messageId={m.id}
-                        isSignedIn={isSignedIn}
-                      />
-                    )}
-                  </div>
-                );
-              })}
+                  return (
+                    <div
+                      key={`${activeThreadId}:${m.id}`}
+                      id={`ask-message-${m.id}`}
+                      className={`motion-fade-up scroll-mt-24 rounded-2xl transition-colors duration-700 ${
+                        highlightedMessageId === m.id ? "bg-accent-soft/60" : ""
+                      }`}
+                    >
+                      {m.role === "user" ? (
+                        <MessageRow align="end">
+                          <MessageAvatar>
+                            <span className="inline-flex h-7 w-7 items-center justify-center rounded-lg bg-surface-2 text-muted-2">
+                              <UserIcon className="h-4 w-4" />
+                            </span>
+                          </MessageAvatar>
+                          <MessageContent>
+                            <Bubble
+                              variant="user"
+                              className="px-3.5 py-2 text-sm"
+                            >
+                              {m.text}
+                            </Bubble>
+                          </MessageContent>
+                        </MessageRow>
+                      ) : (
+                        <AssistantMessage
+                          m={m}
+                          now={liveAssistant ? now : (m.elapsedMs ?? 0)}
+                          signInHref={signInHref}
+                          signUpHref={signUpHref}
+                          question={
+                            messages[i - 1]?.role === "user"
+                              ? messages[i - 1].text
+                              : ""
+                          }
+                          cite={pinnedContext?.citation}
+                          kind={pinnedContext?.kind}
+                          sourceHref={pinnedContext?.href}
+                          threadId={activeThreadId}
+                          messageId={m.id}
+                          isSignedIn={isSignedIn}
+                        />
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
             </div>
-            <div className="-mx-5 shrink-0 border-t border-border bg-background/90 px-5 py-3 backdrop-blur sm:-mx-8 sm:px-8">
-              {composer}
+            <div className="shrink-0 bg-background/90 py-3 backdrop-blur">
+              <div className="mx-auto w-full max-w-[850px] px-5 sm:px-8">
+                {composer}
+              </div>
             </div>
           </div>
         )}
@@ -2703,6 +2802,7 @@ export function AskAgent({
 }
 
 function ThreadSidebar({
+  userId,
   open,
   onClose,
   activeId,
@@ -2715,6 +2815,7 @@ function ThreadSidebar({
   optimisticThreads,
   onUnreadDoneChange,
 }: {
+  userId: string;
   open: boolean;
   onClose: () => void;
   activeId: string;
@@ -2729,20 +2830,20 @@ function ThreadSidebar({
 }) {
   const [items, setItems] = useState<ThreadListItem[]>(() => {
     if (typeof window === "undefined") return [];
+    const listCacheKey = askCacheKey(userId, THREAD_LIST_CACHE_KEY);
+    if (!listCacheKey) return [];
     try {
-      const cached = JSON.parse(
-        localStorage.getItem(THREAD_LIST_CACHE_KEY) ?? "[]",
-      );
+      const cached = JSON.parse(localStorage.getItem(listCacheKey) ?? "[]");
       const cachedItems = Array.isArray(cached)
         ? (cached as ThreadListItem[])
         : [];
       const byId = new Map<string, ThreadListItem>();
-      for (const item of [...localThreadSummaries(), ...cachedItems]) {
+      for (const item of [...localThreadSummaries(userId), ...cachedItems]) {
         byId.set(item.id, { ...byId.get(item.id), ...item });
       }
       return [...byId.values()].sort(compareThreadsByLastPromptDesc);
     } catch {
-      return localThreadSummaries();
+      return localThreadSummaries(userId);
     }
   });
   const [loading, setLoading] = useState(false);
@@ -2791,7 +2892,8 @@ function ThreadSidebar({
     (thread) => thread.status === "running",
   );
   const hasUnreadDoneThread = allItems.some(
-    (thread) => thread.status !== "running" && thread.unread,
+    (thread) =>
+      thread.id !== activeId && thread.status !== "running" && thread.unread,
   );
 
   useEffect(() => {
@@ -2817,7 +2919,10 @@ function ThreadSidebar({
           const serverThreads =
             (d as { threads?: ThreadListItem[] }).threads ?? [];
           const byId = new Map<string, ThreadListItem>();
-          for (const item of [...localThreadSummaries(), ...serverThreads]) {
+          for (const item of [
+            ...localThreadSummaries(userId),
+            ...serverThreads,
+          ]) {
             byId.set(item.id, { ...byId.get(item.id), ...item });
           }
           const threads = [...byId.values()].sort(
@@ -2825,10 +2930,10 @@ function ThreadSidebar({
           );
           setItems(threads);
           try {
-            localStorage.setItem(
-              THREAD_LIST_CACHE_KEY,
-              JSON.stringify(threads),
-            );
+            const listCacheKey = askCacheKey(userId, THREAD_LIST_CACHE_KEY);
+            if (listCacheKey) {
+              localStorage.setItem(listCacheKey, JSON.stringify(threads));
+            }
           } catch {
             // Cache is best-effort only.
           }
@@ -2841,16 +2946,17 @@ function ThreadSidebar({
           if (!isCancelled() && fetchSeqRef.current === seq) setLoading(false);
         });
     },
-    [],
+    [userId],
   );
 
   useEffect(() => {
     // refreshKey is intentionally read so parent saves can refetch an already-open sidebar.
     void refreshKey;
-    if (!open) return;
 
     let cancelled = false;
-    loadThreads(true, () => cancelled);
+    // The header indicator must discover server-side completions even before
+    // the history drawer has ever been opened.
+    loadThreads(open, () => cancelled);
     return () => {
       cancelled = true;
     };
@@ -2882,7 +2988,7 @@ function ThreadSidebar({
   async function remove(e: React.MouseEvent, id: string) {
     e.stopPropagation();
     setItems((xs) => xs.filter((x) => x.id !== id));
-    removeLocalThreadSnapshot(id);
+    removeLocalThreadSnapshot(userId, id);
     onDeleteActive(id, id === activeId);
     await fetch(`/api/ask-threads?id=${encodeURIComponent(id)}`, {
       method: "DELETE",
@@ -2973,7 +3079,8 @@ function ThreadSidebar({
                     (t.id === busyId &&
                       t.status !== "done" &&
                       t.status !== "stopped");
-                  const unreadDone = !researching && t.unread;
+                  const unreadDone =
+                    t.id !== activeId && !researching && t.unread;
                   return (
                     <div
                       key={t.id}
@@ -3165,7 +3272,7 @@ function AnswerActions({
     "inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-xs font-medium text-muted-2 transition-colors hover:bg-surface-2 hover:text-foreground";
 
   return (
-    <div className="flex flex-wrap items-center gap-x-2 gap-y-1 border-t border-border/60 pt-2">
+    <div className="flex flex-wrap items-center gap-x-2 gap-y-1 pt-2">
       {isSignedIn ? (
         <button
           type="button"

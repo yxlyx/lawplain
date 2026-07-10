@@ -245,7 +245,10 @@ export class AskRunDO extends DurableObject<AskRunEnv> {
       .prepare(
         `UPDATE ask_threads
          SET status = ?,
-             unread = CASE WHEN ? = 1 THEN 1 ELSE unread END,
+             unread = CASE
+               WHEN ? = 1 AND status = 'running' THEN 1
+               ELSE unread
+             END,
              updatedAt = ?
          WHERE userId = ? AND id = ?`,
       )

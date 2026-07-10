@@ -197,7 +197,7 @@ export default async function StatutePage({
           }),
         )}
       />
-      <main className="mx-auto w-full max-w-[calc(68ch+16rem+1.5rem+4rem)] px-5 py-10 sm:px-8">
+      <main className="mx-auto flex w-full max-w-[calc(68ch+16rem+1.5rem+4rem)] flex-1 flex-col px-5 pt-10 pb-14 sm:px-8">
         <Link
           href={safeReturnTo(returnTo) ?? "/?tab=statutes"}
           className="mb-6 inline-flex items-center gap-1.5 text-sm font-medium text-muted transition-colors hover:text-foreground"
@@ -251,25 +251,27 @@ export default async function StatutePage({
           </div>
         </header>
 
-        <div className="mt-8">
-          <StatuteSectionShell
-            docId={decoded}
-            query={q}
-            sections={sections.map((sec) => ({
-              id: `s-${sec.section_no}`,
-              label: sec.heading
-                ? `${sec.section_no} ${sec.heading}`
-                : sec.section_no,
-            }))}
-          >
-            <div className="flex flex-col gap-4">
-              {sections.length === 0 ? (
-                <EmptyState
-                  title="Section text unavailable"
-                  hint="The full provision text for this statute isn’t in the corpus yet. Try the official source link above."
-                />
-              ) : (
-                sections.map((sec) => {
+        {sections.length === 0 ? (
+          <section className="flex flex-1 items-center justify-center">
+            <EmptyState
+              title="Section text unavailable"
+              hint="The full provision text for this statute isn’t in the corpus yet. Try the official source link above."
+            />
+          </section>
+        ) : (
+          <div className="mt-8">
+            <StatuteSectionShell
+              docId={decoded}
+              query={q}
+              sections={sections.map((sec) => ({
+                id: `s-${sec.section_no}`,
+                label: sec.heading
+                  ? `${sec.section_no} ${sec.heading}`
+                  : sec.section_no,
+              }))}
+            >
+              <div className="flex flex-col gap-4">
+                {sections.map((sec) => {
                   const text = statuteSectionDisplayText(sec);
                   return (
                     <article
@@ -287,11 +289,11 @@ export default async function StatutePage({
                       {text && <ProvisionText text={text} />}
                     </article>
                   );
-                })
-              )}
-            </div>
-          </StatuteSectionShell>
-        </div>
+                })}
+              </div>
+            </StatuteSectionShell>
+          </div>
+        )}
         <SelectionTools
           title={title}
           citation={s.act_id ?? decoded}

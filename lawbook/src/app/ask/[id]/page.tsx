@@ -6,7 +6,10 @@
  * thread (or reconnects to an in-flight run) from the id on mount.
  */
 import type { Metadata } from "next";
+import { headers } from "next/headers";
+import { redirect } from "next/navigation";
 import { AskAgent } from "@/components/AskAgent";
+import { getSession } from "@/lib/auth";
 import { buildMetadata } from "@/lib/seo";
 
 export function generateMetadata(): Metadata {
@@ -28,6 +31,10 @@ export default async function AskThreadPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
+  const session = await getSession(new Headers(await headers()));
+  if (!session?.user?.id) {
+    redirect(`/sign-in?next=${encodeURIComponent(`/ask/${id}`)}`);
+  }
 
   return (
     <main className="mx-auto h-[calc(100dvh-3.5rem)] min-h-0 w-full max-w-[850px] overflow-hidden px-5 sm:px-8">

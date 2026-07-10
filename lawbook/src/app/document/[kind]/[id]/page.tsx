@@ -147,7 +147,7 @@ export default async function DocumentResultPage({
           )}
         />
       )}
-      <main className="mx-auto w-full max-w-[76ch] px-5 py-10 sm:px-8">
+      <main className="mx-auto flex w-full max-w-[76ch] flex-1 flex-col px-5 pt-10 pb-14 sm:px-8">
         <Link
           href={
             safeReturnTo(returnTo) ?? `/?tab=${encodeURIComponent(decodedKind)}`
@@ -198,34 +198,38 @@ export default async function DocumentResultPage({
           )}
         </header>
 
-        <section className="mt-8">
-          {hasBody ? (
-            <DocumentBody
-              kind={decodedKind}
-              docId={decodedId}
-              initialText={initialText}
-              initialLoaded={initialLoaded}
-              total={total}
-              query={q ?? ""}
-            />
-          ) : snippet ? (
-            <div>
-              <h2 className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-2">
-                Matching excerpt
-              </h2>
-              <Snippet html={snippet} className="text-base" />
-              <p className="mt-4 text-xs text-muted-2">
-                Only this excerpt is available — the full document text isn’t in
-                the corpus yet.
-              </p>
-            </div>
-          ) : (
+        {hasBody || snippet ? (
+          <section className="mt-8">
+            {hasBody ? (
+              <DocumentBody
+                kind={decodedKind}
+                docId={decodedId}
+                initialText={initialText}
+                initialLoaded={initialLoaded}
+                total={total}
+                query={q ?? ""}
+              />
+            ) : (
+              <div>
+                <h2 className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-2">
+                  Matching excerpt
+                </h2>
+                <Snippet html={snippet} className="text-base" />
+                <p className="mt-4 text-xs text-muted-2">
+                  Only this excerpt is available — the full document text isn’t
+                  in the corpus yet.
+                </p>
+              </div>
+            )}
+          </section>
+        ) : (
+          <section className="flex flex-1 items-center justify-center">
             <EmptyState
               title="Full document text unavailable"
               hint="This result isn’t available as a full document yet. Try the official source if one is linked."
             />
-          )}
-        </section>
+          </section>
+        )}
         {hasBody && (
           <SelectionTools
             title={displayTitle}

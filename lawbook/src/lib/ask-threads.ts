@@ -371,19 +371,25 @@ export async function updateThreadRunStatus(input: {
   id: string;
   status: "running" | "done" | "stopped";
   unread?: boolean;
+  /** Avoid re-notifying a terminal row that the foreground client has seen. */
+  unreadOnlyIfRunning?: boolean;
 }): Promise<void> {
   const db = await getDb();
   await db
     .prepare(
       `UPDATE ask_threads
        SET status = ?,
-           unread = CASE WHEN ? = 1 THEN 1 ELSE unread END,
+           unread = CASE
+             WHEN ? = 1 AND (? = 0 OR status = 'running') THEN 1
+             ELSE unread
+           END,
            updatedAt = ?
        WHERE userId = ? AND id = ?`,
     )
     .bind(
       input.status,
       input.unread ? 1 : 0,
+      input.unreadOnlyIfRunning ? 1 : 0,
       Date.now(),
       input.userId,
       input.id,
