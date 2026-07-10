@@ -22,7 +22,7 @@ test("saved answers expose an accessible full-answer toggle", () => {
   assert.match(source, /Hide full answer/);
 });
 
-test("recently viewed documents require auth, are persisted, and appear in saved workspace", () => {
+test("recently viewed documents require auth, are persisted, and stay off the saved page", () => {
   const route = read("src/app/api/recently-viewed/route.ts");
   const lib = read("src/lib/recently-viewed.ts");
   const migration = read("migrations/0011_recently_viewed_documents.sql");
@@ -34,7 +34,7 @@ test("recently viewed documents require auth, are persisted, and appear in saved
   assert.match(lib, /LIMIT \?/);
   assert.match(migration, /REFERENCES user\(id\) ON DELETE CASCADE/);
   assert.match(migration, /idx_recently_viewed_documents_user_doc/);
-  assert.match(savedPage, /<RecentlyViewedDocuments \/>/);
+  assert.doesNotMatch(savedPage, /RecentlyViewedDocuments/);
   assert.match(savedPage, /Your saved documents live here\./);
   assert.doesNotMatch(
     savedPage,
