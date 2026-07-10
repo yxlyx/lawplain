@@ -59,6 +59,7 @@ async function reconcileRunningThreads(
         id: thread.id,
         status,
         unread: status === "done",
+        unreadOnlyIfRunning: true,
       }).catch(() => {});
       return {
         ...thread,

@@ -7,8 +7,11 @@
  *   Lawplain about this" link.
  */
 import type { Metadata } from "next";
+import { headers } from "next/headers";
+import { redirect } from "next/navigation";
 import { AskAgent } from "@/components/AskAgent";
 import { loadChatContext } from "@/lib/ask-context";
+import { getSession } from "@/lib/auth";
 import { buildMetadata } from "@/lib/seo";
 
 export async function generateMetadata({
@@ -40,6 +43,13 @@ export default async function AskPage({
   const sp = await searchParams;
   if (sp.cite) params.set("cite", sp.cite);
   if (sp.kind) params.set("kind", sp.kind);
+
+  const session = await getSession(new Headers(await headers()));
+  if (!session?.user?.id) {
+    const next = params.size > 0 ? `/ask?${params.toString()}` : "/ask";
+    redirect(`/sign-in?next=${encodeURIComponent(next)}`);
+  }
+
   const context = await loadChatContext(params);
 
   return (

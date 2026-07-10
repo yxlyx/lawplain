@@ -66,6 +66,7 @@ async function updateThreadStatus(
     id: input.threadId,
     status: persistedStatus,
     unread: persistedStatus === "done",
+    unreadOnlyIfRunning: true,
   }).catch(() => {});
 }
 

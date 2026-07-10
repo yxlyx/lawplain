@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { type ReactNode, useEffect, useState } from "react";
 import { AuthMenu } from "@/components/AuthMenu";
 import { useChrome } from "@/components/chrome/ChromeContext";
@@ -63,10 +63,16 @@ export function AppShell({
     setAskSidebarOpen,
     askSidebarAvailable,
     askSidebarUnread,
+    setAskSidebarUnread,
   } = useChrome();
   const pathname = usePathname();
   const askRoute = pathname.startsWith("/ask");
   const [collapsed, setCollapsed] = useState(false);
+  const { data: session, isPending: sessionPending } = authClient.useSession();
+  const sessionUserId = session?.user?.id;
+  const visibleNav = NAV.filter(
+    (tab) => tab.href !== "/ask" || Boolean(sessionUserId),
+  );
 
   useEffect(() => {
     try {
@@ -75,6 +81,55 @@ export function AppShell({
       // localStorage may be unavailable; keep the default.
     }
   }, []);
+
+  useEffect(() => {
+    // Recheck immediately after navigation as well as on the polling cadence.
+    void pathname;
+    if (sessionPending) return;
+    if (!sessionUserId) {
+      setAskSidebarUnread(false);
+      return;
+    }
+
+    let cancelled = false;
+    let timer: number | undefined;
+
+    const refreshAskCompletion = async () => {
+      let nextPollMs = 30_000;
+      try {
+        const response = await fetch("/api/ask-threads", {
+          cache: "no-store",
+        });
+        if (!response.ok) return;
+        const data = (await response.json()) as {
+          threads?: Array<{ status?: string | null; unread?: boolean }>;
+        };
+        if (cancelled) return;
+        const threads = data.threads ?? [];
+        const hasRunningThread = threads.some(
+          (thread) => thread.status === "running",
+        );
+        setAskSidebarUnread(
+          threads.some(
+            (thread) => thread.status !== "running" && thread.unread === true,
+          ),
+        );
+        if (hasRunningThread) nextPollMs = 5_000;
+      } catch {
+        // Keep the last known notification through transient network failures.
+      } finally {
+        if (!cancelled) {
+          timer = window.setTimeout(refreshAskCompletion, nextPollMs);
+        }
+      }
+    };
+
+    void refreshAskCompletion();
+    return () => {
+      cancelled = true;
+      if (timer !== undefined) window.clearTimeout(timer);
+    };
+  }, [pathname, sessionUserId, sessionPending, setAskSidebarUnread]);
 
   const toggleCollapsed = () => {
     setCollapsed((c) => {
@@ -146,7 +201,7 @@ export function AppShell({
             </Link>
           </div>
           <nav className="flex items-center gap-1">
-            {NAV.map((tab) => {
+            {visibleNav.map((tab) => {
               const active = tab.match(pathname);
               const Icon = tab.icon;
               return (
@@ -161,6 +216,11 @@ export function AppShell({
                 >
                   <Icon className="h-4 w-4" />
                   <span className="hidden sm:inline">{tab.label}</span>
+                  {tab.href === "/ask" && askSidebarUnread && (
+                    <span className="rounded-full bg-accent-soft px-1.5 py-0.5 text-[10px] font-semibold uppercase leading-none text-accent">
+                      Done
+                    </span>
+                  )}
                 </Link>
               );
             })}
@@ -207,7 +267,7 @@ export function AppShell({
           </button>
         </div>
         <nav className="flex flex-1 flex-col gap-1 px-2 py-2 lg:px-3">
-          {NAV.map((tab) => {
+          {visibleNav.map((tab) => {
             const active = tab.match(pathname);
             const Icon = tab.icon;
             return (
@@ -215,7 +275,7 @@ export function AppShell({
                 key={tab.href}
                 href={tab.href}
                 title={tab.label}
-                className={`flex items-center gap-3 rounded-lg px-2.5 py-2 text-sm font-medium transition-colors ${
+                className={`relative flex items-center gap-3 rounded-lg px-2.5 py-2 text-sm font-medium transition-colors ${
                   active
                     ? "bg-accent-soft text-accent"
                     : "text-muted-2 hover:bg-surface-2 hover:text-foreground"
@@ -223,6 +283,17 @@ export function AppShell({
               >
                 <Icon className="h-5 w-5 shrink-0" />
                 <span className={`truncate ${labelCls}`}>{tab.label}</span>
+                {tab.href === "/ask" && askSidebarUnread && (
+                  <span
+                    className={
+                      collapsed
+                        ? "absolute right-1 top-1 h-2 w-2 rounded-full bg-accent"
+                        : "ml-auto hidden rounded-full bg-accent-soft px-1.5 py-0.5 text-[10px] font-semibold uppercase leading-none text-accent lg:inline-flex"
+                    }
+                  >
+                    {collapsed ? null : "Done"}
+                  </span>
+                )}
               </Link>
             );
           })}
@@ -248,8 +319,15 @@ export function AppShell({
 
 function SidebarAuth({ labelCls }: { labelCls: string }) {
   const pathname = usePathname();
+  const router = useRouter();
   const { data: session, isPending } = authClient.useSession();
   const next = encodeURIComponent(pathname || "/");
+
+  const signOut = async () => {
+    await authClient.signOut();
+    router.replace("/");
+    router.refresh();
+  };
 
   if (isPending) {
     return <div className="px-2.5 py-2 text-sm text-muted-2">…</div>;
@@ -291,7 +369,7 @@ function SidebarAuth({ labelCls }: { labelCls: string }) {
       </span>
       <button
         type="button"
-        onClick={() => void authClient.signOut()}
+        onClick={() => void signOut()}
         title="Sign out"
         className="flex items-center gap-2 rounded-lg px-2.5 py-2 text-sm font-medium text-muted-2 transition-colors hover:bg-surface-2 hover:text-foreground"
       >

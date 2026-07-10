@@ -195,6 +195,7 @@ test("ask run hosts mark completed background threads unread done", () => {
   const askRouteSource = read("src/app/api/ask/route.ts");
   const doSource = read("src/server/ask-run-do.ts");
   const memorySource = read("src/server/ask-run-memory.ts");
+  const threadsSource = read("src/lib/ask-threads.ts");
 
   assert.match(askRouteSource, /userId: session\.user\.id,[\s\S]*threadId,/);
   assert.match(
@@ -207,6 +208,12 @@ test("ask run hosts mark completed background threads unread done", () => {
   assert.match(memorySource, /threadId\?: string/);
   assert.match(memorySource, /await updateThreadStatus\(input, run\.status\)/);
   assert.match(memorySource, /unread: persistedStatus === "done"/);
+  assert.match(memorySource, /unreadOnlyIfRunning: true/);
+  assert.match(doSource, /WHEN \? = 1 AND status = 'running' THEN 1/);
+  assert.match(
+    threadsSource,
+    /\? = 1 AND \(\? = 0 OR status = 'running'\) THEN 1/,
+  );
 });
 
 test("ask thread detail reconciles completed background runs before marking seen", () => {
@@ -231,16 +238,25 @@ test("ask history polls running threads while closed and advertises unread done"
   const appShell = read("src/components/AppShell.tsx");
 
   assert.match(source, /onUnreadDoneChange=\{setAskSidebarUnread\}/);
+  assert.match(source, /loadThreads\(open, \(\) => cancelled\)/);
   assert.match(
     source,
-    /const hasUnreadDoneThread = allItems\.some\([\s\S]*thread\.status !== "running" && thread\.unread/,
+    /const hasUnreadDoneThread = allItems\.some\([\s\S]*thread\.id !== activeId[\s\S]*thread\.status !== "running" &&[\s\S]*thread\.unread/,
   );
   assert.match(source, /onUnreadDoneChange\(hasUnreadDoneThread\)/);
   assert.match(
     source,
-    /const completedInBackground =[\s\S]*finalThreadId !== threadIdRef\.current/,
+    /const isViewingCompletedThread =[\s\S]*finalThreadId === threadIdRef\.current[\s\S]*window\.location\.pathname ===[\s\S]*`\/ask\/\$\{encodeURIComponent\(finalThreadId\)\}`/,
+  );
+  assert.match(
+    source,
+    /const completedInBackground = !isViewingCompletedThread/,
   );
   assert.match(source, /unread: completedInBackground/);
+  assert.match(
+    source,
+    /const unreadDone =[\s\S]*t\.id !== activeId && !researching && t\.unread/,
+  );
   assert.match(source, /if \(!hasRunningThreads\) return/);
   assert.doesNotMatch(source, /if \(!open \|\| !hasRunningThreads\) return/);
   assert.match(appShell, /askSidebarUnread && !askSidebarOpen/);
@@ -250,6 +266,25 @@ test("ask history polls running threads while closed and advertises unread done"
   );
 });
 
+test("the persistent app header discovers and labels background completions", () => {
+  const source = read("src/components/AskAgent.tsx");
+  const appShell = read("src/components/AppShell.tsx");
+
+  assert.match(appShell, /fetch\("\/api\/ask-threads"/);
+  assert.match(
+    appShell,
+    /thread\.status !== "running" && thread\.unread === true/,
+  );
+  assert.match(appShell, /hasRunningThread[\s\S]*nextPollMs = 5_000/);
+  assert.match(
+    appShell,
+    /tab\.href === "\/ask" && askSidebarUnread[\s\S]*Done/,
+  );
+  assert.match(
+    source,
+    /return \(\) => \{\s*setAskSidebarAvailable\(false\);\s*setSidebarOpen\(false\);\s*\}/,
+  );
+});
 test("ask thread sidebar orders by latest prompt, not latest view or save", () => {
   const source = read("src/components/AskAgent.tsx");
   const serverSource = read("src/lib/ask-threads.ts");
@@ -289,9 +324,13 @@ test("loading and reconnecting a thread cannot send from an empty UI", () => {
   assert.doesNotMatch(source, /sendRef\.current\?\.\(ar\.question, ar\.runId/);
   assert.match(
     source,
-    /readLocalThreadSnapshots\(\)\.find\([\s\S]*snapshot\.runId === ar\.runId/,
+    /readLocalThreadSnapshots\(sessionUserId\)\.find\([\s\S]*snapshot\.runId === ar\.runId/,
   );
-  assert.match(source, /sessionStorage\.removeItem\("ask:activeRun"\)/);
+  assert.match(
+    source,
+    /const activeRunKey = askCacheKey\(sessionUserId, "activeRun"\)/,
+  );
+  assert.match(source, /sessionStorage\.removeItem\(activeRunKey\)/);
   assert.match(source, /undefined,\s*true,\s*\)/);
 });
 
@@ -313,7 +352,30 @@ test("returning to Ask paints the cached latest thread before refreshing it", ()
   );
   assert.match(
     source,
-    /localStorage\.getItem\(LAST_THREAD_ID_KEY\)[\s\S]*void loadThread\(lastThreadId\)/,
+    /askCacheKey\(sessionUserId, LAST_THREAD_ID_KEY\)[\s\S]*localStorage\.getItem\(lastThreadKey\)[\s\S]*void loadThread\(lastThreadId\)/,
+  );
+});
+
+test("Ask is account-only and browser caches are partitioned by user id", () => {
+  const source = read("src/components/AskAgent.tsx");
+  const appShell = read("src/components/AppShell.tsx");
+  const askPage = read("src/app/ask/page.tsx");
+  const threadPage = read("src/app/ask/[id]/page.tsx");
+  const authMenu = read("src/components/AuthMenu.tsx");
+
+  assert.match(
+    source,
+    /return userId \? `ask:v2:\$\{userId\}:\$\{key\}` : null/,
+  );
+  assert.match(source, /if \(!sessionPending && !sessionUserId\) return null/);
+  assert.match(appShell, /tab\.href !== "\/ask" \|\| Boolean\(sessionUserId\)/);
+  assert.match(askPage, /getSession\(new Headers\(await headers\(\)\)\)/);
+  assert.match(askPage, /redirect\(`\/sign-in\?next=/);
+  assert.match(threadPage, /getSession\(new Headers\(await headers\(\)\)\)/);
+  assert.match(threadPage, /redirect\(`\/sign-in\?next=/);
+  assert.match(
+    authMenu,
+    /await authClient\.signOut\(\);[\s\S]*router\.replace\("\/"\)/,
   );
 });
 

@@ -96,10 +96,22 @@ test("sign-up account-check failures are explicit and actionable", () => {
 test("successful sign-up replaces the form with useful next actions", () => {
   const form = read("src/components/AuthForm.tsx");
 
-  assert.match(form, /setCreatedUsername\(cleanUsername\)/);
+  assert.match(form, /setAuthenticatedUsername\(cleanUsername\)/);
   assert.match(form, /Account created/);
-  assert.match(form, /Welcome, \{createdUsername\}/);
+  assert.match(form, /Welcome/);
   assert.match(form, /href="\/"[\s\S]*Go to Search/);
   assert.match(form, /href="\/ask"[\s\S]*Ask Lawplain/);
   assert.match(form, /href="\/saved"[\s\S]*View saved research/);
+});
+
+test("successful sign-in replaces the form with the same useful next actions", () => {
+  const form = read("src/components/AuthForm.tsx");
+
+  assert.match(
+    form,
+    /authClient\.signIn\.username[\s\S]*setAuthenticatedUsername\(cleanUsername\)/,
+  );
+  assert.match(form, /Signed in successfully/);
+  assert.match(form, /Welcome back/);
+  assert.match(form, /Continue exploring Singapore law/);
 });

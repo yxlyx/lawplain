@@ -1,17 +1,24 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { authClient } from "@/lib/auth-client";
 
 export function AuthMenu() {
   const pathname = usePathname();
+  const router = useRouter();
   const { data: session, isPending } = authClient.useSession();
   const next = encodeURIComponent(pathname || "/");
   const username = session?.user
     ? ((session.user as { username?: string; name?: string }).username ??
       session.user.name)
     : null;
+
+  const signOut = async () => {
+    await authClient.signOut();
+    router.replace("/");
+    router.refresh();
+  };
 
   if (isPending) {
     return (
@@ -47,7 +54,7 @@ export function AuthMenu() {
       </span>
       <button
         type="button"
-        onClick={() => void authClient.signOut()}
+        onClick={() => void signOut()}
         className="rounded-lg px-3 py-1.5 text-sm font-medium text-muted-2 transition-colors hover:bg-surface-2 hover:text-foreground"
       >
         Sign out
