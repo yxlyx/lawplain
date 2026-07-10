@@ -54,7 +54,6 @@ test("selecting a history thread returns focus to the prompt composer", () => {
   assert.match(source, /!loadComplete && focused === document\.body/);
   assert.match(source, /composer\?\.focus\(\{ preventScroll: true \}\)/);
 });
-
 test("history chats open at the bottom while Saved Answers target one answer", () => {
   const source = read("src/components/AskAgent.tsx");
   const savedAnswers = read("src/components/SavedAnswers.tsx");
