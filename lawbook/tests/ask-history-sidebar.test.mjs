@@ -400,23 +400,41 @@ test("returning to Ask paints the cached latest thread before refreshing it", ()
   );
 });
 
-test("Ask is account-only and browser caches are partitioned by user id", () => {
+test("guests can open Ask but submitting requires an account", () => {
   const source = read("src/components/AskAgent.tsx");
   const appShell = read("src/components/AppShell.tsx");
   const askPage = read("src/app/ask/page.tsx");
   const threadPage = read("src/app/ask/[id]/page.tsx");
+  const askRoute = read("src/app/api/ask/route.ts");
   const authMenu = read("src/components/AuthMenu.tsx");
 
   assert.match(
     source,
     /return userId \? `ask:v2:\$\{userId\}:\$\{key\}` : null/,
   );
-  assert.match(source, /if \(!sessionPending && !sessionUserId\) return null/);
-  assert.match(appShell, /tab\.href !== "\/ask" \|\| Boolean\(sessionUserId\)/);
-  assert.match(askPage, /getSession\(new Headers\(await headers\(\)\)\)/);
-  assert.match(askPage, /redirect\(`\/sign-in\?next=/);
+  assert.doesNotMatch(
+    source,
+    /if \(!sessionPending && !sessionUserId\) return null/,
+  );
+  assert.match(
+    source,
+    /if \(!isSignedIn\) \{[\s\S]*Please sign in to use Ask Lawplain\./,
+  );
+  assert.match(
+    source,
+    /Please\{" "\}[\s\S]*sign in[\s\S]*or\{" "\}[\s\S]*sign up/,
+  );
+  assert.match(appShell, /const visibleNav = NAV;/);
+  assert.doesNotMatch(appShell, /NAV\.filter\([\s\S]*tab\.href !== "\/ask"/);
+  assert.doesNotMatch(askPage, /getSession|redirect\(/);
+  assert.match(
+    askPage,
+    /<AskAgent initialContext=\{context \?\? undefined\} \/>/,
+  );
   assert.match(threadPage, /getSession\(new Headers\(await headers\(\)\)\)/);
   assert.match(threadPage, /redirect\(`\/sign-in\?next=/);
+  assert.match(askRoute, /if \(!session\?\.user\?\.id\)/);
+  assert.match(askRoute, /status: 401/);
   assert.match(
     authMenu,
     /await signOutWithTransition\(\(\) => \{[\s\S]*router\.replace\("\/"\)/,

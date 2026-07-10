@@ -76,9 +76,10 @@ export function AppShell({
   const [signingOut, setSigningOut] = useState(false);
   const { data: session, isPending: sessionPending } = authClient.useSession();
   const sessionUserId = session?.user?.id;
-  const visibleNav = NAV.filter(
-    (tab) => tab.href !== "/ask" || Boolean(sessionUserId) || signingOut,
-  );
+  // Keep the public Ask landing page discoverable for guests. Submitting a
+  // question is gated in AskAgent, while saved thread routes and APIs remain
+  // protected server-side.
+  const visibleNav = NAV;
 
   useEffect(() => {
     try {
