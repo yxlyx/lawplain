@@ -28,7 +28,7 @@ test("new chat appears optimistically in history and is renamed on first prompt"
   assert.match(source, /const \[optimisticThreads, setOptimisticThreads\]/);
   assert.match(
     source,
-    /setOptimisticThreads\(\(threads\) => \[[\s\S]*\.\.\.threads\.filter\(\(item\) => item\.id !== thread\.id\)/,
+    /setOptimisticThreads\(\(threads\) => \{[\s\S]*\.\.\.threads\.filter\(\(item\) => item\.id !== thread\.id\)/,
   );
   assert.match(source, /function ThreadSidebar\([\s\S]*optimisticThreads/);
   assert.match(
@@ -44,6 +44,57 @@ test("new chat appears optimistically in history and is renamed on first prompt"
   assert.match(source, /setSidebarOpen\(true\)/);
   assert.match(source, /title: shortTitle\(q\)/);
   assert.match(source, /loading && allItems\.length === 0/);
+});
+
+test("ask thread sidebar orders by chat creation, not latest update", () => {
+  const source = read("src/components/AskAgent.tsx");
+  const serverSource = read("src/lib/ask-threads.ts");
+
+  assert.match(source, /function compareThreadsByCreatedAtDesc/);
+  assert.match(source, /createdAt:[\s\S]*updatedAt:/);
+  assert.match(source, /sort\(compareThreadsByCreatedAtDesc\)/);
+  assert.doesNotMatch(source, /b\.updatedAt\s*-\s*a\.updatedAt/);
+  assert.match(
+    serverSource,
+    /SELECT id, title, cite, kind, sourceHref, messageCount, createdAt, updatedAt/,
+  );
+  assert.match(serverSource, /ORDER BY createdAt DESC, id DESC/);
+});
+
+test("loading and reconnecting a thread cannot send from an empty UI", () => {
+  const source = read("src/components/AskAgent.tsx");
+
+  assert.match(source, /const \[loadingThreadId, setLoadingThreadId\]/);
+  assert.match(source, /loadingThreadId && !internalReconnect/);
+  assert.match(source, /setLoadingThreadId\(threadId\)/);
+  assert.match(source, /setLoadingThreadId\(null\)/);
+  assert.match(source, /loadThreadRef\.current\?\.\(ar\.threadId\)/);
+  assert.doesNotMatch(source, /sendRef\.current\?\.\(ar\.question, ar\.runId/);
+  assert.match(
+    source,
+    /readLocalThreadSnapshots\(\)\.find\([\s\S]*snapshot\.runId === ar\.runId/,
+  );
+  assert.match(source, /sessionStorage\.removeItem\("ask:activeRun"\)/);
+  assert.match(source, /undefined,\s*true,\s*\)/);
+});
+
+test("thread persistence keeps fuller transcripts over stale saves", () => {
+  const source = read("src/lib/ask-threads.ts");
+  const migration = read("migrations/0015_ask_thread_transcript_score.sql");
+
+  assert.match(source, /function transcriptScore/);
+  assert.match(source, /transcriptScore, cite, kind/);
+  assert.match(
+    source,
+    /COALESCE\(excluded\.transcriptScore, 0\) < COALESCE\(ask_threads\.transcriptScore, 0\)/,
+  );
+  assert.match(
+    source,
+    /ask_threads\.runId IS NOT NULL[\s\S]*ask_threads\.runId != excluded\.runId[\s\S]*COALESCE\(excluded\.transcriptScore, 0\) <= COALESCE\(ask_threads\.transcriptScore, 0\)/,
+  );
+  assert.match(migration, /ADD COLUMN transcriptScore/);
+  assert.match(migration, /UPDATE ask_threads/);
+  assert.match(migration, /LENGTH\(messages\) \+ \(messageCount \* 1000\)/);
 });
 
 test("new chat preserves the previous thread while creating the blank placeholder", () => {

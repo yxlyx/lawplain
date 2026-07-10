@@ -11,6 +11,7 @@ export interface ThreadSummary {
   kind: string | null;
   sourceHref: string | null;
   messageCount: number;
+  createdAt: number;
   updatedAt: number;
   runId: string | null;
   status: string | null; // 'running' | 'stopped' | 'done' | null (legacy = done)
@@ -19,12 +20,29 @@ export interface ThreadSummary {
 
 export interface ThreadDetail extends ThreadSummary {
   messages: unknown[];
-  createdAt: number;
 }
 
 const LIST_LIMIT = 100;
 /** Cap the serialized transcript so a runaway thread can't bloat the row. */
 const MAX_MESSAGES_BYTES = 400_000;
+
+function transcriptScore(messages: unknown[]): number {
+  const serializedLength = JSON.stringify(messages).length;
+  return messages.reduce<number>((score, message) => {
+    if (!message || typeof message !== "object") return score + 1000;
+    const row = message as Record<string, unknown>;
+    return (
+      score +
+      1000 +
+      (typeof row.text === "string" ? row.text.length : 0) +
+      (Array.isArray(row.tools) ? row.tools.length * 50 : 0) +
+      (Array.isArray(row.progress) ? row.progress.length * 20 : 0) +
+      (typeof row.eventCursor === "number" && Number.isFinite(row.eventCursor)
+        ? row.eventCursor * 100
+        : 0)
+    );
+  }, serializedLength);
+}
 
 async function getDb(): Promise<D1Database> {
   const { env } = await getCloudflareContext({ async: true });
@@ -58,132 +76,156 @@ export async function saveThread(input: {
     msgs = msgs.slice(1);
     json = JSON.stringify(msgs);
   }
+  const score = transcriptScore(msgs);
 
   await db
     .prepare(
       `INSERT INTO ask_threads
-        (id, userId, title, messages, messageCount, cite, kind, sourceHref, runId, status, createdAt, updatedAt)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        (id, userId, title, messages, messageCount, transcriptScore, cite, kind, sourceHref, runId, status, createdAt, updatedAt)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(id) DO UPDATE SET
-         title = excluded.title,
-         messages = CASE
-           WHEN ask_threads.status IS NOT NULL
-             AND (
-               (
+         title = CASE
+           WHEN (
+               COALESCE(excluded.transcriptScore, 0) < COALESCE(ask_threads.transcriptScore, 0)
+               OR (
                  excluded.status = 'running'
+                 AND ask_threads.status IS NOT NULL
                  AND ask_threads.status != 'running'
-                 AND (
-                   (ask_threads.runId IS NOT NULL AND ask_threads.runId = excluded.runId)
-                   OR (ask_threads.runId IS NULL AND excluded.messageCount <= ask_threads.messageCount)
-                 )
+                 AND COALESCE(excluded.transcriptScore, 0) <= COALESCE(ask_threads.transcriptScore, 0)
                )
                OR (
                  ask_threads.runId IS NOT NULL
                  AND (excluded.runId IS NULL OR ask_threads.runId != excluded.runId)
-                 AND excluded.messageCount <= ask_threads.messageCount
+                 AND COALESCE(excluded.transcriptScore, 0) <= COALESCE(ask_threads.transcriptScore, 0)
+               )
+             )
+           THEN ask_threads.title
+           ELSE excluded.title
+         END,
+         messages = CASE
+           WHEN (
+               COALESCE(excluded.transcriptScore, 0) < COALESCE(ask_threads.transcriptScore, 0)
+               OR (
+                 excluded.status = 'running'
+                 AND ask_threads.status IS NOT NULL
+                 AND ask_threads.status != 'running'
+                 AND COALESCE(excluded.transcriptScore, 0) <= COALESCE(ask_threads.transcriptScore, 0)
+               )
+               OR (
+                 ask_threads.runId IS NOT NULL
+                 AND (excluded.runId IS NULL OR ask_threads.runId != excluded.runId)
+                 AND COALESCE(excluded.transcriptScore, 0) <= COALESCE(ask_threads.transcriptScore, 0)
                )
              )
            THEN ask_threads.messages
            ELSE excluded.messages
          END,
          messageCount = CASE
-           WHEN ask_threads.status IS NOT NULL
-             AND (
-               (
+           WHEN (
+               COALESCE(excluded.transcriptScore, 0) < COALESCE(ask_threads.transcriptScore, 0)
+               OR (
                  excluded.status = 'running'
+                 AND ask_threads.status IS NOT NULL
                  AND ask_threads.status != 'running'
-                 AND (
-                   (ask_threads.runId IS NOT NULL AND ask_threads.runId = excluded.runId)
-                   OR (ask_threads.runId IS NULL AND excluded.messageCount <= ask_threads.messageCount)
-                 )
+                 AND COALESCE(excluded.transcriptScore, 0) <= COALESCE(ask_threads.transcriptScore, 0)
                )
                OR (
                  ask_threads.runId IS NOT NULL
                  AND (excluded.runId IS NULL OR ask_threads.runId != excluded.runId)
-                 AND excluded.messageCount <= ask_threads.messageCount
+                 AND COALESCE(excluded.transcriptScore, 0) <= COALESCE(ask_threads.transcriptScore, 0)
                )
              )
            THEN ask_threads.messageCount
            ELSE excluded.messageCount
          END,
-         cite = excluded.cite,
-         kind = excluded.kind,
-         sourceHref = excluded.sourceHref,
-         runId = CASE
-           WHEN ask_threads.status IS NOT NULL
-             AND (
-               (
+         transcriptScore = CASE
+           WHEN (
+               COALESCE(excluded.transcriptScore, 0) < COALESCE(ask_threads.transcriptScore, 0)
+               OR (
                  excluded.status = 'running'
+                 AND ask_threads.status IS NOT NULL
                  AND ask_threads.status != 'running'
-                 AND (
-                   (ask_threads.runId IS NOT NULL AND ask_threads.runId = excluded.runId)
-                   OR (ask_threads.runId IS NULL AND excluded.messageCount <= ask_threads.messageCount)
-                 )
+                 AND COALESCE(excluded.transcriptScore, 0) <= COALESCE(ask_threads.transcriptScore, 0)
                )
                OR (
                  ask_threads.runId IS NOT NULL
                  AND (excluded.runId IS NULL OR ask_threads.runId != excluded.runId)
-                 AND excluded.messageCount <= ask_threads.messageCount
+                 AND COALESCE(excluded.transcriptScore, 0) <= COALESCE(ask_threads.transcriptScore, 0)
+               )
+             )
+           THEN ask_threads.transcriptScore
+           ELSE excluded.transcriptScore
+         END,
+         cite = excluded.cite,
+         kind = excluded.kind,
+         sourceHref = excluded.sourceHref,
+         runId = CASE
+           WHEN (
+               COALESCE(excluded.transcriptScore, 0) < COALESCE(ask_threads.transcriptScore, 0)
+               OR (
+                 excluded.status = 'running'
+                 AND ask_threads.status IS NOT NULL
+                 AND ask_threads.status != 'running'
+                 AND COALESCE(excluded.transcriptScore, 0) <= COALESCE(ask_threads.transcriptScore, 0)
+               )
+               OR (
+                 ask_threads.runId IS NOT NULL
+                 AND (excluded.runId IS NULL OR ask_threads.runId != excluded.runId)
+                 AND COALESCE(excluded.transcriptScore, 0) <= COALESCE(ask_threads.transcriptScore, 0)
                )
              )
            THEN ask_threads.runId
            ELSE excluded.runId
          END,
          status = CASE
-           WHEN ask_threads.status IS NOT NULL
-             AND (
-               (
+           WHEN (
+               COALESCE(excluded.transcriptScore, 0) < COALESCE(ask_threads.transcriptScore, 0)
+               OR (
                  excluded.status = 'running'
+                 AND ask_threads.status IS NOT NULL
                  AND ask_threads.status != 'running'
-                 AND (
-                   (ask_threads.runId IS NOT NULL AND ask_threads.runId = excluded.runId)
-                   OR (ask_threads.runId IS NULL AND excluded.messageCount <= ask_threads.messageCount)
-                 )
+                 AND COALESCE(excluded.transcriptScore, 0) <= COALESCE(ask_threads.transcriptScore, 0)
                )
                OR (
                  ask_threads.runId IS NOT NULL
                  AND (excluded.runId IS NULL OR ask_threads.runId != excluded.runId)
-                 AND excluded.messageCount <= ask_threads.messageCount
+                 AND COALESCE(excluded.transcriptScore, 0) <= COALESCE(ask_threads.transcriptScore, 0)
                )
              )
            THEN ask_threads.status
            ELSE excluded.status
          END,
          unread = CASE
-           WHEN ask_threads.status IS NOT NULL
-             AND (
-               (
+           WHEN (
+               COALESCE(excluded.transcriptScore, 0) < COALESCE(ask_threads.transcriptScore, 0)
+               OR (
                  excluded.status = 'running'
+                 AND ask_threads.status IS NOT NULL
                  AND ask_threads.status != 'running'
-                 AND (
-                   (ask_threads.runId IS NOT NULL AND ask_threads.runId = excluded.runId)
-                   OR (ask_threads.runId IS NULL AND excluded.messageCount <= ask_threads.messageCount)
-                 )
+                 AND COALESCE(excluded.transcriptScore, 0) <= COALESCE(ask_threads.transcriptScore, 0)
                )
                OR (
                  ask_threads.runId IS NOT NULL
                  AND (excluded.runId IS NULL OR ask_threads.runId != excluded.runId)
-                 AND excluded.messageCount <= ask_threads.messageCount
+                 AND COALESCE(excluded.transcriptScore, 0) <= COALESCE(ask_threads.transcriptScore, 0)
                )
              )
            THEN ask_threads.unread
            ELSE 0
          END,
          updatedAt = CASE
-           WHEN ask_threads.status IS NOT NULL
-             AND (
-               (
+           WHEN (
+               COALESCE(excluded.transcriptScore, 0) < COALESCE(ask_threads.transcriptScore, 0)
+               OR (
                  excluded.status = 'running'
+                 AND ask_threads.status IS NOT NULL
                  AND ask_threads.status != 'running'
-                 AND (
-                   (ask_threads.runId IS NOT NULL AND ask_threads.runId = excluded.runId)
-                   OR (ask_threads.runId IS NULL AND excluded.messageCount <= ask_threads.messageCount)
-                 )
+                 AND COALESCE(excluded.transcriptScore, 0) <= COALESCE(ask_threads.transcriptScore, 0)
                )
                OR (
                  ask_threads.runId IS NOT NULL
                  AND (excluded.runId IS NULL OR ask_threads.runId != excluded.runId)
-                 AND excluded.messageCount <= ask_threads.messageCount
+                 AND COALESCE(excluded.transcriptScore, 0) <= COALESCE(ask_threads.transcriptScore, 0)
                )
              )
            THEN ask_threads.updatedAt
@@ -197,6 +239,7 @@ export async function saveThread(input: {
       input.title.slice(0, 200),
       json,
       msgs.length,
+      score,
       input.cite || null,
       input.kind || null,
       input.sourceHref || null,
@@ -217,6 +260,7 @@ interface SummaryRow {
   kind: string | null;
   sourceHref: string | null;
   messageCount: number;
+  createdAt: number;
   updatedAt: number;
   runId: string | null;
   status: string | null;
@@ -229,7 +273,7 @@ export async function listThreads(userId: string): Promise<ThreadSummary[]> {
   // later autosaves, status reconciliation, or viewing another thread.
   const { results } = await db
     .prepare(
-      `SELECT id, title, cite, kind, sourceHref, messageCount, updatedAt, runId, status, unread
+      `SELECT id, title, cite, kind, sourceHref, messageCount, createdAt, updatedAt, runId, status, unread
        FROM ask_threads
        WHERE userId = ?
        ORDER BY createdAt DESC, id DESC
@@ -244,6 +288,7 @@ export async function listThreads(userId: string): Promise<ThreadSummary[]> {
     kind: r.kind,
     sourceHref: r.sourceHref,
     messageCount: Number(r.messageCount),
+    createdAt: Number(r.createdAt),
     updatedAt: Number(r.updatedAt),
     runId: r.runId,
     status: r.status,

@@ -575,6 +575,7 @@ function collapseDuplicateRunningTurns(messages: Message[]): Message[] {
 interface ThreadListItem {
   id: string;
   title: string;
+  createdAt: number;
   updatedAt: number;
   status?: string | null;
   unread?: boolean;
@@ -583,6 +584,7 @@ interface ThreadListItem {
 interface LocalThreadSnapshot {
   id: string;
   title: string;
+  createdAt: number;
   updatedAt: number;
   messages: ReturnType<typeof serializeMessages>;
   runId?: string | null;
@@ -614,10 +616,24 @@ function writeLocalThreadSnapshots(snapshots: LocalThreadSnapshot[]): void {
   }
 }
 
+function compareThreadsByCreatedAtDesc(
+  a: Pick<ThreadListItem, "id" | "createdAt" | "updatedAt">,
+  b: Pick<ThreadListItem, "id" | "createdAt" | "updatedAt">,
+): number {
+  const aCreatedAt = Number.isFinite(a.createdAt) ? a.createdAt : a.updatedAt;
+  const bCreatedAt = Number.isFinite(b.createdAt) ? b.createdAt : b.updatedAt;
+  const createdDelta = bCreatedAt - aCreatedAt;
+  if (createdDelta !== 0) return createdDelta;
+  return String(b.id).localeCompare(String(a.id));
+}
+
 function localThreadSummaries(): ThreadListItem[] {
   return readLocalThreadSnapshots().map((snapshot) => ({
     id: snapshot.id,
     title: snapshot.title,
+    createdAt: Number.isFinite(snapshot.createdAt)
+      ? snapshot.createdAt
+      : snapshot.updatedAt,
     updatedAt: snapshot.updatedAt,
     status: snapshot.status,
   }));
@@ -634,7 +650,7 @@ function upsertLocalThreadSnapshot(snapshot: LocalThreadSnapshot): void {
     (existing) => existing.id !== snapshot.id,
   );
   writeLocalThreadSnapshots(
-    [snapshot, ...snapshots].sort((a, b) => b.updatedAt - a.updatedAt),
+    [snapshot, ...snapshots].sort(compareThreadsByCreatedAtDesc),
   );
   try {
     localStorage.setItem(LAST_THREAD_ID_KEY, snapshot.id);
@@ -739,6 +755,7 @@ export function AskAgent({
         resumeRunId?: string,
         resumeFrom?: number,
         resumeStartedAt?: number,
+        internalReconnect?: boolean,
       ) => Promise<void>)
     | null
   >(null);
@@ -786,10 +803,17 @@ export function AskAgent({
       const title = shortTitle(
         snapshot.find((m) => m.role === "user")?.text ?? "",
       );
+      const existingSnapshot = getLocalThreadSnapshot(threadId);
+      const existingThread = optimisticThreads.find(
+        (thread) => thread.id === threadId,
+      );
       const updatedAt = Date.now();
+      const createdAt =
+        existingSnapshot?.createdAt ?? existingThread?.createdAt ?? updatedAt;
       upsertLocalThreadSnapshot({
         id: threadId,
         title,
+        createdAt,
         updatedAt,
         messages: serializeMessages(snapshot),
         runId: options.runId ?? runIdRef.current,
@@ -797,12 +821,12 @@ export function AskAgent({
         context: options.context ?? pinnedContext,
       });
       setOptimisticThreads((threads) => {
-        const next = { id: threadId, title, updatedAt, status };
+        const next = { id: threadId, title, createdAt, updatedAt, status };
         const rest = threads.filter((thread) => thread.id !== threadId);
         return [next, ...rest];
       });
     },
-    [pinnedContext],
+    [optimisticThreads, pinnedContext],
   );
   messagesRef.current = messages;
   useEffect(() => {
@@ -857,10 +881,16 @@ export function AskAgent({
   }, []);
 
   const upsertOptimisticThread = useCallback((thread: ThreadListItem) => {
-    setOptimisticThreads((threads) => [
-      thread,
-      ...threads.filter((item) => item.id !== thread.id),
-    ]);
+    setOptimisticThreads((threads) => {
+      const existing = threads.find((item) => item.id === thread.id);
+      const next = {
+        ...thread,
+        createdAt: existing?.createdAt ?? thread.createdAt,
+      };
+      return [next, ...threads.filter((item) => item.id !== thread.id)].sort(
+        compareThreadsByCreatedAtDesc,
+      );
+    });
   }, []);
 
   useEffect(() => {
@@ -1102,11 +1132,12 @@ export function AskAgent({
       resumeRunId?: string,
       resumeFrom = 0,
       resumeStartedAt?: number,
+      internalReconnect = false,
     ) => {
       const q = text.trim();
       if (!q) return;
 
-      if (sessionPending || loadingThreadId) return;
+      if (sessionPending || (loadingThreadId && !internalReconnect)) return;
 
       if (!isSignedIn) {
         const saved = savePendingAsk({
@@ -1224,6 +1255,7 @@ export function AskAgent({
           upsertOptimisticThread({
             id: runThreadId,
             title: shortTitle(q),
+            createdAt: Date.now(),
             updatedAt: Date.now(),
             status: "running",
           });
@@ -1467,6 +1499,7 @@ export function AskAgent({
                 upsertOptimisticThread({
                   id: finalThreadId,
                   title: finalTitle,
+                  createdAt: Date.now(),
                   updatedAt: Date.now(),
                   status: "done",
                 });
@@ -1674,7 +1707,19 @@ export function AskAgent({
         void loadThreadRef.current?.(ar.threadId);
         return;
       }
-      void sendRef.current?.(ar.question, ar.runId, 0, ar.startedAt);
+      const cachedRunThread = readLocalThreadSnapshots().find(
+        (snapshot) => snapshot.runId === ar.runId,
+      );
+      if (cachedRunThread) {
+        threadIdRef.current = cachedRunThread.id;
+        setActiveThreadId(cachedRunThread.id);
+        if (window.location.pathname === "/ask") {
+          window.history.replaceState(null, "", `/ask/${cachedRunThread.id}`);
+        }
+        void loadThreadRef.current?.(cachedRunThread.id);
+        return;
+      }
+      sessionStorage.removeItem("ask:activeRun");
     } catch {
       // ignore reconnect failures
     }
@@ -1776,6 +1821,7 @@ export function AskAgent({
         upsertOptimisticThread({
           id: nextThreadId,
           title: "New Chat",
+          createdAt: Date.now(),
           updatedAt: Date.now(),
           status: null,
         });
@@ -1831,6 +1877,7 @@ export function AskAgent({
       upsertOptimisticThread({
         id: currentThreadId,
         title: shortTitle(snapshot.find((m) => m.role === "user")?.text ?? ""),
+        createdAt: Date.now(),
         updatedAt: Date.now(),
         status,
       });
@@ -1929,6 +1976,7 @@ export function AskAgent({
                 runId ?? undefined,
                 latestAssistant?.eventCursor ?? 0,
                 latestAssistant?.startedAt,
+                true,
               );
             }, 0);
           }
@@ -2050,7 +2098,13 @@ export function AskAgent({
             setMessages(loaded);
             if (user) {
               window.setTimeout(() => {
-                void sendRef.current?.(user.text, runId, last.eventCursor ?? 0);
+                void sendRef.current?.(
+                  user.text,
+                  runId,
+                  last.eventCursor ?? 0,
+                  undefined,
+                  true,
+                );
               }, 0);
             }
             return;
@@ -2060,7 +2114,7 @@ export function AskAgent({
             setBusy(true);
             messagesRef.current = visibleMessages;
             setMessages(visibleMessages);
-            void sendRef.current?.(last.text, runId);
+            void sendRef.current?.(last.text, runId, 0, undefined, true);
             return;
           }
         }
@@ -2446,7 +2500,7 @@ function ThreadSidebar({
       for (const item of [...localThreadSummaries(), ...cachedItems]) {
         byId.set(item.id, { ...byId.get(item.id), ...item });
       }
-      return [...byId.values()].sort((a, b) => b.updatedAt - a.updatedAt);
+      return [...byId.values()].sort(compareThreadsByCreatedAtDesc);
     } catch {
       return localThreadSummaries();
     }
@@ -2463,7 +2517,7 @@ function ThreadSidebar({
       ...thread,
     })),
     ...items.filter((item) => !optimisticIdSet.has(item.id)),
-  ];
+  ].sort(compareThreadsByCreatedAtDesc);
   const filtered = q
     ? allItems.filter(
         (t) =>
@@ -2498,7 +2552,7 @@ function ThreadSidebar({
             byId.set(item.id, { ...byId.get(item.id), ...item });
           }
           const threads = [...byId.values()].sort(
-            (a, b) => b.updatedAt - a.updatedAt,
+            compareThreadsByCreatedAtDesc,
           );
           setItems(threads);
           try {
