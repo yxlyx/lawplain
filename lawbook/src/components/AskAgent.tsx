@@ -960,6 +960,7 @@ export function AskAgent({
   }, [messages.length, setHideFooter]);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const pendingHistoryFocusRef = useRef<string | null>(null);
+  const pendingNewChatFocusRef = useRef(false);
   const restoreComposerFocusOnMountRef = useRef(false);
   const chatScrollRef = useRef<HTMLDivElement>(null);
   const stickToBottomRef = useRef(true);
@@ -1139,6 +1140,14 @@ export function AskAgent({
     },
     [],
   );
+
+  // Focus the existing composer inside the click gesture so touch keyboards
+  // can open, then focus its replacement after the new empty chat commits.
+  useLayoutEffect(() => {
+    if (!pendingNewChatFocusRef.current) return;
+    pendingNewChatFocusRef.current = false;
+    inputRef.current?.focus({ preventScroll: true });
+  });
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: input changes the textarea's rendered text, so re-measure
   useEffect(() => {
@@ -2131,6 +2140,9 @@ export function AskAgent({
     if (creatingNewChatRef.current) return;
     creatingNewChatRef.current = true;
 
+    pendingNewChatFocusRef.current = true;
+    inputRef.current?.focus({ preventScroll: true });
+
     // Kick off a best-effort save of the current transcript, but do not await
     // it: a failed or stalled persistence request must never make the New chat
     // button unusable. The visible snapshot is captured before resetChatState
@@ -2188,7 +2200,7 @@ export function AskAgent({
     // in the background; explicit Stop is the only path that cancels backend work.
     // Same UI reset as resetChatState({ createPlaceholder: true }), without aborting the local tail.
     resetChatState({ createPlaceholder: true, abortCurrent: false });
-    setSidebarOpen(true);
+    setSidebarOpen(!window.matchMedia("(max-width: 1023px)").matches);
   }, [
     persistThreadSnapshot,
     resetChatState,

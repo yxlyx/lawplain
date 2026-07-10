@@ -54,6 +54,24 @@ test("selecting a history thread returns focus to the prompt composer", () => {
   assert.match(source, /!loadComplete && focused === document\.body/);
   assert.match(source, /composer\?\.focus\(\{ preventScroll: true \}\)/);
 });
+
+test("starting a new chat returns focus to the prompt composer", () => {
+  const source = read("src/components/AskAgent.tsx");
+
+  assert.match(source, /const pendingNewChatFocusRef = useRef\(false\)/);
+  assert.match(
+    source,
+    /pendingNewChatFocusRef\.current = true;\s*inputRef\.current\?\.focus\(\{ preventScroll: true \}\);[\s\S]*resetChatState\(\{ createPlaceholder: true, abortCurrent: false \}\)/,
+  );
+  assert.match(
+    source,
+    /useLayoutEffect\(\(\) => \{\s*if \(!pendingNewChatFocusRef\.current\) return;\s*pendingNewChatFocusRef\.current = false;\s*inputRef\.current\?\.focus\(\{ preventScroll: true \}\);\s*\}\)/,
+  );
+  assert.match(
+    source,
+    /setSidebarOpen\(!window\.matchMedia\("\(max-width: 1023px\)"\)\.matches\)/,
+  );
+});
 test("history chats open at the bottom while Saved Answers target one answer", () => {
   const source = read("src/components/AskAgent.tsx");
   const savedAnswers = read("src/components/SavedAnswers.tsx");
