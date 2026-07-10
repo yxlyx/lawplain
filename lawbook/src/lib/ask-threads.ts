@@ -11,6 +11,7 @@ export interface ThreadSummary {
   kind: string | null;
   sourceHref: string | null;
   messageCount: number;
+  lastPromptAt: number;
   createdAt: number;
   updatedAt: number;
   runId: string | null;
@@ -42,6 +43,20 @@ function transcriptScore(messages: unknown[]): number {
         : 0)
     );
   }, serializedLength);
+}
+
+function latestPromptTimestamp(messages: unknown[]): number {
+  return messages.reduce<number>((latest, message) => {
+    if (!message || typeof message !== "object") return latest;
+    const row = message as Record<string, unknown>;
+    if (row.role !== "user") return latest;
+    const startedAt = row.startedAt;
+    return typeof startedAt === "number" &&
+      Number.isFinite(startedAt) &&
+      startedAt > latest
+      ? Math.trunc(startedAt)
+      : latest;
+  }, 0);
 }
 
 async function getDb(): Promise<D1Database> {
@@ -77,12 +92,16 @@ export async function saveThread(input: {
     json = JSON.stringify(msgs);
   }
   const score = transcriptScore(msgs);
+  // New clients timestamp user messages when they are submitted. A zero value
+  // deliberately preserves the existing activity time for legacy snapshots,
+  // so merely opening and re-saving a chat cannot move it in History.
+  const lastPromptAt = latestPromptTimestamp(msgs);
 
   await db
     .prepare(
       `INSERT INTO ask_threads
-        (id, userId, title, messages, messageCount, transcriptScore, cite, kind, sourceHref, runId, status, createdAt, updatedAt)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        (id, userId, title, messages, messageCount, transcriptScore, cite, kind, sourceHref, runId, status, lastPromptAt, createdAt, updatedAt)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(id) DO UPDATE SET
          title = CASE
            WHEN (
@@ -213,6 +232,11 @@ export async function saveThread(input: {
            THEN ask_threads.unread
            ELSE 0
          END,
+         lastPromptAt = CASE
+           WHEN excluded.lastPromptAt > ask_threads.lastPromptAt
+           THEN excluded.lastPromptAt
+           ELSE ask_threads.lastPromptAt
+         END,
          updatedAt = CASE
            WHEN (
                COALESCE(excluded.transcriptScore, 0) < COALESCE(ask_threads.transcriptScore, 0)
@@ -245,6 +269,7 @@ export async function saveThread(input: {
       input.sourceHref || null,
       input.runId || null,
       input.status || null,
+      lastPromptAt,
       now,
       now,
     )
@@ -260,6 +285,7 @@ interface SummaryRow {
   kind: string | null;
   sourceHref: string | null;
   messageCount: number;
+  lastPromptAt: number;
   createdAt: number;
   updatedAt: number;
   runId: string | null;
@@ -269,14 +295,14 @@ interface SummaryRow {
 
 export async function listThreads(userId: string): Promise<ThreadSummary[]> {
   const db = await getDb();
-  // Keep history order stable by when a chat was first opened/created, not by
-  // later autosaves, status reconciliation, or viewing another thread.
+  // Only a newly submitted user prompt advances lastPromptAt. Autosaves,
+  // status reconciliation, and viewing another thread leave the order alone.
   const { results } = await db
     .prepare(
-      `SELECT id, title, cite, kind, sourceHref, messageCount, createdAt, updatedAt, runId, status, unread
+      `SELECT id, title, cite, kind, sourceHref, messageCount, lastPromptAt, createdAt, updatedAt, runId, status, unread
        FROM ask_threads
        WHERE userId = ?
-       ORDER BY createdAt DESC, id DESC
+       ORDER BY lastPromptAt DESC, createdAt DESC, id DESC
        LIMIT ?`,
     )
     .bind(userId, LIST_LIMIT)
@@ -288,6 +314,7 @@ export async function listThreads(userId: string): Promise<ThreadSummary[]> {
     kind: r.kind,
     sourceHref: r.sourceHref,
     messageCount: Number(r.messageCount),
+    lastPromptAt: Number(r.lastPromptAt) || Number(r.createdAt),
     createdAt: Number(r.createdAt),
     updatedAt: Number(r.updatedAt),
     runId: r.runId,
@@ -308,7 +335,7 @@ export async function getThread(
   const db = await getDb();
   const row = await db
     .prepare(
-      `SELECT id, title, messages, messageCount, cite, kind, sourceHref, runId, status, unread, createdAt, updatedAt
+      `SELECT id, title, messages, messageCount, cite, kind, sourceHref, runId, status, unread, lastPromptAt, createdAt, updatedAt
        FROM ask_threads
        WHERE userId = ? AND id = ?`,
     )
@@ -329,6 +356,7 @@ export async function getThread(
     kind: row.kind,
     sourceHref: row.sourceHref,
     messageCount: Number(row.messageCount),
+    lastPromptAt: Number(row.lastPromptAt) || Number(row.createdAt),
     updatedAt: Number(row.updatedAt),
     createdAt: Number(row.createdAt),
     runId: row.runId,

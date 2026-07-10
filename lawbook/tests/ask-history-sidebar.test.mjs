@@ -87,7 +87,10 @@ test("new chat appears optimistically in history and is renamed on first prompt"
   );
   assert.match(source, /createPlaceholder: true/);
   assert.match(source, /setSidebarOpen\(true\)/);
-  assert.match(source, /title: shortTitle\(q\)/);
+  assert.match(
+    source,
+    /title: shortTitle\([\s\S]*messagesRef\.current\.find\([\s\S]*\?\.text \?\? q/,
+  );
   assert.match(source, /loading && allItems\.length === 0/);
 });
 
@@ -97,7 +100,7 @@ test("ask history accepts reconciled terminal status over stale optimistic runni
 
   assert.match(
     source,
-    /fetched\?\.status[\s\S]*thread\.status === "running"[\s\S]*fetched\.status !== "running"/,
+    /fetched\?\.status[\s\S]*thread\.status === "running"[\s\S]*fetched\.status !== "running"[\s\S]*fetchedLastPromptAt >= thread\.lastPromptAt/,
   );
   assert.match(source, /return \{\s*\.\.\.thread,\s*\.\.\.fetched,\s*\}/);
   assert.match(source, /return \{\s*\.\.\.fetched,\s*\.\.\.thread,\s*\}/);
@@ -107,6 +110,20 @@ test("ask history accepts reconciled terminal status over stale optimistic runni
   assert.match(routeSource, /unread: status === "done"/);
   assert.match(routeSource, /const unread = body\.unread === true/);
   assert.match(routeSource, /if \(unread && status === "done"\)/);
+});
+
+test("a follow-up prompt immediately outranks stale completed server state", () => {
+  const source = read("src/components/AskAgent.tsx");
+
+  assert.match(
+    source,
+    /const fetchedLastPromptAt = fetched[\s\S]*fetched\.lastPromptAt[\s\S]*fetched\.createdAt/,
+  );
+  assert.match(
+    source,
+    /fetchedLastPromptAt >= thread\.lastPromptAt[\s\S]*return \{\s*\.\.\.thread,\s*\.\.\.fetched/,
+  );
+  assert.match(source, /return \{\s*\.\.\.fetched,\s*\.\.\.thread,\s*\}/);
 });
 
 test("ask run hosts mark completed background threads unread done", () => {
@@ -168,19 +185,32 @@ test("ask history polls running threads while closed and advertises unread done"
   );
 });
 
-test("ask thread sidebar orders by chat creation, not latest update", () => {
+test("ask thread sidebar orders by latest prompt, not latest view or save", () => {
   const source = read("src/components/AskAgent.tsx");
   const serverSource = read("src/lib/ask-threads.ts");
+  const migration = read("migrations/0016_ask_threads_last_prompt.sql");
 
-  assert.match(source, /function compareThreadsByCreatedAtDesc/);
-  assert.match(source, /createdAt:[\s\S]*updatedAt:/);
-  assert.match(source, /sort\(compareThreadsByCreatedAtDesc\)/);
-  assert.doesNotMatch(source, /b\.updatedAt\s*-\s*a\.updatedAt/);
+  assert.match(source, /function compareThreadsByLastPromptDesc/);
+  assert.match(source, /lastPromptAt:[\s\S]*createdAt:[\s\S]*updatedAt:/);
+  assert.match(source, /startedAt: promptAt/);
+  assert.match(
+    source,
+    /return \[next, \.\.\.rest\]\.sort\(compareThreadsByLastPromptDesc\)/,
+  );
+  assert.match(source, /sort\(compareThreadsByLastPromptDesc\)/);
   assert.match(
     serverSource,
-    /SELECT id, title, cite, kind, sourceHref, messageCount, createdAt, updatedAt/,
+    /SELECT id, title, cite, kind, sourceHref, messageCount, lastPromptAt, createdAt, updatedAt/,
   );
-  assert.match(serverSource, /ORDER BY createdAt DESC, id DESC/);
+  assert.match(
+    serverSource,
+    /ORDER BY lastPromptAt DESC, createdAt DESC, id DESC/,
+  );
+  assert.match(
+    serverSource,
+    /WHEN excluded\.lastPromptAt > ask_threads\.lastPromptAt[\s\S]*THEN excluded\.lastPromptAt[\s\S]*ELSE ask_threads\.lastPromptAt/,
+  );
+  assert.match(migration, /SET lastPromptAt = createdAt/);
 });
 
 test("loading and reconnecting a thread cannot send from an empty UI", () => {

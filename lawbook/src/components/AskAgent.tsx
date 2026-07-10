@@ -589,6 +589,7 @@ function collapseDuplicateRunningTurns(messages: Message[]): Message[] {
 interface ThreadListItem {
   id: string;
   title: string;
+  lastPromptAt: number;
   createdAt: number;
   updatedAt: number;
   status?: string | null;
@@ -598,6 +599,7 @@ interface ThreadListItem {
 interface LocalThreadSnapshot {
   id: string;
   title: string;
+  lastPromptAt: number;
   createdAt: number;
   updatedAt: number;
   messages: ReturnType<typeof serializeMessages>;
@@ -630,14 +632,34 @@ function writeLocalThreadSnapshots(snapshots: LocalThreadSnapshot[]): void {
   }
 }
 
-function compareThreadsByCreatedAtDesc(
-  a: Pick<ThreadListItem, "id" | "createdAt" | "updatedAt">,
-  b: Pick<ThreadListItem, "id" | "createdAt" | "updatedAt">,
+function latestPromptTimestamp(messages: Message[], fallback: number): number {
+  return messages.reduce(
+    (latest, message) =>
+      message.role === "user" &&
+      typeof message.startedAt === "number" &&
+      Number.isFinite(message.startedAt)
+        ? Math.max(latest, message.startedAt)
+        : latest,
+    fallback,
+  );
+}
+
+function compareThreadsByLastPromptDesc(
+  a: Pick<ThreadListItem, "id" | "lastPromptAt" | "createdAt" | "updatedAt">,
+  b: Pick<ThreadListItem, "id" | "lastPromptAt" | "createdAt" | "updatedAt">,
 ): number {
-  const aCreatedAt = Number.isFinite(a.createdAt) ? a.createdAt : a.updatedAt;
-  const bCreatedAt = Number.isFinite(b.createdAt) ? b.createdAt : b.updatedAt;
-  const createdDelta = bCreatedAt - aCreatedAt;
-  if (createdDelta !== 0) return createdDelta;
+  const aLastPromptAt = Number.isFinite(a.lastPromptAt)
+    ? a.lastPromptAt
+    : Number.isFinite(a.createdAt)
+      ? a.createdAt
+      : a.updatedAt;
+  const bLastPromptAt = Number.isFinite(b.lastPromptAt)
+    ? b.lastPromptAt
+    : Number.isFinite(b.createdAt)
+      ? b.createdAt
+      : b.updatedAt;
+  const promptDelta = bLastPromptAt - aLastPromptAt;
+  if (promptDelta !== 0) return promptDelta;
   return String(b.id).localeCompare(String(a.id));
 }
 
@@ -645,6 +667,11 @@ function localThreadSummaries(): ThreadListItem[] {
   return readLocalThreadSnapshots().map((snapshot) => ({
     id: snapshot.id,
     title: snapshot.title,
+    lastPromptAt: Number.isFinite(snapshot.lastPromptAt)
+      ? snapshot.lastPromptAt
+      : Number.isFinite(snapshot.createdAt)
+        ? snapshot.createdAt
+        : snapshot.updatedAt,
     createdAt: Number.isFinite(snapshot.createdAt)
       ? snapshot.createdAt
       : snapshot.updatedAt,
@@ -664,7 +691,7 @@ function upsertLocalThreadSnapshot(snapshot: LocalThreadSnapshot): void {
     (existing) => existing.id !== snapshot.id,
   );
   writeLocalThreadSnapshots(
-    [snapshot, ...snapshots].sort(compareThreadsByCreatedAtDesc),
+    [snapshot, ...snapshots].sort(compareThreadsByLastPromptDesc),
   );
   try {
     localStorage.setItem(LAST_THREAD_ID_KEY, snapshot.id);
@@ -848,9 +875,14 @@ export function AskAgent({
       const existingSnapshot = getLocalThreadSnapshot(threadId);
       const updatedAt = Date.now();
       const fallbackCreatedAt = existingSnapshot?.createdAt ?? updatedAt;
+      const lastPromptAt = latestPromptTimestamp(
+        snapshot,
+        existingSnapshot?.lastPromptAt ?? fallbackCreatedAt,
+      );
       upsertLocalThreadSnapshot({
         id: threadId,
         title,
+        lastPromptAt,
         createdAt: fallbackCreatedAt,
         updatedAt,
         messages: serializeMessages(snapshot),
@@ -861,9 +893,16 @@ export function AskAgent({
       setOptimisticThreads((threads) => {
         const existingThread = threads.find((thread) => thread.id === threadId);
         const createdAt = existingThread?.createdAt ?? fallbackCreatedAt;
-        const next = { id: threadId, title, createdAt, updatedAt, status };
+        const next = {
+          id: threadId,
+          title,
+          lastPromptAt,
+          createdAt,
+          updatedAt,
+          status,
+        };
         const rest = threads.filter((thread) => thread.id !== threadId);
-        return [next, ...rest];
+        return [next, ...rest].sort(compareThreadsByLastPromptDesc);
       });
     },
     [pinnedContext],
@@ -926,9 +965,13 @@ export function AskAgent({
       const next = {
         ...thread,
         createdAt: existing?.createdAt ?? thread.createdAt,
+        lastPromptAt: Math.max(
+          existing?.lastPromptAt ?? 0,
+          thread.lastPromptAt,
+        ),
       };
       return [next, ...threads.filter((item) => item.id !== thread.id)].sort(
-        compareThreadsByCreatedAtDesc,
+        compareThreadsByLastPromptDesc,
       );
     });
   }, []);
@@ -1249,6 +1292,9 @@ export function AskAgent({
           existingUser.role === "user" &&
           existingUser.text.trim() === q,
       );
+      const promptAt = reuseRunningAssistant
+        ? ((existingUser as Message).startedAt ?? resumeStartedAt ?? Date.now())
+        : Date.now();
 
       const userMsg: Message = reuseRunningAssistant
         ? (existingUser as Message)
@@ -1259,6 +1305,7 @@ export function AskAgent({
             tools: [],
             progress: [],
             phase: "done",
+            startedAt: promptAt,
           };
       const aId = reuseRunningAssistant
         ? (existingAssistant as Message).id
@@ -1291,15 +1338,17 @@ export function AskAgent({
             phase: "starting",
           };
       if (!reuseRunningAssistant) {
-        if (messagesRef.current.length === 0) {
-          upsertOptimisticThread({
-            id: runThreadId,
-            title: shortTitle(q),
-            createdAt: Date.now(),
-            updatedAt: Date.now(),
-            status: "running",
-          });
-        }
+        const existingSnapshot = getLocalThreadSnapshot(runThreadId);
+        upsertOptimisticThread({
+          id: runThreadId,
+          title: shortTitle(
+            messagesRef.current.find((m) => m.role === "user")?.text ?? q,
+          ),
+          lastPromptAt: promptAt,
+          createdAt: existingSnapshot?.createdAt ?? promptAt,
+          updatedAt: promptAt,
+          status: "running",
+        });
         stickToBottomRef.current = true;
         setMessages((m) => [...m, userMsg, assistantMsg]);
       }
@@ -1541,6 +1590,10 @@ export function AskAgent({
                 upsertOptimisticThread({
                   id: finalThreadId,
                   title: finalTitle,
+                  lastPromptAt: latestPromptTimestamp(
+                    finalSnapshot,
+                    getLocalThreadSnapshot(finalThreadId)?.lastPromptAt ?? 0,
+                  ),
                   createdAt: Date.now(),
                   updatedAt: Date.now(),
                   status: "done",
@@ -1883,6 +1936,7 @@ export function AskAgent({
         upsertOptimisticThread({
           id: nextThreadId,
           title: "New Chat",
+          lastPromptAt: Date.now(),
           createdAt: Date.now(),
           updatedAt: Date.now(),
           status: null,
@@ -1936,10 +1990,15 @@ export function AskAgent({
         runId: currentRunId,
         status,
       });
+      const localSnapshot = getLocalThreadSnapshot(currentThreadId);
       upsertOptimisticThread({
         id: currentThreadId,
         title: shortTitle(snapshot.find((m) => m.role === "user")?.text ?? ""),
-        createdAt: Date.now(),
+        lastPromptAt: latestPromptTimestamp(
+          snapshot,
+          localSnapshot?.lastPromptAt ?? localSnapshot?.createdAt ?? 0,
+        ),
+        createdAt: localSnapshot?.createdAt ?? Date.now(),
         updatedAt: Date.now(),
         status,
       });
@@ -2549,7 +2608,7 @@ function ThreadSidebar({
       for (const item of [...localThreadSummaries(), ...cachedItems]) {
         byId.set(item.id, { ...byId.get(item.id), ...item });
       }
-      return [...byId.values()].sort(compareThreadsByCreatedAtDesc);
+      return [...byId.values()].sort(compareThreadsByLastPromptDesc);
     } catch {
       return localThreadSummaries();
     }
@@ -2563,11 +2622,20 @@ function ThreadSidebar({
   const allItems = [
     ...optimisticThreads.map((thread) => {
       const fetched = itemsById.get(thread.id);
+      const fetchedLastPromptAt = fetched
+        ? Number.isFinite(fetched.lastPromptAt)
+          ? fetched.lastPromptAt
+          : fetched.createdAt
+        : 0;
       if (
         fetched?.status &&
         thread.status === "running" &&
-        fetched.status !== "running"
+        fetched.status !== "running" &&
+        fetchedLastPromptAt >= thread.lastPromptAt
       ) {
+        // A terminal server result should reconcile a stale optimistic copy of
+        // the same run. It must not overwrite a newer prompt that has just
+        // moved this thread to the top before its run-start save completes.
         return {
           ...thread,
           ...fetched,
@@ -2579,7 +2647,7 @@ function ThreadSidebar({
       };
     }),
     ...items.filter((item) => !optimisticIdSet.has(item.id)),
-  ].sort(compareThreadsByCreatedAtDesc);
+  ].sort(compareThreadsByLastPromptDesc);
   const filtered = q
     ? allItems.filter(
         (t) =>
@@ -2621,7 +2689,7 @@ function ThreadSidebar({
             byId.set(item.id, { ...byId.get(item.id), ...item });
           }
           const threads = [...byId.values()].sort(
-            compareThreadsByCreatedAtDesc,
+            compareThreadsByLastPromptDesc,
           );
           setItems(threads);
           try {
