@@ -82,8 +82,11 @@ export async function GET(req: Request): Promise<Response> {
   if (id) {
     const thread = await getThread(session.user.id, id);
     if (!thread) return Response.json({ error: "Not found" }, { status: 404 });
+    const [reconciled] = await reconcileRunningThreads(session.user.id, [
+      thread,
+    ]);
     await markThreadSeen(session.user.id, id).catch(() => {});
-    return Response.json({ thread: { ...thread, unread: false } });
+    return Response.json({ thread: { ...reconciled, unread: false } });
   }
   const threads = await reconcileRunningThreads(
     session.user.id,
@@ -121,6 +124,7 @@ export async function POST(req: Request): Promise<Response> {
     body.status === "running" || body.status === "stopped"
       ? body.status
       : "done";
+  const unread = body.unread === true;
 
   // Ownership is always the session user — never a client-supplied id.
   const saved = await saveThread({
@@ -134,6 +138,14 @@ export async function POST(req: Request): Promise<Response> {
     runId,
     status,
   });
+  if (unread && status === "done") {
+    await updateThreadRunStatus({
+      userId: session.user.id,
+      id,
+      status,
+      unread: true,
+    }).catch(() => {});
+  }
   return Response.json({ saved }, { status: 200 });
 }
 

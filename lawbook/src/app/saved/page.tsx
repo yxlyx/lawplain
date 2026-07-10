@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { RecentlyViewedDocuments } from "@/components/RecentlyViewedDocuments";
 import { SavedAnswers } from "@/components/SavedAnswers";
 import { SavedWorkspace } from "@/components/SavedWorkspace";
 import { buildMetadata } from "@/lib/seo";
@@ -25,6 +26,7 @@ export default function SavedPage() {
         </p>
       </div>
       <SavedWorkspace />
+      <RecentlyViewedDocuments />
       <SavedAnswers />
     </main>
   );

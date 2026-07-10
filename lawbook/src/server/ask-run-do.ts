@@ -13,6 +13,7 @@ import { GraffRun } from "./graff-run";
  */
 
 interface AskRunEnv {
+  AUTH_DB?: D1Database;
   CUBESANDBOX_GATEWAY_URL?: string;
   CUBESANDBOX_TENANT_KEY?: string;
   [key: string]: unknown;
@@ -91,6 +92,8 @@ export class AskRunDO extends DurableObject<AskRunEnv> {
       prompt?: string;
       systemPrompt?: string;
       model?: string;
+      userId?: string;
+      threadId?: string;
     } | null;
     const status = await this.status();
     if (status === "idle") {
@@ -102,6 +105,8 @@ export class AskRunDO extends DurableObject<AskRunEnv> {
         prompt: body.prompt,
         systemPrompt: body.systemPrompt,
         model: body.model,
+        userId: body.userId,
+        threadId: body.threadId,
         startedAt: Date.now(),
       });
       await this.ctx.storage.setAlarm(Date.now());
@@ -122,6 +127,7 @@ export class AskRunDO extends DurableObject<AskRunEnv> {
         },
       ]);
       await this.ctx.storage.put("status", "stopped" satisfies RunStatus);
+      await this.updateThreadStatus("stopped");
     }
 
     const sid = await this.ctx.storage.get<string>("sandboxId");
@@ -203,10 +209,9 @@ export class AskRunDO extends DurableObject<AskRunEnv> {
         await sleep(750);
       }
       if (!(await this.isStopped())) {
-        await this.ctx.storage.put(
-          "status",
-          (sawError ? "error" : "done") satisfies RunStatus,
-        );
+        const status = (sawError ? "error" : "done") satisfies RunStatus;
+        await this.ctx.storage.put("status", status);
+        await this.updateThreadStatus(status);
       }
     } catch (e) {
       if (await this.isStopped()) return;
@@ -214,6 +219,7 @@ export class AskRunDO extends DurableObject<AskRunEnv> {
         { type: "error", message: e instanceof Error ? e.message : String(e) },
       ]);
       await this.ctx.storage.put("status", "error" satisfies RunStatus);
+      await this.updateThreadStatus("error");
     } finally {
       if (run.sandboxId) await sandbox.deleteSandbox(run.sandboxId);
       await this.ctx.storage.delete("sandboxId");
@@ -223,6 +229,35 @@ export class AskRunDO extends DurableObject<AskRunEnv> {
   private async fail(message: string): Promise<void> {
     this.appendEvents([{ type: "error", message }]);
     await this.ctx.storage.put("status", "error" satisfies RunStatus);
+    await this.updateThreadStatus("error");
+  }
+
+  private async updateThreadStatus(status: RunStatus): Promise<void> {
+    if (status !== "done" && status !== "error" && status !== "stopped") return;
+    const db = this.env.AUTH_DB;
+    if (!db) return;
+    const userId = await this.ctx.storage.get<string>("userId");
+    const threadId = await this.ctx.storage.get<string>("threadId");
+    if (!userId || !threadId) return;
+
+    const persistedStatus = status === "stopped" ? "stopped" : "done";
+    await db
+      .prepare(
+        `UPDATE ask_threads
+         SET status = ?,
+             unread = CASE WHEN ? = 1 THEN 1 ELSE unread END,
+             updatedAt = ?
+         WHERE userId = ? AND id = ?`,
+      )
+      .bind(
+        persistedStatus,
+        persistedStatus === "done" ? 1 : 0,
+        Date.now(),
+        userId,
+        threadId,
+      )
+      .run()
+      .catch(() => {});
   }
 
   /** SSE: replay events from `from`, then tail live ones until terminal. */

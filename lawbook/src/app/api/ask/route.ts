@@ -212,6 +212,8 @@ export async function POST(req: Request): Promise<Response> {
             prompt,
             systemPrompt: legalResearchPrompt(),
             model: AGENT_MODEL,
+            userId: session.user.id,
+            threadId,
           }),
         });
         return stub.fetch(`https://ask-run-do/stream?from=${from}`);
@@ -236,6 +238,7 @@ export async function POST(req: Request): Promise<Response> {
       userId: session.user.id,
       runId,
       question,
+      threadId,
       context,
       history,
       kind,

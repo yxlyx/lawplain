@@ -5,6 +5,7 @@ import {
   type ChatContext,
   type ChatTurn,
 } from "@/lib/agent";
+import { updateThreadRunStatus } from "@/lib/ask-threads";
 
 const MAX_EVENTS = 2_000;
 const RUN_TTL_MS = 30 * 60 * 1000;
@@ -27,6 +28,7 @@ interface StartMemoryRunInput {
   userId: string;
   runId: string;
   question: string;
+  threadId?: string;
   context?: ChatContext;
   history?: ChatTurn[];
   kind?: string;
@@ -51,6 +53,20 @@ function sse(event: AgentEvent): string {
 function notify(run: MemoryRun): void {
   for (const waiter of run.waiters) waiter();
   run.waiters.clear();
+}
+
+async function updateThreadStatus(
+  input: StartMemoryRunInput,
+  status: RunStatus,
+): Promise<void> {
+  if (!input.threadId || status === "running") return;
+  const persistedStatus = status === "stopped" ? "stopped" : "done";
+  await updateThreadRunStatus({
+    userId: input.userId,
+    id: input.threadId,
+    status: persistedStatus,
+    unread: persistedStatus === "done",
+  }).catch(() => {});
 }
 
 function append(run: MemoryRun, event: AgentEvent): void {
@@ -155,6 +171,7 @@ export function startMemoryAskRun(input: StartMemoryRunInput): MemoryRun {
       }
     } finally {
       run.updatedAt = Date.now();
+      await updateThreadStatus(input, run.status);
       notify(run);
     }
   })();

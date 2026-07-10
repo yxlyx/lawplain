@@ -746,7 +746,6 @@ export function AskAgent({
     AskQuestionHistoryEntry[]
   >([]);
   const [busy, setBusy] = useState(false);
-  const [sidebarOpen, setSidebarOpen] = useState(false);
   const [activeThreadId, setActiveThreadId] = useState(
     () => initialThreadId ?? crypto.randomUUID(),
   );
@@ -755,7 +754,13 @@ export function AskAgent({
   const [optimisticThreads, setOptimisticThreads] = useState<ThreadListItem[]>(
     [],
   );
-  const { setHideFooter } = useChrome();
+  const {
+    setHideFooter,
+    askSidebarOpen: sidebarOpen,
+    setAskSidebarOpen: setSidebarOpen,
+    setAskSidebarAvailable,
+    setAskSidebarUnread,
+  } = useChrome();
   const [queuedPrompt, setQueuedPrompt] = useState<string | null>(null);
   const [pinnedContext, setPinnedContext] = useState(initialContext);
   const [now, setNow] = useState(() => Date.now());
@@ -767,6 +772,19 @@ export function AskAgent({
     const timeout = window.setTimeout(() => setSessionWaitExpired(true), 5000);
     return () => window.clearTimeout(timeout);
   }, [sessionPending]);
+
+  useEffect(() => {
+    setAskSidebarAvailable(isSignedIn);
+    if (!isSignedIn) {
+      setSidebarOpen(false);
+      setAskSidebarUnread(false);
+    }
+    return () => {
+      setAskSidebarAvailable(false);
+      setSidebarOpen(false);
+      setAskSidebarUnread(false);
+    };
+  }, [isSignedIn, setAskSidebarAvailable, setAskSidebarUnread, setSidebarOpen]);
   const abortRef = useRef<AbortController | null>(null);
   const activeRef = useRef(false);
   const sendGenerationRef = useRef(0);
@@ -1518,12 +1536,15 @@ export function AskAgent({
                 const finalTitle = shortTitle(
                   finalSnapshot.find((m) => m.role === "user")?.text ?? q,
                 );
+                const completedInBackground =
+                  finalThreadId !== threadIdRef.current;
                 upsertOptimisticThread({
                   id: finalThreadId,
                   title: finalTitle,
                   createdAt: Date.now(),
                   updatedAt: Date.now(),
                   status: "done",
+                  unread: completedInBackground,
                 });
                 if (
                   isSignedIn &&
@@ -1541,6 +1562,7 @@ export function AskAgent({
                       sourceHref: runContext?.href,
                       runId,
                       status: "done",
+                      unread: completedInBackground,
                     }),
                   })
                     .then((res) => {
@@ -1946,6 +1968,7 @@ export function AskAgent({
     resetChatState,
     upsertOptimisticThread,
     pinnedContext,
+    setSidebarOpen,
   ]);
 
   const deleteActiveChat = useCallback(
@@ -1971,7 +1994,7 @@ export function AskAgent({
       resetChatState({ createPlaceholder: false });
       setSidebarOpen(true);
     },
-    [activeThreadId, resetChatState],
+    [activeThreadId, resetChatState, setSidebarOpen],
   );
 
   const loadThread = useCallback(
@@ -2380,134 +2403,110 @@ export function AskAgent({
           onDeleteActive={deleteActiveChat}
           refreshKey={threadListVersion}
           optimisticThreads={optimisticThreads}
+          onUnreadDoneChange={setAskSidebarUnread}
         />
       )}
-      {isSignedIn && (
-        <div className="mb-2 flex items-center justify-end gap-1">
-          <button
-            type="button"
-            onClick={() => setSidebarOpen((open) => !open)}
-            aria-expanded={sidebarOpen}
-            className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-xs font-medium text-muted-2 transition-colors hover:bg-surface-2 hover:text-foreground"
-          >
-            <svg
-              viewBox="0 0 24 24"
-              aria-hidden="true"
-              className="h-3.5 w-3.5"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="1.8"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            >
-              <rect x="3" y="4" width="18" height="16" rx="2" />
-              <path d="M9 4v16" />
-            </svg>
-            History
-          </button>
-          {messages.length > 0 && (
-            <button
-              type="button"
-              onClick={newChat}
-              className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-xs font-medium text-muted-2 transition-colors hover:bg-surface-2 hover:text-foreground"
-            >
-              New chat
-            </button>
-          )}
-        </div>
-      )}
-      {messages.length === 0 ? (
-        <div className="flex flex-col items-center pt-2 text-center sm:pt-4">
-          <span className="mb-4 inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-accent-soft text-accent">
-            <SparkleIcon className="h-6 w-6" />
-          </span>
-          <h1 className="font-serif text-4xl font-medium tracking-tight text-foreground sm:text-5xl">
-            Ask Lawplain
-          </h1>
-          <p className="mt-3 max-w-md text-balance text-sm text-muted">
-            {pinnedContext
-              ? `Grounded in ${pinnedContext.kind === "judgment" ? "judgment" : "statute"}: ${pinnedContext.title}`
-              : "Ask a question about Singapore law in plain English — the agent searches judgments, statutes & Hansard, then writes a cited answer."}
-          </p>
-          {pinnedChip && (
-            <div className="mt-5 w-full text-left">{pinnedChip}</div>
-          )}
-          <div className="mt-7 w-full">{composer}</div>
-          <div className="mt-3 grid w-full gap-1.5 sm:grid-cols-2">
-            {SUGGESTIONS.map((s) => (
-              <button
-                key={s}
-                type="button"
-                onClick={() => void send(s)}
-                disabled={authBlocking || Boolean(loadingThreadId)}
-                className="rounded-xl border border-border bg-surface px-3.5 py-2.5 text-left text-[13px] text-foreground transition-colors hover:border-border-strong hover:bg-surface-2 disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                {s}
-              </button>
-            ))}
-          </div>
-        </div>
-      ) : (
-        <div className="flex min-h-[calc(100dvh-12rem)] flex-col">
-          {pinnedChip}
-          <div
-            role="log"
-            aria-live="polite"
-            aria-relevant="additions text"
-            className="flex-1 space-y-6 pb-24"
-          >
-            {messages.map((m, i) => {
-              const liveAssistant = isLiveAssistant(m);
-
-              return (
-                <div
-                  key={`${activeThreadId}:${m.id}`}
-                  id={`ask-message-${m.id}`}
-                  className={`motion-fade-up scroll-mt-24 rounded-2xl transition-colors duration-700 ${
-                    highlightedMessageId === m.id ? "bg-accent-soft/60" : ""
-                  }`}
+      <div
+        className={`transition-transform duration-300 ease-[var(--ease-smooth-out)] motion-reduce:transition-none ${
+          sidebarOpen ? "lg:translate-x-36" : ""
+        }`}
+      >
+        {messages.length === 0 ? (
+          <div className="flex flex-col items-center pt-2 text-center sm:pt-4">
+            <span className="mb-4 inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-accent-soft text-accent">
+              <SparkleIcon className="h-6 w-6" />
+            </span>
+            <h1 className="font-serif text-4xl font-medium tracking-tight text-foreground sm:text-5xl">
+              Ask Lawplain
+            </h1>
+            <p className="mt-3 max-w-md text-balance text-sm text-muted">
+              {pinnedContext
+                ? `Grounded in ${pinnedContext.kind === "judgment" ? "judgment" : "statute"}: ${pinnedContext.title}`
+                : "Ask a question about Singapore law in plain English — the agent searches judgments, statutes & Hansard, then writes a cited answer."}
+            </p>
+            {pinnedChip && (
+              <div className="mt-5 w-full text-left">{pinnedChip}</div>
+            )}
+            <div className="mt-7 w-full">{composer}</div>
+            <div className="mt-3 grid w-full gap-1.5 sm:grid-cols-2">
+              {SUGGESTIONS.map((s) => (
+                <button
+                  key={s}
+                  type="button"
+                  onClick={() => void send(s)}
+                  disabled={authBlocking || Boolean(loadingThreadId)}
+                  className="rounded-xl border border-border bg-surface px-3.5 py-2.5 text-left text-[13px] text-foreground transition-colors hover:border-border-strong hover:bg-surface-2 disabled:cursor-not-allowed disabled:opacity-50"
                 >
-                  {m.role === "user" ? (
-                    <MessageRow align="end">
-                      <MessageAvatar>
-                        <span className="inline-flex h-7 w-7 items-center justify-center rounded-lg bg-surface-2 text-muted-2">
-                          <UserIcon className="h-4 w-4" />
-                        </span>
-                      </MessageAvatar>
-                      <MessageContent>
-                        <Bubble variant="user" className="px-3.5 py-2 text-sm">
-                          {m.text}
-                        </Bubble>
-                      </MessageContent>
-                    </MessageRow>
-                  ) : (
-                    <AssistantMessage
-                      m={m}
-                      now={liveAssistant ? now : (m.elapsedMs ?? 0)}
-                      signInHref={signInHref}
-                      signUpHref={signUpHref}
-                      question={
-                        messages[i - 1]?.role === "user"
-                          ? messages[i - 1].text
-                          : ""
-                      }
-                      cite={pinnedContext?.citation}
-                      kind={pinnedContext?.kind}
-                      sourceHref={pinnedContext?.href}
-                      threadId={activeThreadId}
-                      messageId={m.id}
-                      isSignedIn={isSignedIn}
-                    />
-                  )}
-                </div>
-              );
-            })}
+                  {s}
+                </button>
+              ))}
+            </div>
           </div>
-          <div className="sticky bottom-0 -mx-5 border-t border-border bg-background/90 px-5 py-3 backdrop-blur sm:-mx-8 sm:px-8">
-            {composer}
+        ) : (
+          <div className="flex min-h-[calc(100dvh-12rem)] flex-col">
+            {pinnedChip}
+            <div
+              role="log"
+              aria-live="polite"
+              aria-relevant="additions text"
+              className="flex-1 space-y-6 pb-24"
+            >
+              {messages.map((m, i) => {
+                const liveAssistant = isLiveAssistant(m);
+
+                return (
+                  <div
+                    key={`${activeThreadId}:${m.id}`}
+                    id={`ask-message-${m.id}`}
+                    className={`motion-fade-up scroll-mt-24 rounded-2xl transition-colors duration-700 ${
+                      highlightedMessageId === m.id ? "bg-accent-soft/60" : ""
+                    }`}
+                  >
+                    {m.role === "user" ? (
+                      <MessageRow align="end">
+                        <MessageAvatar>
+                          <span className="inline-flex h-7 w-7 items-center justify-center rounded-lg bg-surface-2 text-muted-2">
+                            <UserIcon className="h-4 w-4" />
+                          </span>
+                        </MessageAvatar>
+                        <MessageContent>
+                          <Bubble
+                            variant="user"
+                            className="px-3.5 py-2 text-sm"
+                          >
+                            {m.text}
+                          </Bubble>
+                        </MessageContent>
+                      </MessageRow>
+                    ) : (
+                      <AssistantMessage
+                        m={m}
+                        now={liveAssistant ? now : (m.elapsedMs ?? 0)}
+                        signInHref={signInHref}
+                        signUpHref={signUpHref}
+                        question={
+                          messages[i - 1]?.role === "user"
+                            ? messages[i - 1].text
+                            : ""
+                        }
+                        cite={pinnedContext?.citation}
+                        kind={pinnedContext?.kind}
+                        sourceHref={pinnedContext?.href}
+                        threadId={activeThreadId}
+                        messageId={m.id}
+                        isSignedIn={isSignedIn}
+                      />
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+            <div className="sticky bottom-0 -mx-5 border-t border-border bg-background/90 px-5 py-3 backdrop-blur sm:-mx-8 sm:px-8">
+              {composer}
+            </div>
           </div>
-        </div>
-      )}
+        )}
+      </div>
     </div>
   );
 }
@@ -2523,6 +2522,7 @@ function ThreadSidebar({
   onDeleteActive,
   refreshKey,
   optimisticThreads,
+  onUnreadDoneChange,
 }: {
   open: boolean;
   onClose: () => void;
@@ -2534,6 +2534,7 @@ function ThreadSidebar({
   onDeleteActive: (id: string, wasActive?: boolean) => void;
   refreshKey: number;
   optimisticThreads: ThreadListItem[];
+  onUnreadDoneChange: (hasUnreadDoneThread: boolean) => void;
 }) {
   const [items, setItems] = useState<ThreadListItem[]>(() => {
     if (typeof window === "undefined") return [];
@@ -2589,6 +2590,13 @@ function ThreadSidebar({
   const hasRunningThreads = allItems.some(
     (thread) => thread.status === "running",
   );
+  const hasUnreadDoneThread = allItems.some(
+    (thread) => thread.status !== "running" && thread.unread,
+  );
+
+  useEffect(() => {
+    onUnreadDoneChange(hasUnreadDoneThread);
+  }, [hasUnreadDoneThread, onUnreadDoneChange]);
 
   useEffect(() => {
     if (optimisticThreads.length > 0) setQuery("");
@@ -2649,7 +2657,7 @@ function ThreadSidebar({
   }, [loadThreads, open, refreshKey]);
 
   useEffect(() => {
-    if (!open || !hasRunningThreads) return;
+    if (!hasRunningThreads) return;
 
     let cancelled = false;
     const id = window.setInterval(
@@ -2660,7 +2668,7 @@ function ThreadSidebar({
       cancelled = true;
       window.clearInterval(id);
     };
-  }, [hasRunningThreads, loadThreads, open]);
+  }, [hasRunningThreads, loadThreads]);
 
   useEffect(() => {
     if (!open) return;
@@ -2688,134 +2696,149 @@ function ThreadSidebar({
         tabIndex={-1}
         aria-hidden="true"
         onClick={onClose}
-        className={`fixed inset-0 z-30 cursor-default bg-foreground/20 transition-opacity duration-300 lg:hidden ${
+        className={`fixed inset-0 z-30 cursor-default bg-transparent transition-opacity duration-300 lg:hidden ${
           open ? "opacity-100" : "pointer-events-none opacity-0"
         }`}
       />
       <aside
         aria-label="Conversation history"
         aria-hidden={!open}
-        className={`fixed bottom-0 left-0 top-14 z-40 flex w-72 max-w-[85vw] flex-col border-r border-border bg-background shadow-xl transition-transform duration-500 ease-[var(--ease-emphasized)] ${
-          open ? "translate-x-0" : "-translate-x-full"
+        data-open={open}
+        className={`fixed bottom-0 left-0 top-14 z-40 flex w-72 max-w-[85vw] flex-col overflow-hidden border-r border-border/70 bg-surface-2/30 transition-[transform,width,border-color] duration-300 ease-[var(--ease-smooth-out)] motion-reduce:transition-none lg:max-w-none lg:translate-x-0 ${
+          open
+            ? "translate-x-0 lg:w-72"
+            : "pointer-events-none -translate-x-full lg:w-0 lg:border-transparent"
         }`}
       >
-        <div className="flex items-center justify-between gap-2 border-b border-border px-3 py-3">
-          <span className="text-xs font-semibold uppercase tracking-wide text-muted-2">
-            History
-          </span>
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label="Close history"
-            className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-2 transition-colors hover:bg-surface-2 hover:text-foreground"
-          >
-            <XIcon className="h-4 w-4" />
-          </button>
-        </div>
-        <div className="px-2 pt-2">
-          <button
-            type="button"
-            onClick={onNewChat}
-            className="flex w-full items-center gap-2 rounded-lg border border-border px-3 py-2 text-sm font-medium text-foreground transition-colors hover:border-border-strong hover:bg-surface-2"
-          >
-            <span className="text-base leading-none text-muted-2">+</span>
-            New chat
-          </button>
-        </div>
-        {allItems.length > 0 && (
-          <div className="px-2 pt-2">
-            <input
-              type="search"
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder="Search threads…"
-              className="w-full rounded-lg border border-border bg-surface-2/50 px-3 py-1.5 text-[13px] text-foreground outline-none transition-colors placeholder:text-muted-2 focus:border-border-strong focus:bg-background"
-            />
+        <div
+          className={`flex h-full min-w-72 flex-col transition-[transform,opacity] duration-200 ease-[var(--ease-smooth-out)] motion-reduce:transition-none ${
+            open
+              ? "translate-x-0 opacity-100 delay-75"
+              : "-translate-x-2 opacity-0 delay-0"
+          }`}
+        >
+          <div className="flex min-h-14 items-center px-4">
+            <span className="text-xs font-semibold uppercase tracking-wide text-muted-2">
+              History
+            </span>
           </div>
-        )}
-        <div className="thin-scroll mt-2 flex-1 overflow-y-auto px-2 pb-3">
-          {loading && allItems.length === 0 ? (
-            <p className="px-2 py-3 text-xs text-muted-2">Loading…</p>
-          ) : allItems.length === 0 ? (
-            <p className="px-2 py-3 text-xs text-muted-2">
-              No saved threads yet.
-            </p>
-          ) : filtered.length === 0 ? (
-            <p className="px-2 py-3 text-xs text-muted-2">
-              No threads match “{query.trim()}”.
-            </p>
-          ) : (
-            <div className="flex flex-col gap-0.5">
-              {filtered.map((t) => {
-                const status = t.id === activeId ? activeStatus : t.status;
-                const researching = status === "running" || t.id === busyId;
-                const unreadDone = !researching && t.unread;
-                return (
-                  <div
-                    key={t.id}
-                    className={`group flex items-center gap-1 rounded-lg ${
-                      t.id === activeId
-                        ? "bg-accent-soft"
-                        : "hover:bg-surface-2"
-                    }`}
-                  >
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setItems((xs) =>
-                          xs.map((x) =>
-                            x.id === t.id ? { ...x, unread: false } : x,
-                          ),
-                        );
-                        onResume(t.id);
-                      }}
-                      title={t.title}
-                      className={`flex min-w-0 flex-1 flex-col gap-0.5 px-2.5 py-2 text-left ${
-                        t.id === activeId
-                          ? "font-medium text-accent"
-                          : "text-muted"
-                      }`}
-                    >
-                      <span className="flex min-w-0 items-center gap-1.5">
-                        <span className="truncate text-[13px]">
-                          {t.title || "Untitled"}
-                        </span>
-                        {unreadDone && (
-                          <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-accent" />
-                        )}
-                      </span>
-                      {researching && (
-                        <span className="inline-flex items-center gap-1 text-[10px] font-medium uppercase tracking-wide text-accent">
-                          <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-accent" />
-                          researching…
-                        </span>
-                      )}
-                      {!researching && status === "stopped" && (
-                        <span className="inline-flex items-center gap-1 text-[10px] font-medium uppercase tracking-wide text-amber-700">
-                          <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
-                          exited
-                        </span>
-                      )}
-                      {unreadDone && (
-                        <span className="inline-flex items-center gap-1 text-[10px] font-medium uppercase tracking-wide text-accent">
-                          <span className="h-1.5 w-1.5 rounded-full bg-accent" />
-                          done
-                        </span>
-                      )}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={(e) => void remove(e, t.id)}
-                      aria-label="Delete thread"
-                      className="mr-1 inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-muted-2 opacity-0 transition hover:bg-border hover:text-foreground group-hover:opacity-100"
-                    >
-                      <XIcon className="h-3.5 w-3.5" />
-                    </button>
-                  </div>
-                );
-              })}
+          <div className="px-2 pt-2">
+            <button
+              type="button"
+              onClick={onNewChat}
+              className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium text-foreground transition-colors hover:bg-background/70"
+            >
+              <span className="text-base leading-none text-muted-2">+</span>
+              New chat
+            </button>
+          </div>
+          {allItems.length > 0 && (
+            <div className="px-2 pt-2">
+              <input
+                type="search"
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="Search threads…"
+                className="w-full rounded-lg bg-background/70 px-3 py-1.5 text-[13px] text-foreground outline-none ring-1 ring-transparent transition-colors placeholder:text-muted-2 focus:bg-background focus:ring-border-strong"
+              />
             </div>
           )}
+          <div className="thin-scroll mt-2 flex-1 overflow-y-auto px-2 pb-3">
+            {loading && allItems.length === 0 ? (
+              <p className="px-2 py-3 text-xs text-muted-2">Loading…</p>
+            ) : allItems.length === 0 ? (
+              <p className="px-2 py-3 text-xs text-muted-2">
+                No saved threads yet.
+              </p>
+            ) : filtered.length === 0 ? (
+              <p className="px-2 py-3 text-xs text-muted-2">
+                No threads match “{query.trim()}”.
+              </p>
+            ) : (
+              <div className="flex flex-col gap-0.5">
+                {filtered.map((t) => {
+                  const status =
+                    t.id === activeId &&
+                    !(
+                      activeStatus === "running" &&
+                      t.status &&
+                      t.status !== "running"
+                    )
+                      ? activeStatus
+                      : t.status;
+                  const researching =
+                    status === "running" ||
+                    (t.id === busyId &&
+                      t.status !== "done" &&
+                      t.status !== "stopped");
+                  const unreadDone = !researching && t.unread;
+                  return (
+                    <div
+                      key={t.id}
+                      className={`group flex items-center gap-1 rounded-lg ${
+                        t.id === activeId
+                          ? "bg-accent-soft"
+                          : "hover:bg-surface-2"
+                      }`}
+                    >
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setItems((xs) =>
+                            xs.map((x) =>
+                              x.id === t.id ? { ...x, unread: false } : x,
+                            ),
+                          );
+                          onResume(t.id);
+                        }}
+                        title={t.title}
+                        className={`flex min-w-0 flex-1 flex-col gap-0.5 px-2.5 py-2 text-left ${
+                          t.id === activeId
+                            ? "font-medium text-accent"
+                            : "text-muted"
+                        }`}
+                      >
+                        <span className="flex min-w-0 items-center gap-1.5">
+                          <span className="truncate text-[13px]">
+                            {t.title || "Untitled"}
+                          </span>
+                          {unreadDone && (
+                            <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-accent" />
+                          )}
+                        </span>
+                        {researching && (
+                          <span className="inline-flex items-center gap-1 text-[10px] font-medium uppercase tracking-wide text-accent">
+                            <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-accent" />
+                            researching…
+                          </span>
+                        )}
+                        {!researching && status === "stopped" && (
+                          <span className="inline-flex items-center gap-1 text-[10px] font-medium uppercase tracking-wide text-amber-700">
+                            <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
+                            exited
+                          </span>
+                        )}
+                        {unreadDone && (
+                          <span className="inline-flex items-center gap-1 text-[10px] font-medium uppercase tracking-wide text-accent">
+                            <span className="h-1.5 w-1.5 rounded-full bg-accent" />
+                            done
+                          </span>
+                        )}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={(e) => void remove(e, t.id)}
+                        aria-label="Delete thread"
+                        className="mr-1 inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-muted-2 opacity-0 transition hover:bg-border hover:text-foreground group-hover:opacity-100"
+                      >
+                        <XIcon className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
         </div>
       </aside>
     </>
