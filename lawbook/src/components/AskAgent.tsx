@@ -109,6 +109,18 @@ interface OptimisticThreadSnapshot {
   status: "running" | "stopped" | "done";
 }
 
+type ThreadScrollIntent = "bottom" | "saved-answer";
+
+interface PendingThreadScroll {
+  threadId: string;
+  intent: ThreadScrollIntent;
+}
+
+function messageIdFromChatHash(hash: string): number | null {
+  const match = /^(?:#)?(?:answer|message)-(\d+)$/.exec(hash);
+  return match ? Number(match[1]) : null;
+}
+
 /** Map a raw tool_call into a typed, human-readable step. */
 function describeTool(ev: Extract<ChatEvent, { type: "tool" }>): ToolStep {
   const { name, summary } = ev;
@@ -840,9 +852,10 @@ export function AskAgent({
   >(new Map());
   const deletedThreadIdsRef = useRef<Set<string>>(new Set());
   const loadThreadSeqRef = useRef(0);
-  const loadThreadRef = useRef<((threadId: string) => Promise<void>) | null>(
-    null,
-  );
+  const loadThreadRef = useRef<
+    | ((threadId: string, scrollIntent?: ThreadScrollIntent) => Promise<void>)
+    | null
+  >(null);
   const threadIdRef = useRef<string>("");
   const runIdRef = useRef<string | null>(null);
   const creatingNewChatRef = useRef(false);
@@ -920,6 +933,7 @@ export function AskAgent({
   const chatScrollRef = useRef<HTMLDivElement>(null);
   const stickToBottomRef = useRef(true);
   const lastScrollYRef = useRef(0);
+  const pendingThreadScrollRef = useRef<PendingThreadScroll | null>(null);
   const handledHashRef = useRef<string | null>(null);
   const [highlightedMessageId, setHighlightedMessageId] = useState<
     number | null
@@ -1095,6 +1109,27 @@ export function AskAgent({
     autosize();
   }, [input, autosize]);
 
+  /** Ordinary thread entry is a one-shot jump to the latest message. */
+  useLayoutEffect(() => {
+    const request = pendingThreadScrollRef.current;
+    if (
+      request?.intent !== "bottom" ||
+      request.threadId !== activeThreadId ||
+      (loadingThreadId !== null && loadingThreadId !== request.threadId) ||
+      messages.length === 0
+    ) {
+      return;
+    }
+
+    const scroller = chatScrollRef.current;
+    if (!scroller) return;
+
+    scroller.scrollTop = scroller.scrollHeight;
+    lastScrollYRef.current = scroller.scrollTop;
+    stickToBottomRef.current = true;
+    pendingThreadScrollRef.current = null;
+  }, [activeThreadId, loadingThreadId, messages]);
+
   useEffect(() => {
     if (!hasScrollableMessages) return;
 
@@ -1132,23 +1167,40 @@ export function AskAgent({
     };
   }, [hasScrollableMessages]);
 
-  /** Handle saved-answer deep links once, without fighting user scroll during streaming. */
+  /** Saved Answers alone may target an earlier answer instead of the bottom. */
   useEffect(() => {
-    if (messages.length === 0) return;
+    const request = pendingThreadScrollRef.current;
+    if (
+      request?.intent !== "saved-answer" ||
+      request.threadId !== activeThreadId ||
+      messages.length === 0
+    ) {
+      return;
+    }
 
     const hash = window.location.hash.replace(/^#/, "");
-    if (!hash || handledHashRef.current === hash) return;
+    const id = messageIdFromChatHash(hash);
+    if (id === null || handledHashRef.current === hash) return;
 
-    const match = /^(?:answer|message)-(\d+)$/.exec(hash);
-    if (!match) return;
-
-    const id = Number(match[1]);
     const target =
       document.getElementById(`answer-${id}`) ??
       document.getElementById(`ask-message-${id}`);
-    if (!target) return;
+    if (!target) {
+      // A browser snapshot may be older than the server transcript. Keep the
+      // targeted intent until that refresh finishes, then fall back safely.
+      if (loadingThreadId === request.threadId) return;
+      const scroller = chatScrollRef.current;
+      if (scroller) {
+        scroller.scrollTop = scroller.scrollHeight;
+        lastScrollYRef.current = scroller.scrollTop;
+      }
+      pendingThreadScrollRef.current = null;
+      stickToBottomRef.current = true;
+      return;
+    }
 
     handledHashRef.current = hash;
+    pendingThreadScrollRef.current = null;
     stickToBottomRef.current = false;
     target.scrollIntoView({ block: "start" });
     setHighlightedMessageId(id);
@@ -1157,7 +1209,7 @@ export function AskAgent({
       setHighlightedMessageId((current) => (current === id ? null : current));
     }, 3000);
     return () => window.clearTimeout(timer);
-  }, [messages.length]);
+  }, [activeThreadId, loadingThreadId, messages]);
 
   /** Follow streaming output only while the user is already near the bottom. */
   useEffect(() => {
@@ -2113,8 +2165,17 @@ export function AskAgent({
   );
 
   const loadThread = useCallback(
-    async (threadId: string) => {
+    async (threadId: string, scrollIntent: ThreadScrollIntent = "bottom") => {
       const loadSeq = ++loadThreadSeqRef.current;
+      pendingThreadScrollRef.current = {
+        threadId,
+        intent: scrollIntent,
+      };
+      handledHashRef.current = null;
+      if (scrollIntent === "bottom") {
+        stickToBottomRef.current = true;
+        setHighlightedMessageId(null);
+      }
       setLoadingThreadId(threadId);
       const restoreOptimisticSnapshot = (reconnect = true) => {
         const memorySnapshot =
@@ -2327,7 +2388,11 @@ export function AskAgent({
     loadedThreadRef.current = true;
     threadIdRef.current = initialThreadId;
     setActiveThreadId(initialThreadId);
-    void loadThread(initialThreadId);
+    const scrollIntent =
+      messageIdFromChatHash(window.location.hash) === null
+        ? "bottom"
+        : "saved-answer";
+    void loadThread(initialThreadId, scrollIntent);
   }, [initialThreadId, loadThread]);
 
   // Returning via the top nav lands on /ask, not /ask/[id]. Restore the last
@@ -2515,7 +2580,7 @@ export function AskAgent({
             if (window.matchMedia("(max-width: 1023px)").matches) {
               setSidebarOpen(false);
             }
-            const threadLoad = loadThread(id);
+            const threadLoad = loadThread(id, "bottom");
             focusComposerAfterHistorySelection(id);
             const settleHistoryFocus = () =>
               focusComposerAfterHistorySelection(id, true);

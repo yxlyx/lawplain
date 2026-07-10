@@ -44,7 +44,7 @@ test("selecting a history thread returns focus to the prompt composer", () => {
   );
   assert.match(
     source,
-    /const threadLoad = loadThread\(id\);[\s\S]*focusComposerAfterHistorySelection\(id\);[\s\S]*threadLoad\.then\(settleHistoryFocus, settleHistoryFocus\)/,
+    /const threadLoad = loadThread\(id, "bottom"\);[\s\S]*focusComposerAfterHistorySelection\(id\);[\s\S]*threadLoad\.then\(settleHistoryFocus, settleHistoryFocus\)/,
   );
   assert.match(source, /ref=\{bindComposerInput\}/);
   assert.match(
@@ -53,6 +53,31 @@ test("selecting a history thread returns focus to the prompt composer", () => {
   );
   assert.match(source, /!loadComplete && focused === document\.body/);
   assert.match(source, /composer\?\.focus\(\{ preventScroll: true \}\)/);
+});
+
+test("history chats open at the bottom while Saved Answers target one answer", () => {
+  const source = read("src/components/AskAgent.tsx");
+  const savedAnswers = read("src/components/SavedAnswers.tsx");
+
+  assert.match(source, /type ThreadScrollIntent = "bottom" \| "saved-answer"/);
+  assert.match(
+    source,
+    /scrollIntent: ThreadScrollIntent = "bottom"[\s\S]*pendingThreadScrollRef\.current = \{\s*threadId,\s*intent: scrollIntent/,
+  );
+  assert.match(
+    source,
+    /request\?\.intent !== "bottom"[\s\S]*request\.threadId !== activeThreadId[\s\S]*scroller\.scrollTop = scroller\.scrollHeight[\s\S]*pendingThreadScrollRef\.current = null/,
+  );
+  assert.match(source, /const threadLoad = loadThread\(id, "bottom"\)/);
+  assert.match(
+    source,
+    /messageIdFromChatHash\(window\.location\.hash\)[\s\S]*"saved-answer"[\s\S]*loadThread\(initialThreadId, scrollIntent\)/,
+  );
+  assert.match(
+    source,
+    /request\?\.intent !== "saved-answer"[\s\S]*target\.scrollIntoView\(\{ block: "start" \}\)/,
+  );
+  assert.match(savedAnswers, /`#answer-\$\{a\.messageId\}`/);
 });
 
 test("ask places the sidebar toggle before the Lawplain header logo", () => {
@@ -270,7 +295,7 @@ test("returning to Ask paints the cached latest thread before refreshing it", ()
   );
   assert.match(
     source,
-    /useLayoutEffect\(\(\) => \{[\s\S]*void loadThread\(initialThreadId\)/,
+    /useLayoutEffect\(\(\) => \{[\s\S]*void loadThread\(initialThreadId, scrollIntent\)/,
   );
   assert.match(
     source,
