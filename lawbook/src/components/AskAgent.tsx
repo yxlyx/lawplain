@@ -2635,9 +2635,9 @@ export function AskAgent({
   const liveAssistantThreadId =
     activeThreadStatus === "running" ? activeThreadId : null;
 
-  // A sign-out can happen while this client component is still mounted. Hide
-  // the research surface before navigating away so no transcript remains on
-  // screen during the auth transition.
+  // A sign-out can happen while this client component is still mounted. Clear
+  // private transcript state, but keep the public Ask landing surface available
+  // so guests can enter a question and receive the inline authentication gate.
   useEffect(() => {
     if (sessionPending || sessionUserId) return;
     abortRef.current?.abort();
@@ -2650,17 +2650,7 @@ export function AskAgent({
     setOptimisticThreads([]);
     setSidebarOpen(false);
     setAskSidebarUnread(false);
-    router.replace("/");
-    router.refresh();
-  }, [
-    router,
-    sessionPending,
-    sessionUserId,
-    setAskSidebarUnread,
-    setSidebarOpen,
-  ]);
-
-  if (!sessionPending && !sessionUserId) return null;
+  }, [sessionPending, sessionUserId, setAskSidebarUnread, setSidebarOpen]);
 
   return (
     <div className="flex h-full min-h-0 flex-col">

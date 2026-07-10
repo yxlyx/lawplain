@@ -23,10 +23,7 @@ test("signing out fades the private workspace before returning to Search", () =>
   assert.match(appShell, /transition-opacity duration-\[50ms\]/);
   assert.match(appShell, /pointer-events-none opacity-0/);
   assert.doesNotMatch(appShell, /blur-\[2px\]/);
-  assert.match(
-    appShell,
-    /tab\.href !== "\/ask" \|\| Boolean\(sessionUserId\) \|\| signingOut/,
-  );
+  assert.match(appShell, /const visibleNav = NAV;/);
   assert.match(appShell, /tab\.href === "\/ask" && signingOut/);
   assert.match(appShell, /setSigningOut\(false\)[\s\S]*\[pathname\]/);
 });
