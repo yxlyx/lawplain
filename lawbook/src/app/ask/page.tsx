@@ -7,9 +7,7 @@
  *   Lawplain about this" link.
  */
 import type { Metadata } from "next";
-import Link from "next/link";
 import { AskAgent } from "@/components/AskAgent";
-import { ArrowLeftIcon } from "@/components/icons";
 import { loadChatContext } from "@/lib/ask-context";
 import { buildMetadata } from "@/lib/seo";
 
@@ -46,16 +44,6 @@ export default async function AskPage({
 
   return (
     <main className="mx-auto w-full max-w-2xl px-5 pb-6 sm:px-8">
-      <div className="pt-6 sm:pt-8">
-        <Link
-          href="/"
-          className="inline-flex items-center gap-1.5 text-sm text-muted-2 transition-colors hover:text-foreground"
-        >
-          <ArrowLeftIcon className="h-4 w-4" />
-          Back to search
-        </Link>
-      </div>
-
       <AskAgent initialContext={context ?? undefined} />
     </main>
   );

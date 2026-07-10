@@ -56,8 +56,16 @@ export function AppShell({
   children: ReactNode;
   footer: ReactNode;
 }) {
-  const { searchActive, hideFooter } = useChrome();
+  const {
+    searchActive,
+    hideFooter,
+    askSidebarOpen,
+    setAskSidebarOpen,
+    askSidebarAvailable,
+    askSidebarUnread,
+  } = useChrome();
   const pathname = usePathname();
+  const askRoute = pathname.startsWith("/ask");
   const [collapsed, setCollapsed] = useState(false);
 
   useEffect(() => {
@@ -99,12 +107,44 @@ export function AppShell({
             : "max-h-24 border-b border-border opacity-100"
         }`}
       >
-        <div className="mx-auto flex w-full max-w-6xl items-center justify-between px-5 py-3 sm:px-8">
-          <Link href="/" className="flex items-center gap-2.5">
-            <span className="font-serif text-lg font-medium tracking-tight text-foreground">
-              Lawplain<span className="text-accent">.</span>
-            </span>
-          </Link>
+        <div
+          className={`flex w-full items-center justify-between px-5 py-3 sm:px-8 ${
+            askRoute ? "" : "mx-auto max-w-6xl"
+          }`}
+        >
+          <div className="flex items-center gap-1.5">
+            {askRoute && askSidebarAvailable && (
+              <button
+                type="button"
+                onClick={() => setAskSidebarOpen((open) => !open)}
+                aria-label={askSidebarOpen ? "Close history" : "Open history"}
+                aria-expanded={askSidebarOpen}
+                className="relative inline-flex h-8 w-8 items-center justify-center rounded-lg text-muted-2 transition-colors hover:bg-surface-2 hover:text-foreground"
+              >
+                {askSidebarUnread && !askSidebarOpen && (
+                  <span className="absolute right-1 top-1 h-2 w-2 rounded-full bg-accent" />
+                )}
+                <svg
+                  viewBox="0 0 24 24"
+                  aria-hidden="true"
+                  className="h-5 w-5"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.8"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <rect x="3" y="4" width="18" height="16" rx="2" />
+                  <path d="M9 4v16" />
+                </svg>
+              </button>
+            )}
+            <Link href="/" className="flex items-center gap-2.5">
+              <span className="font-serif text-lg font-medium tracking-tight text-foreground">
+                Lawplain<span className="text-accent">.</span>
+              </span>
+            </Link>
+          </div>
           <nav className="flex items-center gap-1">
             {NAV.map((tab) => {
               const active = tab.match(pathname);

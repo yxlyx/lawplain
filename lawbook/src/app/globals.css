@@ -127,10 +127,11 @@ mark[data-match][data-active] {
   background: transparent;
 }
 
-/* Product-motion tokens + entrance animation (transitions.dev-adjacent).
+/* Product-motion tokens + entrance animation (transitions.dev).
    The prefers-reduced-motion block above neutralizes these for opted-out users. */
 :root {
-  --ease-emphasized: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-smooth-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-emphasized: var(--ease-smooth-out);
 }
 
 @keyframes motion-fade-up {

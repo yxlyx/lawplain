@@ -8,18 +8,63 @@ function read(path) {
 
 test("ask history button toggles the thread sidebar", () => {
   const source = read("src/components/AskAgent.tsx");
+  const appShell = read("src/components/AppShell.tsx");
+  const chrome = read("src/components/chrome/ChromeContext.tsx");
 
   assert.match(
-    source,
-    /const \[sidebarOpen, setSidebarOpen\] = useState\(false\)/,
+    chrome,
+    /const \[askSidebarOpen, setAskSidebarOpen\] = useState\(false\)/,
   );
   assert.match(
-    source,
-    /onClick=\{\(\) => setSidebarOpen\(\(open\) => !open\)\}/,
+    appShell,
+    /onClick=\{\(\) => setAskSidebarOpen\(\(open\) => !open\)\}/,
   );
-  assert.match(source, /aria-expanded=\{sidebarOpen\}/);
+  assert.match(
+    appShell,
+    /aria-label=\{askSidebarOpen \? "Close history" : "Open history"\}/,
+  );
+  assert.match(appShell, /aria-expanded=\{askSidebarOpen\}/);
+  assert.match(source, /askSidebarOpen: sidebarOpen/);
   assert.match(source, /open=\{sidebarOpen\}/);
   assert.match(source, /onClose=\{\(\) => setSidebarOpen\(false\)\}/);
+});
+
+test("ask places the sidebar toggle before the Lawplain header logo", () => {
+  const source = read("src/components/AskAgent.tsx");
+  const appShell = read("src/components/AppShell.tsx");
+  const globalStyles = read("src/app/globals.css");
+  const askPage = read("src/app/ask/page.tsx");
+  const threadPage = read("src/app/ask/[id]/page.tsx");
+
+  assert.match(
+    appShell,
+    /askRoute && askSidebarAvailable[\s\S]*<button[\s\S]*<Link href="\/"/,
+  );
+  assert.doesNotMatch(source, /fixed left-4 top-/);
+  assert.match(source, /duration-300[\s\S]*lg:translate-x-36/);
+  assert.match(source, /transition-\[transform,width,border-color\]/);
+  assert.match(source, /lg:w-0 lg:border-transparent/);
+  assert.match(source, /min-w-72[^"]*transition-\[transform,opacity\]/);
+  assert.match(source, /translate-x-0 opacity-100 delay-75/);
+  assert.match(source, /motion-reduce:transition-none/);
+  assert.match(
+    globalStyles,
+    /--ease-smooth-out: cubic-bezier\(0\.22, 1, 0\.36, 1\)/,
+  );
+  assert.doesNotMatch(source, /Back to search/);
+  assert.doesNotMatch(source, /sticky top-14 z-20/);
+  assert.doesNotMatch(source, /shadow-xl/);
+  assert.match(source, /bg-transparent transition-opacity/);
+  assert.match(source, /<ThreadSidebar[\s\S]*onNewChat=\{newChat\}/);
+  assert.doesNotMatch(source, /aria-label=\{sidebarOpen/);
+  assert.match(source, /flex min-h-14 items-center px-4/);
+  assert.doesNotMatch(source, /min-h-14 items-center border-b/);
+  assert.match(source, /bg-surface-2\/30/);
+  assert.match(source, /hover:bg-background\/70/);
+  assert.match(appShell, /const askRoute = pathname\.startsWith\("\/ask"\)/);
+  assert.match(appShell, /askRoute \? "" : "mx-auto max-w-6xl"/);
+  assert.doesNotMatch(askPage, /Back to search/);
+  assert.doesNotMatch(threadPage, /Back to search/);
 });
 
 test("new chat appears optimistically in history and is renamed on first prompt", () => {
@@ -60,6 +105,67 @@ test("ask history accepts reconciled terminal status over stale optimistic runni
   assert.match(routeSource, /thread\.status !== "running" \|\| !thread\.runId/);
   assert.match(routeSource, /runStatus === "stopped" \? "stopped" : "done"/);
   assert.match(routeSource, /unread: status === "done"/);
+  assert.match(routeSource, /const unread = body\.unread === true/);
+  assert.match(routeSource, /if \(unread && status === "done"\)/);
+});
+
+test("ask run hosts mark completed background threads unread done", () => {
+  const askRouteSource = read("src/app/api/ask/route.ts");
+  const doSource = read("src/server/ask-run-do.ts");
+  const memorySource = read("src/server/ask-run-memory.ts");
+
+  assert.match(askRouteSource, /userId: session\.user\.id,[\s\S]*threadId,/);
+  assert.match(
+    doSource,
+    /userId: body\.userId,[\s\S]*threadId: body\.threadId/,
+  );
+  assert.match(doSource, /private async updateThreadStatus/);
+  assert.match(doSource, /persistedStatus === "done" \? 1 : 0/);
+  assert.match(memorySource, /import \{ updateThreadRunStatus \}/);
+  assert.match(memorySource, /threadId\?: string/);
+  assert.match(memorySource, /await updateThreadStatus\(input, run\.status\)/);
+  assert.match(memorySource, /unread: persistedStatus === "done"/);
+});
+
+test("ask thread detail reconciles completed background runs before marking seen", () => {
+  const routeSource = read("src/app/api/ask-threads/route.ts");
+
+  assert.match(
+    routeSource,
+    /if \(id\) \{[\s\S]*const thread = await getThread\(session\.user\.id, id\)/,
+  );
+  assert.match(
+    routeSource,
+    /const \[reconciled\] = await reconcileRunningThreads\(session\.user\.id, \[[\s\S]*thread,[\s\S]*\]\)/,
+  );
+  assert.match(
+    routeSource,
+    /markThreadSeen\(session\.user\.id, id\)[\s\S]*Response\.json\(\{ thread: \{ \.\.\.reconciled, unread: false \} \}\)/,
+  );
+});
+
+test("ask history polls running threads while closed and advertises unread done", () => {
+  const source = read("src/components/AskAgent.tsx");
+  const appShell = read("src/components/AppShell.tsx");
+
+  assert.match(source, /onUnreadDoneChange=\{setAskSidebarUnread\}/);
+  assert.match(
+    source,
+    /const hasUnreadDoneThread = allItems\.some\([\s\S]*thread\.status !== "running" && thread\.unread/,
+  );
+  assert.match(source, /onUnreadDoneChange\(hasUnreadDoneThread\)/);
+  assert.match(
+    source,
+    /const completedInBackground =[\s\S]*finalThreadId !== threadIdRef\.current/,
+  );
+  assert.match(source, /unread: completedInBackground/);
+  assert.match(source, /if \(!hasRunningThreads\) return/);
+  assert.doesNotMatch(source, /if \(!open \|\| !hasRunningThreads\) return/);
+  assert.match(appShell, /askSidebarUnread && !askSidebarOpen/);
+  assert.match(
+    source,
+    /activeStatus === "running"[\s\S]*t\.status &&[\s\S]*t\.status !== "running"/,
+  );
 });
 
 test("ask thread sidebar orders by chat creation, not latest update", () => {
