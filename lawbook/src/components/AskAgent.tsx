@@ -764,6 +764,8 @@ export function AskAgent({
   const [queuedPrompt, setQueuedPrompt] = useState<string | null>(null);
   const [pinnedContext, setPinnedContext] = useState(initialContext);
   const [now, setNow] = useState(() => Date.now());
+  const hasScrollableMessages = messages.length > 0;
+
   useEffect(() => {
     if (!sessionPending) {
       setSessionWaitExpired(false);
@@ -874,6 +876,7 @@ export function AskAgent({
     return () => setHideFooter(false);
   }, [messages.length, setHideFooter]);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const chatScrollRef = useRef<HTMLDivElement>(null);
   const stickToBottomRef = useRef(true);
   const lastScrollYRef = useRef(0);
   const handledHashRef = useRef<string | null>(null);
@@ -996,16 +999,21 @@ export function AskAgent({
   }, [input, autosize]);
 
   useEffect(() => {
+    if (!hasScrollableMessages) return;
+
     const distanceFromBottom = () => {
-      const doc = document.documentElement;
+      const scroller = chatScrollRef.current;
+      if (!scroller) return 0;
       return Math.max(
         0,
-        doc.scrollHeight - Math.max(0, window.scrollY) - window.innerHeight,
+        scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight,
       );
     };
 
     const updateStickiness = () => {
-      const y = Math.max(0, window.scrollY);
+      const scroller = chatScrollRef.current;
+      if (!scroller) return;
+      const y = Math.max(0, scroller.scrollTop);
 
       if (y < lastScrollYRef.current) {
         stickToBottomRef.current = false;
@@ -1016,23 +1024,16 @@ export function AskAgent({
       lastScrollYRef.current = y;
     };
 
-    const updateStickinessAfterResize = () => {
-      if (distanceFromBottom() <= STICKY_BOTTOM_RESUME_PX) {
-        stickToBottomRef.current = true;
-      }
-      lastScrollYRef.current = Math.max(0, window.scrollY);
-    };
-
-    lastScrollYRef.current = Math.max(0, window.scrollY);
+    const scroller = chatScrollRef.current;
+    if (!scroller) return;
+    lastScrollYRef.current = Math.max(0, scroller.scrollTop);
     stickToBottomRef.current = distanceFromBottom() <= STICKY_BOTTOM_RESUME_PX;
-    window.addEventListener("scroll", updateStickiness, { passive: true });
-    window.addEventListener("resize", updateStickinessAfterResize);
+    scroller.addEventListener("scroll", updateStickiness, { passive: true });
 
     return () => {
-      window.removeEventListener("scroll", updateStickiness);
-      window.removeEventListener("resize", updateStickinessAfterResize);
+      scroller.removeEventListener("scroll", updateStickiness);
     };
-  }, []);
+  }, [hasScrollableMessages]);
 
   /** Handle saved-answer deep links once, without fighting user scroll during streaming. */
   useEffect(() => {
@@ -1067,7 +1068,8 @@ export function AskAgent({
 
     const frame = window.requestAnimationFrame(() => {
       if (!stickToBottomRef.current) return;
-      window.scrollTo({ top: document.documentElement.scrollHeight });
+      const scroller = chatScrollRef.current;
+      scroller?.scrollTo({ top: scroller.scrollHeight });
     });
 
     return () => window.cancelAnimationFrame(frame);
@@ -2382,7 +2384,7 @@ export function AskAgent({
     activeThreadStatus === "running" ? activeThreadId : null;
 
   return (
-    <div className="flex flex-col">
+    <div className="flex h-full min-h-0 flex-col">
       {isSignedIn && (
         <ThreadSidebar
           open={sidebarOpen}
@@ -2407,9 +2409,9 @@ export function AskAgent({
         />
       )}
       <div
-        className={`transition-transform duration-300 ease-[var(--ease-smooth-out)] motion-reduce:transition-none ${
+        className={`min-h-0 flex-1 transition-transform duration-300 ease-[var(--ease-smooth-out)] motion-reduce:transition-none ${
           sidebarOpen ? "lg:translate-x-36" : ""
-        }`}
+        } ${messages.length === 0 ? "thin-scroll overflow-y-auto pb-6" : ""}`}
       >
         {messages.length === 0 ? (
           <div className="flex flex-col items-center pt-2 text-center sm:pt-4">
@@ -2443,13 +2445,14 @@ export function AskAgent({
             </div>
           </div>
         ) : (
-          <div className="flex min-h-[calc(100dvh-12rem)] flex-col">
+          <div className="flex h-full min-h-0 flex-col">
             {pinnedChip}
             <div
+              ref={chatScrollRef}
               role="log"
               aria-live="polite"
               aria-relevant="additions text"
-              className="flex-1 space-y-6 pb-24"
+              className="thin-scroll min-h-0 flex-1 space-y-6 overflow-y-auto overscroll-contain py-4 [scrollbar-gutter:stable]"
             >
               {messages.map((m, i) => {
                 const liveAssistant = isLiveAssistant(m);
@@ -2501,7 +2504,7 @@ export function AskAgent({
                 );
               })}
             </div>
-            <div className="sticky bottom-0 -mx-5 border-t border-border bg-background/90 px-5 py-3 backdrop-blur sm:-mx-8 sm:px-8">
+            <div className="-mx-5 shrink-0 border-t border-border bg-background/90 px-5 py-3 backdrop-blur sm:-mx-8 sm:px-8">
               {composer}
             </div>
           </div>

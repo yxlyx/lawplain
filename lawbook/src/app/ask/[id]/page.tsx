@@ -30,7 +30,7 @@ export default async function AskThreadPage({
   const { id } = await params;
 
   return (
-    <main className="mx-auto w-full max-w-2xl px-5 pb-6 sm:px-8">
+    <main className="mx-auto h-[calc(100dvh-3.5rem)] min-h-0 w-full max-w-2xl overflow-hidden px-5 sm:px-8">
       <AskAgent initialThreadId={id} />
     </main>
   );
