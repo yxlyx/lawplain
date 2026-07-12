@@ -60,12 +60,12 @@ async function updateThreadStatus(
   status: RunStatus,
 ): Promise<void> {
   if (!input.threadId || status === "running") return;
-  const persistedStatus = status === "stopped" ? "stopped" : "done";
   await updateThreadRunStatus({
     userId: input.userId,
     id: input.threadId,
-    status: persistedStatus,
-    unread: persistedStatus === "done",
+    status,
+    unread: status === "done",
+    clearUnread: status !== "done",
     unreadOnlyIfRunning: true,
   }).catch(() => {});
 }

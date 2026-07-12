@@ -109,10 +109,12 @@ interface AskQuestionHistoryEntry {
   createdAt: number;
 }
 
+type ThreadRunStatus = "running" | "stopped" | "error" | "done";
+
 interface OptimisticThreadSnapshot {
   messages: Message[];
   runId: string | null;
-  status: "running" | "stopped" | "done";
+  status: ThreadRunStatus;
 }
 
 type ThreadScrollIntent = "bottom" | "saved-answer";
@@ -623,7 +625,7 @@ interface LocalThreadSnapshot {
   updatedAt: number;
   messages: ReturnType<typeof serializeMessages>;
   runId?: string | null;
-  status?: "running" | "stopped" | "done";
+  status?: ThreadRunStatus;
   context?: ChatContext;
 }
 
@@ -908,7 +910,7 @@ export function AskAgent({
         threadId?: string;
         runId?: string | null;
         context?: ChatContext;
-        status?: "running" | "stopped" | "done";
+        status?: ThreadRunStatus;
       } = {},
     ) => {
       if (snapshot.length === 0 || !snapshot.some((m) => m.role === "user")) {
@@ -923,7 +925,9 @@ export function AskAgent({
           ? "running"
           : latestAssistant?.phase === "stopped"
             ? "stopped"
-            : "done");
+            : latestAssistant?.phase === "error"
+              ? "error"
+              : "done");
       const title = shortTitle(
         snapshot.find((m) => m.role === "user")?.text ?? "",
       );
@@ -1779,7 +1783,7 @@ export function AskAgent({
                   updatedAt: Date.now(),
                   runId,
                   status: "done",
-                  unread: true,
+                  unread: false,
                 });
                 if (
                   isSignedIn &&
@@ -1797,7 +1801,7 @@ export function AskAgent({
                       sourceHref: runContext?.href,
                       runId,
                       status: "done",
-                      unread: true,
+                      unread: false,
                     }),
                   })
                     .then((res) => {
@@ -2652,7 +2656,9 @@ export function AskAgent({
       ? "running"
       : latestAssistantForBusy.phase === "stopped"
         ? "stopped"
-        : "done"
+        : latestAssistantForBusy.phase === "error"
+          ? "error"
+          : "done"
     : null;
   const liveAssistantThreadId =
     activeThreadStatus === "running" ? activeThreadId : null;
@@ -2842,7 +2848,7 @@ function ThreadSidebar({
   open: boolean;
   onClose: () => void;
   activeId: string;
-  activeStatus: "running" | "stopped" | "done" | null;
+  activeStatus: ThreadRunStatus | null;
   busyId: string | null;
   onResume: (id: string) => void;
   onNewChat: () => void;

@@ -279,12 +279,12 @@ export class AskRunDO extends DurableObject<AskRunEnv> {
     const threadId = await this.ctx.storage.get<string>("threadId");
     if (!userId || !threadId) return;
 
-    const persistedStatus = status === "stopped" ? "stopped" : "done";
     await db
       .prepare(
         `UPDATE ask_threads
          SET status = ?,
              unread = CASE
+               WHEN ? = 1 THEN 0
                WHEN ? = 1 AND status = 'running' THEN 1
                ELSE unread
              END,
@@ -292,8 +292,9 @@ export class AskRunDO extends DurableObject<AskRunEnv> {
          WHERE userId = ? AND id = ?`,
       )
       .bind(
-        persistedStatus,
-        persistedStatus === "done" ? 1 : 0,
+        status,
+        status !== "done" ? 1 : 0,
+        status === "done" ? 1 : 0,
         Date.now(),
         userId,
         threadId,

@@ -198,9 +198,15 @@ test("ask history accepts reconciled terminal status over stale optimistic runni
   assert.match(source, /return \{\s*\.\.\.thread,\s*\.\.\.fetched,\s*\}/);
   assert.match(source, /return \{\s*\.\.\.fetched,\s*\.\.\.thread,\s*\}/);
   assert.match(routeSource, /reconcileRunningThreads/);
-  assert.match(routeSource, /thread\.status !== "running" \|\| !thread\.runId/);
-  assert.match(routeSource, /runStatus === "stopped" \? "stopped" : "done"/);
-  assert.match(routeSource, /unread: status === "done"/);
+  assert.match(
+    routeSource,
+    /thread\.status === "running" \|\|[\s\S]*thread\.status === "done" && thread\.unread/,
+  );
+  assert.match(routeSource, /idFromName\(userRunName\(userId, runId\)\)/);
+  assert.match(routeSource, /"x-lawplain-user-id": userId/);
+  assert.match(routeSource, /status: runStatus/);
+  assert.match(routeSource, /unread: completedFromRunning/);
+  assert.match(routeSource, /clearUnread: runStatus !== "done"/);
   assert.match(routeSource, /const unread = body\.unread === true/);
   assert.match(routeSource, /if \(unread && status === "done"\)/);
 });
@@ -238,13 +244,18 @@ test("ask run hosts mark completed background threads unread done", () => {
     /userId: body\.userId,[\s\S]*threadId: body\.threadId/,
   );
   assert.match(doSource, /private async updateThreadStatus/);
-  assert.match(doSource, /persistedStatus === "done" \? 1 : 0/);
+  assert.match(doSource, /status !== "done" \? 1 : 0/);
+  assert.match(doSource, /status === "done" \? 1 : 0/);
+  assert.doesNotMatch(doSource, /const persistedStatus/);
   assert.match(memorySource, /import \{ updateThreadRunStatus \}/);
   assert.match(memorySource, /threadId\?: string/);
   assert.match(memorySource, /await updateThreadStatus\(input, run\.status\)/);
-  assert.match(memorySource, /unread: persistedStatus === "done"/);
+  assert.match(memorySource, /unread: status === "done"/);
+  assert.match(memorySource, /clearUnread: status !== "done"/);
   assert.match(memorySource, /unreadOnlyIfRunning: true/);
+  assert.match(doSource, /WHEN \? = 1 THEN 0/);
   assert.match(doSource, /WHEN \? = 1 AND status = 'running' THEN 1/);
+  assert.match(threadsSource, /WHEN \? = 1 THEN 0/);
   assert.match(
     threadsSource,
     /\? = 1 AND \(\? = 0 OR status = 'running'\) THEN 1/,
@@ -280,7 +291,10 @@ test("ask history polls running threads while closed and advertises unread done"
   );
   assert.match(source, /onUnreadDoneChange\(hasUnreadDoneThread\)/);
   assert.doesNotMatch(source, /completedInBackground/);
-  assert.match(source, /status: "done",\s*unread: true/);
+  // A completion observed by the foreground client is already read; only the
+  // detached run host may mark a background completion unread.
+  assert.match(source, /status: "done",\s*unread: false/);
+  assert.doesNotMatch(source, /status: "done",\s*unread: true/);
   assert.match(
     source,
     /const unreadDone =[\s\S]*!researching && status === "done" && t\.unread/,

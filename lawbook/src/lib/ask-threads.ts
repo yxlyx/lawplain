@@ -15,7 +15,7 @@ export interface ThreadSummary {
   createdAt: number;
   updatedAt: number;
   runId: string | null;
-  status: string | null; // 'running' | 'stopped' | 'done' | null (legacy = done)
+  status: string | null; // 'running' | 'stopped' | 'error' | 'done' | null (legacy = done)
   unread: boolean;
 }
 
@@ -369,8 +369,10 @@ export async function getThread(
 export async function updateThreadRunStatus(input: {
   userId: string;
   id: string;
-  status: "running" | "done" | "stopped";
+  status: "running" | "done" | "error" | "stopped";
   unread?: boolean;
+  /** Explicitly remove a stale completion notification. */
+  clearUnread?: boolean;
   /** Avoid re-notifying a terminal row that the foreground client has seen. */
   unreadOnlyIfRunning?: boolean;
 }): Promise<void> {
@@ -380,6 +382,7 @@ export async function updateThreadRunStatus(input: {
       `UPDATE ask_threads
        SET status = ?,
            unread = CASE
+             WHEN ? = 1 THEN 0
              WHEN ? = 1 AND (? = 0 OR status = 'running') THEN 1
              ELSE unread
            END,
@@ -388,6 +391,7 @@ export async function updateThreadRunStatus(input: {
     )
     .bind(
       input.status,
+      input.clearUnread ? 1 : 0,
       input.unread ? 1 : 0,
       input.unreadOnlyIfRunning ? 1 : 0,
       Date.now(),

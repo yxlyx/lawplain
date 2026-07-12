@@ -10,6 +10,7 @@ import {
 } from "@/lib/ask-threads";
 import { getSession } from "@/lib/auth";
 import { getMemoryAskRunStatus } from "@/server/ask-run-memory";
+import { userRunName } from "@/server/ask-security";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -20,14 +21,19 @@ const useSandbox = !!(
 
 type RunStatus = "running" | "done" | "error" | "stopped";
 
-async function getDurableRunStatus(runId: string): Promise<RunStatus | null> {
+async function getDurableRunStatus(
+  runId: string,
+  userId: string,
+): Promise<RunStatus | null> {
   if (!useSandbox) return null;
   try {
     const { env } = await getCloudflareContext({ async: true });
     const ns = (env as { ASK_RUN_DO?: DurableObjectNamespace }).ASK_RUN_DO;
     if (!ns) return null;
-    const stub = ns.get(ns.idFromName(runId));
-    const res = await stub.fetch("https://ask-run-do/status");
+    const stub = ns.get(ns.idFromName(userRunName(userId, runId)));
+    const res = await stub.fetch("https://ask-run-do/status", {
+      headers: { "x-lawplain-user-id": userId },
+    });
     if (!res.ok) return null;
     const data = (await res.json()) as { status?: unknown };
     return data.status === "running" ||
@@ -47,24 +53,32 @@ async function reconcileRunningThreads(
 ): Promise<ThreadSummary[]> {
   return Promise.all(
     threads.map(async (thread) => {
-      if (thread.status !== "running" || !thread.runId) return thread;
+      // Recheck unread "done" rows as well as running rows so deployments can
+      // repair failures that older run hosts incorrectly persisted as done.
+      const shouldReconcile =
+        thread.status === "running" ||
+        (thread.status === "done" && thread.unread);
+      if (!shouldReconcile || !thread.runId) return thread;
       const runStatus =
-        (await getDurableRunStatus(thread.runId)) ??
+        (await getDurableRunStatus(thread.runId, userId)) ??
         getMemoryAskRunStatus(userId, thread.runId);
       if (!runStatus || runStatus === "running") return thread;
 
-      const status = runStatus === "stopped" ? "stopped" : "done";
+      const completedFromRunning =
+        thread.status === "running" && runStatus === "done";
       await updateThreadRunStatus({
         userId,
         id: thread.id,
-        status,
-        unread: status === "done",
+        status: runStatus,
+        unread: completedFromRunning,
+        clearUnread: runStatus !== "done",
         unreadOnlyIfRunning: true,
       }).catch(() => {});
       return {
         ...thread,
-        status,
-        unread: status === "done" ? true : thread.unread,
+        status: runStatus,
+        unread:
+          runStatus === "done" ? completedFromRunning || thread.unread : false,
         updatedAt: Date.now(),
       };
     }),
@@ -122,7 +136,9 @@ export async function POST(req: Request): Promise<Response> {
   const sourceHref = rawHref.startsWith("/") ? rawHref : undefined;
   const runId = clean(body.runId, 100) || undefined;
   const status =
-    body.status === "running" || body.status === "stopped"
+    body.status === "running" ||
+    body.status === "stopped" ||
+    body.status === "error"
       ? body.status
       : "done";
   const unread = body.unread === true;
