@@ -192,8 +192,9 @@ test("ask history accepts reconciled terminal status over stale optimistic runni
   );
   assert.match(
     source,
-    /fetched\?\.status[\s\S]*thread\.status === "running"[\s\S]*fetched\.status !== "running"[\s\S]*fetchedMatchesOptimisticRun[\s\S]*!thread\.runId && fetchedLastPromptAt >= thread\.lastPromptAt/,
+    /fetched\?\.status[\s\S]*fetched\.status !== thread\.status[\s\S]*fetchedMatchesOptimisticRun[\s\S]*fetchedLastPromptAt >= thread\.lastPromptAt/,
   );
+  assert.match(source, /older completion racing a newer running follow-up/);
   assert.match(source, /return \{\s*\.\.\.thread,\s*\.\.\.fetched,\s*\}/);
   assert.match(source, /return \{\s*\.\.\.fetched,\s*\.\.\.thread,\s*\}/);
   assert.match(routeSource, /reconcileRunningThreads/);
@@ -283,6 +284,10 @@ test("ask history polls running threads while closed and advertises unread done"
   assert.match(
     source,
     /const unreadDone =[\s\S]*!researching && status === "done" && t\.unread/,
+  );
+  assert.doesNotMatch(
+    source,
+    /\{t\.title \|\| "Untitled"\}[\s\S]{0,160}shrink-0 rounded-full bg-accent/,
   );
   assert.match(source, /if \(!hasRunningThreads\) return/);
   assert.doesNotMatch(source, /if \(!open \|\| !hasRunningThreads\) return/);
@@ -375,7 +380,15 @@ test("loading and reconnecting a thread cannot send from an empty UI", () => {
     /const activeRunKey = askCacheKey\(sessionUserId, "activeRun"\)/,
   );
   assert.match(source, /sessionStorage\.removeItem\(activeRunKey\)/);
-  assert.match(source, /undefined,\s*true,\s*\)/);
+  assert.match(
+    source,
+    /undefined,\s*true,\s*data\.thread\?\.status !== "running",\s*\)/,
+  );
+  assert.match(source, /setBusy\(!silentReplay\)/);
+  assert.match(
+    source,
+    /sendGenerationRef\.current !== sendGeneration \|\| silentReplay/,
+  );
 });
 
 test("returning to Ask paints the cached latest thread before refreshing it", () => {

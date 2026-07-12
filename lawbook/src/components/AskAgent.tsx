@@ -878,6 +878,7 @@ export function AskAgent({
         resumeFrom?: number,
         resumeStartedAt?: number,
         internalReconnect?: boolean,
+        silentReplay?: boolean,
       ) => Promise<boolean>)
     | null
   >(null);
@@ -1377,6 +1378,7 @@ export function AskAgent({
       resumeFrom = 0,
       resumeStartedAt?: number,
       internalReconnect = false,
+      silentReplay = false,
     ) => {
       const q = text.trim();
       if (!q) return false;
@@ -1528,7 +1530,7 @@ export function AskAgent({
       }
       clearDraft();
       setInput("");
-      setBusy(true);
+      setBusy(!silentReplay);
 
       const ac = new AbortController();
       abortRef.current = ac;
@@ -1546,7 +1548,8 @@ export function AskAgent({
             status: "running",
           });
         }
-        if (sendGenerationRef.current !== sendGeneration) return;
+        if (sendGenerationRef.current !== sendGeneration || silentReplay)
+          return;
         setMessages((ms) => ms.map((m) => (m.id === aId ? fn(m) : m)));
       };
 
@@ -2441,6 +2444,7 @@ export function AskAgent({
                   last.eventCursor ?? 0,
                   undefined,
                   true,
+                  data.thread?.status !== "running",
                 );
               }, 0);
             }
@@ -2883,14 +2887,15 @@ function ThreadSidebar({
         Boolean(fetched?.runId) && fetched?.runId === thread.runId;
       if (
         fetched?.status &&
-        thread.status === "running" &&
-        fetched.status !== "running" &&
+        fetched.status !== thread.status &&
         (fetchedMatchesOptimisticRun ||
-          (!thread.runId && fetchedLastPromptAt >= thread.lastPromptAt))
+          fetchedLastPromptAt >= thread.lastPromptAt)
       ) {
-        // A terminal server result should reconcile a stale optimistic copy of
-        // the same run. It must not overwrite a newer prompt that has just
-        // moved this thread to the top before its run-start save completes.
+        // The server should reconcile a stale optimistic status for the same
+        // or a newer run in either direction. This covers both a background
+        // completion and an older completion racing a newer running follow-up.
+        // A brand-new prompt remains protected because its optimistic
+        // lastPromptAt is newer until the run-start save reaches the server.
         return {
           ...thread,
           ...fetched,
@@ -3136,13 +3141,8 @@ function ThreadSidebar({
                             : "text-muted"
                         }`}
                       >
-                        <span className="flex min-w-0 items-center gap-1.5">
-                          <span className="truncate text-[13px]">
-                            {t.title || "Untitled"}
-                          </span>
-                          {unreadDone && (
-                            <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-accent" />
-                          )}
+                        <span className="truncate text-[13px]">
+                          {t.title || "Untitled"}
                         </span>
                         {researching && (
                           <span className="inline-flex items-center gap-1 text-[10px] font-medium uppercase tracking-wide text-accent">
