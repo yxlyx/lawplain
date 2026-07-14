@@ -137,15 +137,19 @@ Lawplain uses [Better Auth](https://www.better-auth.com/) for username/password 
    GOOGLE_CLIENT_ID=...
    GOOGLE_CLIENT_SECRET=...
    ```
-4. Create the D1 database:
+4. Create the authentication and private trajectory D1 databases:
    ```bash
    bun run d1:create
+   bun run d1:create:trajectories
    ```
-5. Copy the returned `database_id` into `wrangler.jsonc`.
-6. Apply the auth schema locally or remotely:
+5. Copy the returned `database_id` values into their matching bindings in
+   `wrangler.jsonc`.
+6. Apply both schemas locally or remotely:
    ```bash
    bun run d1:migrate:local
+   bun run d1:migrate:trajectories:local
    bun run d1:migrate:remote
+   bun run d1:migrate:trajectories:remote
    ```
 7. Run the app:
    ```bash
@@ -177,6 +181,11 @@ Account routes:
 - `/api/auth/*` — Better Auth handler.
 
 `/api/ask` requires an authenticated session before it starts the long-running agent workflow.
+
+Production Ask runs also write a private, Worker-only record to the separate
+`TRAJECTORY_DB` binding. `ask_trajectories` stores the run input, final output,
+status, timing and usage; `ask_trajectory_events` stores the ordered normalized
+progress and tool events. No public route exposes this database.
 
 ## Saved research and Quotes
 

@@ -232,11 +232,17 @@ export async function POST(req: Request): Promise<Response> {
         method: "POST",
         headers: ownerHeaders,
         body: JSON.stringify({
+          runId,
           prompt,
           systemPrompt: legalResearchPrompt(),
           model: AGENT_MODEL,
           userId: session.user.id,
           threadId,
+          title: threadTitle,
+          question,
+          cite,
+          kind,
+          sourceHref,
         }),
       });
       if (!started.ok) {

@@ -9,6 +9,11 @@ import {
   safeAgentError,
 } from "./ask-security";
 import { GraffRun } from "./graff-run";
+import {
+  finishTrajectory,
+  recordTrajectoryEvents,
+  startTrajectory,
+} from "./trajectory-store";
 
 /**
  * AskRunDO — hosts one Ask Lawplain agent run so it survives the client
@@ -21,6 +26,7 @@ import { GraffRun } from "./graff-run";
 
 interface AskRunEnv {
   AUTH_DB?: D1Database;
+  TRAJECTORY_DB?: D1Database;
   CUBESANDBOX_GATEWAY_URL?: string;
   CUBESANDBOX_TENANT_KEY?: string;
   [key: string]: unknown;
@@ -76,7 +82,7 @@ export class AskRunDO extends DurableObject<AskRunEnv> {
     return Number(row.c);
   }
 
-  private appendEvents(events: AgentEvent[]): void {
+  private async appendEvents(events: AgentEvent[]): Promise<void> {
     const secrets = Object.values(providerCredential(this.env) ?? {});
     const redact = (value: unknown): unknown => {
       if (typeof value === "string") return redactSecrets(value, secrets);
@@ -87,17 +93,25 @@ export class AskRunDO extends DurableObject<AskRunEnv> {
         );
       return value;
     };
+    let nextIndex = this.eventCount();
+    const trajectoryEvents: { seq: number; event: AgentEvent }[] = [];
     const insert = (event: AgentEvent) => {
-      const json = JSON.stringify(redact(event));
+      const safeEvent = redact(event) as AgentEvent;
+      const localEvent =
+        safeEvent.type === "done" ? { ...safeEvent, text: "" } : safeEvent;
+      const json = JSON.stringify(localEvent);
       if (new TextEncoder().encode(json).length > MAX_ASK_EVENT_BYTES) {
         // Only non-terminal metadata can reach this after delta chunking and
         // terminal compaction; replace it visibly rather than silently dropping it.
         return insert({ type: "error", message: safeAgentError() });
       }
       this.ctx.storage.sql.exec(
-        "INSERT INTO events (idx, json) VALUES ((SELECT COALESCE(MAX(idx), -1) + 1 FROM events), ?)",
+        "INSERT INTO events (idx, json) VALUES (?, ?)",
+        nextIndex,
         json,
       );
+      trajectoryEvents.push({ seq: nextIndex, event: safeEvent });
+      nextIndex += 1;
     };
     for (const ev of events) {
       if (ev.type === "delta") {
@@ -114,12 +128,17 @@ export class AskRunDO extends DurableObject<AskRunEnv> {
             bytes.slice(new TextEncoder().encode(part).length),
           );
         }
-      } else if (ev.type === "done") {
-        // The canonical full answer is persisted in the thread transcript.
-        insert({ ...ev, text: "" });
       } else {
         insert(ev);
       }
+    }
+    const runId = await this.ctx.storage.get<string>("runId");
+    if (runId && trajectoryEvents.length) {
+      await recordTrajectoryEvents(
+        this.env.TRAJECTORY_DB,
+        runId,
+        trajectoryEvents,
+      ).catch((error) => console.warn("Failed to persist Ask events", error));
     }
   }
 
@@ -129,8 +148,14 @@ export class AskRunDO extends DurableObject<AskRunEnv> {
       prompt?: string;
       systemPrompt?: string;
       model?: string;
+      runId?: string;
       userId?: string;
       threadId?: string;
+      title?: string;
+      question?: string;
+      cite?: string;
+      kind?: string;
+      sourceHref?: string;
     } | null;
     const status = await this.status();
     if (status === "idle") {
@@ -138,19 +163,38 @@ export class AskRunDO extends DurableObject<AskRunEnv> {
         !body?.prompt ||
         !body.systemPrompt ||
         !body.model ||
+        !body.runId ||
+        !body.question ||
         body.userId !== req.headers.get("x-lawplain-user-id")
       ) {
         return Response.json({ error: "missing run params" }, { status: 400 });
       }
+      const startedAt = Date.now();
       await this.ctx.storage.put({
         status: "running" satisfies RunStatus,
         prompt: body.prompt,
         systemPrompt: body.systemPrompt,
         model: body.model,
+        runId: body.runId,
         userId: body.userId,
         threadId: body.threadId,
-        startedAt: Date.now(),
+        startedAt,
       });
+      await startTrajectory(this.env.TRAJECTORY_DB, {
+        runId: body.runId,
+        threadId: body.threadId,
+        userId: body.userId,
+        title: body.title,
+        question: body.question,
+        prompt: body.prompt,
+        model: body.model,
+        cite: body.cite,
+        kind: body.kind,
+        sourceHref: body.sourceHref,
+        startedAt,
+      }).catch((error) =>
+        console.warn("Failed to start Ask trajectory", error),
+      );
       await this.ctx.storage.setAlarm(Date.now());
     }
     return Response.json({ ok: true, status: await this.status() });
@@ -160,7 +204,7 @@ export class AskRunDO extends DurableObject<AskRunEnv> {
   private async handleStop(): Promise<Response> {
     const status = await this.status();
     if (status !== "done" && status !== "error" && status !== "stopped") {
-      this.appendEvents([
+      await this.appendEvents([
         {
           type: "progress",
           phase: "stopped",
@@ -170,6 +214,7 @@ export class AskRunDO extends DurableObject<AskRunEnv> {
       ]);
       await this.ctx.storage.put("status", "stopped" satisfies RunStatus);
       await this.updateThreadStatus("stopped");
+      await this.updateTrajectoryStatus("stopped");
     }
 
     const sid = await this.ctx.storage.get<string>("sandboxId");
@@ -235,13 +280,13 @@ export class AskRunDO extends DurableObject<AskRunEnv> {
         },
       );
       if (await this.isStopped()) return;
-      this.appendEvents(launchEvents);
+      await this.appendEvents(launchEvents);
       let sawError = launchEvents.some((ev) => ev.type === "error");
       while (!run.done) {
         if (await this.isStopped()) break;
         const events = await run.poll(sandbox);
         if (events.some((ev) => ev.type === "error")) sawError = true;
-        if (events.length) this.appendEvents(events);
+        if (events.length) await this.appendEvents(events);
         if (run.done || (await this.isStopped())) break;
         await sleep(750);
       }
@@ -249,6 +294,7 @@ export class AskRunDO extends DurableObject<AskRunEnv> {
         const status = (sawError ? "error" : "done") satisfies RunStatus;
         await this.ctx.storage.put("status", status);
         await this.updateThreadStatus(status);
+        await this.updateTrajectoryStatus(status);
       }
     } catch (e) {
       if (await this.isStopped()) return;
@@ -256,9 +302,10 @@ export class AskRunDO extends DurableObject<AskRunEnv> {
         "Ask run failed",
         redactSecrets(e, Object.values(providerEnv)),
       );
-      this.appendEvents([{ type: "error", message: safeAgentError() }]);
+      await this.appendEvents([{ type: "error", message: safeAgentError() }]);
       await this.ctx.storage.put("status", "error" satisfies RunStatus);
       await this.updateThreadStatus("error");
+      await this.updateTrajectoryStatus("error");
     } finally {
       if (run.sandboxId) await sandbox.deleteSandbox(run.sandboxId);
       await this.ctx.storage.delete("sandboxId");
@@ -266,9 +313,19 @@ export class AskRunDO extends DurableObject<AskRunEnv> {
   }
 
   private async fail(message: string): Promise<void> {
-    this.appendEvents([{ type: "error", message }]);
+    await this.appendEvents([{ type: "error", message }]);
     await this.ctx.storage.put("status", "error" satisfies RunStatus);
     await this.updateThreadStatus("error");
+    await this.updateTrajectoryStatus("error");
+  }
+
+  private async updateTrajectoryStatus(status: RunStatus): Promise<void> {
+    if (status !== "done" && status !== "error" && status !== "stopped") return;
+    const runId = await this.ctx.storage.get<string>("runId");
+    if (!runId) return;
+    await finishTrajectory(this.env.TRAJECTORY_DB, runId, status).catch(
+      (error) => console.warn("Failed to finish Ask trajectory", error),
+    );
   }
 
   private async updateThreadStatus(status: RunStatus): Promise<void> {

@@ -34,6 +34,12 @@
       "database_name": "lawbook-auth",
       "database_id": "bd213423-fa34-4bd2-9190-861b77853fd9",
       "migrations_dir": "migrations"
+    },
+    {
+      "binding": "TRAJECTORY_DB",
+      "database_name": "lawbook-trajectories",
+      "database_id": "09587146-ce2e-484f-88ef-ccccf9116b46",
+      "migrations_dir": "trajectory-migrations"
     }
   ]
 }

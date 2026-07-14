@@ -11,6 +11,6 @@ test("Cloudflare deploy applies remote D1 migrations first", () => {
 
   assert.equal(
     command,
-    "npm run d1:migrate:remote && opennextjs-cloudflare deploy",
+    "npm run d1:migrate:remote && npm run d1:migrate:trajectories:remote && opennextjs-cloudflare deploy",
   );
 });
