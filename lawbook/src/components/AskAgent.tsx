@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
+  type FormEvent,
   memo,
   useCallback,
   useEffect,
@@ -29,6 +30,8 @@ import {
   CopyIcon,
   SparkleIcon,
   StopIcon,
+  ThumbsDownIcon,
+  ThumbsUpIcon,
   UserIcon,
   XIcon,
 } from "@/components/icons";
@@ -101,7 +104,11 @@ interface Message {
   eventCursor?: number;
   error?: string;
   cost?: { usd: number; tokens: number };
+  /** Production trajectory that generated this assistant message. */
+  runId?: string;
 }
+
+type AnswerRating = "helpful" | "not_helpful";
 
 interface AskQuestionHistoryEntry {
   id: string;
@@ -527,6 +534,7 @@ function serializeMessages(messages: Message[]) {
     eventCursor: m.eventCursor,
     cost: m.cost,
     error: m.error,
+    runId: m.runId,
   }));
 }
 
@@ -800,6 +808,7 @@ function deserializeLocalMessages(raw: unknown[]): Message[] {
           ? (row.cost as { usd: number; tokens: number })
           : undefined,
       error: typeof row.error === "string" ? row.error : undefined,
+      runId: typeof row.runId === "string" ? row.runId : undefined,
     };
   });
 }
@@ -822,6 +831,15 @@ export function AskAgent({
   const signInHref = `/sign-in?next=${next}`;
   const signUpHref = `/sign-up?next=${next}`;
   const [messages, setMessages] = useState<Message[]>([]);
+  const [answerRatings, setAnswerRatings] = useState<
+    Record<string, AnswerRating>
+  >({});
+  const [answerFeedbackReasons, setAnswerFeedbackReasons] = useState<
+    Record<string, string>
+  >({});
+  const [rateableAnswerRuns, setRateableAnswerRuns] = useState<
+    Record<string, true>
+  >({});
   const [input, setInput] = useState("");
   const [questionHistory, setQuestionHistory] = useState<
     AskQuestionHistoryEntry[]
@@ -846,6 +864,81 @@ export function AskAgent({
   const [pinnedContext, setPinnedContext] = useState(initialContext);
   const [now, setNow] = useState(() => Date.now());
   const hasScrollableMessages = messages.length > 0;
+  const rateableRunIdsKey = messages
+    .filter(
+      (message) =>
+        message.role === "assistant" &&
+        message.phase === "done" &&
+        Boolean(message.runId),
+    )
+    .map((message) => message.runId)
+    .join(",");
+
+  useEffect(() => {
+    if (!isSignedIn || !activeThreadId || !rateableRunIdsKey) {
+      setAnswerRatings({});
+      setAnswerFeedbackReasons({});
+      setRateableAnswerRuns({});
+      return;
+    }
+
+    const controller = new AbortController();
+    void fetch(
+      `/api/ask/feedback?threadId=${encodeURIComponent(activeThreadId)}`,
+      { cache: "no-store", signal: controller.signal },
+    )
+      .then(async (res) => {
+        if (!res.ok) return;
+        const data = (await res.json()) as {
+          ratings?: Array<{
+            runId?: string;
+            rating?: string;
+            reason?: string | null;
+          }>;
+        };
+        const nextRatings: Record<string, AnswerRating> = {};
+        const nextReasons: Record<string, string> = {};
+        const nextRateableRuns: Record<string, true> = {};
+        for (const row of data.ratings ?? []) {
+          if (!row.runId) continue;
+          nextRateableRuns[row.runId] = true;
+          if (row.rating === "helpful" || row.rating === "not_helpful")
+            nextRatings[row.runId] = row.rating;
+          if (row.rating === "not_helpful" && row.reason)
+            nextReasons[row.runId] = row.reason;
+        }
+        setAnswerRatings(nextRatings);
+        setAnswerFeedbackReasons(nextReasons);
+        setRateableAnswerRuns(nextRateableRuns);
+      })
+      .catch(() => undefined);
+
+    return () => controller.abort();
+  }, [activeThreadId, isSignedIn, rateableRunIdsKey]);
+
+  const updateAnswerRating = useCallback(
+    (runId: string, rating: AnswerRating | null) => {
+      setAnswerRatings((current) => {
+        const nextRatings = { ...current };
+        if (rating) nextRatings[runId] = rating;
+        else delete nextRatings[runId];
+        return nextRatings;
+      });
+    },
+    [],
+  );
+
+  const updateAnswerFeedbackReason = useCallback(
+    (runId: string, reason: string | null) => {
+      setAnswerFeedbackReasons((current) => {
+        const nextReasons = { ...current };
+        if (reason) nextReasons[runId] = reason;
+        else delete nextReasons[runId];
+        return nextReasons;
+      });
+    },
+    [],
+  );
 
   useEffect(() => {
     if (!sessionPending) {
@@ -1484,7 +1577,7 @@ export function AskAgent({
           Date.now())
         : (resumeStartedAt ?? Date.now());
       const assistantMsg: Message = reuseRunningAssistant
-        ? (existingAssistant as Message)
+        ? { ...(existingAssistant as Message), runId }
         : {
             id: aId,
             role: "assistant",
@@ -1504,6 +1597,7 @@ export function AskAgent({
             startedAt,
             eventCursor: 0,
             phase: "starting",
+            runId,
           };
       if (!reuseRunningAssistant) {
         const existingSnapshot = getLocalThreadSnapshot(
@@ -2352,6 +2446,7 @@ export function AskAgent({
               eventCursor?: number;
               cost?: { usd: number; tokens: number };
               error?: string;
+              runId?: string;
             }>;
           };
         };
@@ -2385,6 +2480,7 @@ export function AskAgent({
                 typeof m.eventCursor === "number" ? m.eventCursor : undefined,
               cost: m.cost,
               error: m.error,
+              runId: typeof m.runId === "string" ? m.runId : undefined,
             };
           }),
         );
@@ -2406,6 +2502,26 @@ export function AskAgent({
           transcriptScore(bestLocalMessages) > transcriptScore(loaded)
         ) {
           loaded = bestLocalMessages;
+        }
+        const persistedRunId = data.thread?.runId;
+        if (
+          persistedRunId &&
+          !loaded.some((message) => message.runId === persistedRunId)
+        ) {
+          let latestAssistantIndex = -1;
+          for (let index = loaded.length - 1; index >= 0; index -= 1) {
+            if (loaded[index]?.role === "assistant") {
+              latestAssistantIndex = index;
+              break;
+            }
+          }
+          if (latestAssistantIndex >= 0) {
+            loaded = loaded.map((message, index) =>
+              index === latestAssistantIndex
+                ? { ...message, runId: persistedRunId }
+                : message,
+            );
+          }
         }
         sendGenerationRef.current += 1;
         activeRef.current = false;
@@ -2811,6 +2927,15 @@ export function AskAgent({
                           threadId={activeThreadId}
                           messageId={m.id}
                           isSignedIn={isSignedIn}
+                          rating={m.runId ? answerRatings[m.runId] : undefined}
+                          feedbackReason={
+                            m.runId ? answerFeedbackReasons[m.runId] : undefined
+                          }
+                          rateable={Boolean(
+                            m.runId && rateableAnswerRuns[m.runId],
+                          )}
+                          onRatingChange={updateAnswerRating}
+                          onFeedbackReasonChange={updateAnswerFeedbackReason}
                         />
                       )}
                     </div>
@@ -3199,6 +3324,11 @@ function AnswerActions({
   tools,
   isSignedIn,
   signInHref,
+  runId,
+  rating,
+  feedbackReason,
+  onRatingChange,
+  onFeedbackReasonChange,
 }: {
   text: string;
   question: string;
@@ -3210,12 +3340,46 @@ function AnswerActions({
   tools: string[];
   isSignedIn: boolean;
   signInHref: string;
+  runId?: string;
+  rating?: AnswerRating;
+  feedbackReason?: string;
+  onRatingChange: (runId: string, rating: AnswerRating | null) => void;
+  onFeedbackReasonChange: (runId: string, reason: string | null) => void;
 }) {
   const [copied, setCopied] = useState(false);
   const [saveState, setSaveState] = useState<
     "idle" | "saving" | "saved" | "unsaving" | "error"
   >("idle");
   const [savedAnswerId, setSavedAnswerId] = useState<string | null>(null);
+  const [ratingState, setRatingState] = useState<
+    "idle" | "saving" | "saved" | "error"
+  >("idle");
+  const [reasonOpen, setReasonOpen] = useState(false);
+  const [reasonDraft, setReasonDraft] = useState(feedbackReason ?? "");
+  const [reasonState, setReasonState] = useState<
+    "idle" | "saving" | "saved" | "error"
+  >("idle");
+  const ratingResetTimer = useRef<number | null>(null);
+  const reasonInputRef = useRef<HTMLTextAreaElement | null>(null);
+
+  useEffect(
+    () => () => {
+      if (ratingResetTimer.current !== null) {
+        window.clearTimeout(ratingResetTimer.current);
+      }
+    },
+    [],
+  );
+
+  useEffect(() => {
+    setReasonDraft(runId ? (feedbackReason ?? "") : "");
+    setReasonOpen(false);
+    setReasonState("idle");
+  }, [feedbackReason, runId]);
+
+  useEffect(() => {
+    if (reasonOpen) reasonInputRef.current?.focus();
+  }, [reasonOpen]);
 
   async function copy() {
     try {
@@ -3302,71 +3466,288 @@ function AnswerActions({
     else void save();
   }
 
+  async function rate(next: AnswerRating) {
+    if (!runId || ratingState === "saving") return;
+    if (ratingResetTimer.current !== null) {
+      window.clearTimeout(ratingResetTimer.current);
+      ratingResetTimer.current = null;
+    }
+    const previous = rating ?? null;
+    const desired = rating === next ? null : next;
+    onRatingChange(runId, desired);
+    setRatingState("saving");
+
+    try {
+      const res = await fetch("/api/ask/feedback", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ runId, rating: desired }),
+      });
+      const data = (await res.json().catch(() => null)) as {
+        feedback?: { rating?: unknown };
+      } | null;
+      if (!res.ok || !data?.feedback) throw new Error("Feedback failed");
+
+      const savedRating = data.feedback.rating;
+      onRatingChange(
+        runId,
+        savedRating === "helpful" || savedRating === "not_helpful"
+          ? savedRating
+          : null,
+      );
+      if (savedRating === "not_helpful") {
+        setReasonState("idle");
+        setReasonOpen(true);
+      } else {
+        setReasonOpen(false);
+        setReasonDraft("");
+        onFeedbackReasonChange(runId, null);
+      }
+      setRatingState("saved");
+      ratingResetTimer.current = window.setTimeout(() => {
+        ratingResetTimer.current = null;
+        setRatingState("idle");
+      }, 1500);
+    } catch {
+      onRatingChange(runId, previous);
+      setRatingState("error");
+    }
+  }
+
+  async function saveReason(reason: string | null) {
+    if (!runId || reasonState === "saving") return;
+    setReasonState("saving");
+
+    try {
+      const res = await fetch("/api/ask/feedback", {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ runId, reason }),
+      });
+      const data = (await res.json().catch(() => null)) as {
+        feedback?: { reason?: unknown };
+      } | null;
+      if (!res.ok || !data?.feedback) throw new Error("Feedback failed");
+
+      const savedReason =
+        typeof data.feedback.reason === "string" ? data.feedback.reason : null;
+      onFeedbackReasonChange(runId, savedReason);
+      setReasonDraft(savedReason ?? "");
+      setReasonOpen(false);
+      setReasonState("saved");
+    } catch {
+      setReasonState("error");
+    }
+  }
+
+  function submitReason(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const reason = reasonDraft.trim();
+    if (reason) void saveReason(reason);
+  }
+
+  function closeReason() {
+    setReasonDraft(feedbackReason ?? "");
+    setReasonOpen(false);
+    setReasonState("idle");
+  }
+
   const btn =
     "inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-xs font-medium text-muted-2 transition-colors hover:bg-surface-2 hover:text-foreground";
 
   return (
-    <div className="flex flex-wrap items-center gap-x-2 gap-y-1 pt-2">
-      {isSignedIn ? (
+    <div className="space-y-2 pt-2">
+      <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+        {isSignedIn ? (
+          <button
+            type="button"
+            onClick={toggleSaved}
+            className={btn}
+            aria-label={saveState === "saved" ? "Unsave answer" : "Save answer"}
+            disabled={saveState === "saving" || saveState === "unsaving"}
+          >
+            <BookIcon className="h-3.5 w-3.5" />
+            {saveState === "saved"
+              ? "Saved"
+              : saveState === "saving"
+                ? "Saving…"
+                : saveState === "unsaving"
+                  ? "Unsaving…"
+                  : saveState === "error"
+                    ? "Retry save"
+                    : "Save"}
+          </button>
+        ) : (
+          <Link href={signInHref} className={btn}>
+            <BookIcon className="h-3.5 w-3.5" />
+            Sign in to save
+          </Link>
+        )}
         <button
           type="button"
-          onClick={toggleSaved}
+          onClick={copy}
           className={btn}
-          aria-label={saveState === "saved" ? "Unsave answer" : "Save answer"}
-          disabled={saveState === "saving" || saveState === "unsaving"}
+          aria-label="Copy answer"
         >
-          <BookIcon className="h-3.5 w-3.5" />
-          {saveState === "saved"
-            ? "Saved"
-            : saveState === "saving"
-              ? "Saving…"
-              : saveState === "unsaving"
-                ? "Unsaving…"
-                : saveState === "error"
-                  ? "Retry save"
-                  : "Save"}
+          {copied ? (
+            <CheckIcon className="h-3.5 w-3.5" />
+          ) : (
+            <CopyIcon className="h-3.5 w-3.5" />
+          )}
+          {copied ? "Copied" : "Copy"}
         </button>
-      ) : (
-        <Link href={signInHref} className={btn}>
-          <BookIcon className="h-3.5 w-3.5" />
-          Sign in to save
-        </Link>
-      )}
-      <button
-        type="button"
-        onClick={copy}
-        className={btn}
-        aria-label="Copy answer"
-      >
-        {copied ? (
-          <CheckIcon className="h-3.5 w-3.5" />
-        ) : (
-          <CopyIcon className="h-3.5 w-3.5" />
-        )}
-        {copied ? "Copied" : "Copy"}
-      </button>
-      <button
-        type="button"
-        onClick={exportMarkdown}
-        className={btn}
-        aria-label="Export answer as Markdown"
-      >
-        <svg
-          viewBox="0 0 16 16"
-          aria-hidden="true"
-          className="h-3.5 w-3.5"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="1.6"
-          strokeLinecap="round"
-          strokeLinejoin="round"
+        <button
+          type="button"
+          onClick={exportMarkdown}
+          className={btn}
+          aria-label="Export answer as Markdown"
         >
-          <path d="M8 2v8" />
-          <path d="m5 7 3 3 3-3" />
-          <path d="M3 13h10" />
-        </svg>
-        Export .md
-      </button>
+          <svg
+            viewBox="0 0 16 16"
+            aria-hidden="true"
+            className="h-3.5 w-3.5"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.6"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <path d="M8 2v8" />
+            <path d="m5 7 3 3 3-3" />
+            <path d="M3 13h10" />
+          </svg>
+          Export .md
+        </button>
+        {runId && (
+          <span className="ml-auto inline-flex items-center gap-1">
+            <span
+              className="mr-0.5 text-[11px] text-muted-2"
+              aria-live="polite"
+            >
+              {ratingState === "saving"
+                ? "Saving…"
+                : ratingState === "saved"
+                  ? "Thanks!"
+                  : ratingState === "error"
+                    ? "Rating not saved"
+                    : "Helpful?"}
+            </span>
+            <button
+              type="button"
+              onClick={() => void rate("helpful")}
+              disabled={ratingState === "saving"}
+              aria-label={
+                rating === "helpful"
+                  ? "Remove helpful rating"
+                  : "Rate this answer helpful"
+              }
+              aria-pressed={rating === "helpful"}
+              className={`inline-flex h-7 w-7 items-center justify-center rounded-md border transition-colors disabled:opacity-50 ${
+                rating === "helpful"
+                  ? "border-accent/30 bg-accent-soft text-accent"
+                  : "border-transparent text-muted-2 hover:border-border hover:bg-surface-2 hover:text-foreground"
+              }`}
+            >
+              <ThumbsUpIcon className="h-3.5 w-3.5" />
+            </button>
+            <button
+              type="button"
+              onClick={() => void rate("not_helpful")}
+              disabled={ratingState === "saving"}
+              aria-label={
+                rating === "not_helpful"
+                  ? "Remove not helpful rating"
+                  : "Rate this answer not helpful"
+              }
+              aria-pressed={rating === "not_helpful"}
+              className={`inline-flex h-7 w-7 items-center justify-center rounded-md border transition-colors disabled:opacity-50 ${
+                rating === "not_helpful"
+                  ? "border-accent/30 bg-accent-soft text-accent"
+                  : "border-transparent text-muted-2 hover:border-border hover:bg-surface-2 hover:text-foreground"
+              }`}
+            >
+              <ThumbsDownIcon className="h-3.5 w-3.5" />
+            </button>
+          </span>
+        )}
+      </div>
+      {runId &&
+        rating === "not_helpful" &&
+        (reasonOpen ? (
+          <form
+            onSubmit={submitReason}
+            className="ml-auto w-full max-w-md rounded-xl border border-border bg-surface-2/50 p-3"
+          >
+            <label
+              htmlFor={`answer-feedback-${runId}`}
+              className="block text-xs font-medium text-foreground"
+            >
+              What could be better?{" "}
+              <span className="font-normal text-muted-2">Optional</span>
+            </label>
+            <textarea
+              ref={reasonInputRef}
+              id={`answer-feedback-${runId}`}
+              value={reasonDraft}
+              onChange={(event) => {
+                setReasonDraft(event.target.value);
+                if (reasonState !== "saving") setReasonState("idle");
+              }}
+              rows={3}
+              maxLength={1000}
+              placeholder="For example: incorrect, unclear, or missing an important source."
+              className="thin-scroll mt-2 w-full resize-y rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground outline-none placeholder:text-muted-2 focus:border-accent"
+            />
+            <div className="mt-2 flex flex-wrap items-center gap-2">
+              <button
+                type="submit"
+                disabled={reasonState === "saving" || !reasonDraft.trim()}
+                className="inline-flex rounded-lg bg-accent px-3 py-1.5 text-xs font-medium text-white transition-opacity disabled:opacity-50"
+              >
+                {reasonState === "saving" ? "Sending…" : "Send feedback"}
+              </button>
+              <button
+                type="button"
+                onClick={closeReason}
+                disabled={reasonState === "saving"}
+                className={btn}
+              >
+                {feedbackReason ? "Cancel" : "Skip"}
+              </button>
+              {feedbackReason && (
+                <button
+                  type="button"
+                  onClick={() => void saveReason(null)}
+                  disabled={reasonState === "saving"}
+                  className={`${btn} text-red-600 hover:text-red-700`}
+                >
+                  Remove reason
+                </button>
+              )}
+              <span
+                className="ml-auto text-[11px] text-muted-2"
+                aria-live="polite"
+              >
+                {reasonState === "error"
+                  ? "Reason not saved — try again"
+                  : `${reasonDraft.length}/1000`}
+              </span>
+            </div>
+          </form>
+        ) : (
+          <div className="flex justify-end">
+            <button
+              type="button"
+              onClick={() => {
+                setReasonState("idle");
+                setReasonOpen(true);
+              }}
+              className={btn}
+            >
+              {feedbackReason ? "Reason saved · Edit" : "Add a reason"}
+            </button>
+          </div>
+        ))}
     </div>
   );
 }
@@ -3383,6 +3764,11 @@ const AssistantMessage = memo(function AssistantMessage({
   threadId,
   messageId,
   isSignedIn,
+  rating,
+  feedbackReason,
+  rateable,
+  onRatingChange,
+  onFeedbackReasonChange,
 }: {
   m: Message;
   now: number;
@@ -3395,6 +3781,11 @@ const AssistantMessage = memo(function AssistantMessage({
   threadId: string;
   messageId: number;
   isSignedIn: boolean;
+  rating?: AnswerRating;
+  feedbackReason?: string;
+  rateable: boolean;
+  onRatingChange: (runId: string, rating: AnswerRating | null) => void;
+  onFeedbackReasonChange: (runId: string, reason: string | null) => void;
 }) {
   const live = !["done", "error", "stopped"].includes(m.phase);
   const elapsed = m.startedAt
@@ -3539,6 +3930,11 @@ const AssistantMessage = memo(function AssistantMessage({
             tools={m.tools.map((t) => t.label)}
             isSignedIn={isSignedIn}
             signInHref={signInHref}
+            runId={rateable ? m.runId : undefined}
+            rating={rating}
+            feedbackReason={feedbackReason}
+            onRatingChange={onRatingChange}
+            onFeedbackReasonChange={onFeedbackReasonChange}
           />
         )}
 

@@ -116,6 +116,24 @@ export function CheckIcon({ className }: IconProps) {
   );
 }
 
+export function ThumbsUpIcon({ className }: IconProps) {
+  return (
+    <svg className={className} aria-hidden="true" {...base}>
+      <path d="M7 10v10H4a2 2 0 0 1-2-2v-6a2 2 0 0 1 2-2h3Z" />
+      <path d="M7 10l4-7a2 2 0 0 1 2 2v4h5.3a2 2 0 0 1 2 2.4l-1.2 6A3 3 0 0 1 16.2 20H7" />
+    </svg>
+  );
+}
+
+export function ThumbsDownIcon({ className }: IconProps) {
+  return (
+    <svg className={className} aria-hidden="true" {...base}>
+      <path d="M7 14V4H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h3Z" />
+      <path d="m7 14 4 7a2 2 0 0 0 2-2v-4h5.3a2 2 0 0 0 2-2.4l-1.2-6A3 3 0 0 0 16.2 4H7" />
+    </svg>
+  );
+}
+
 export function LinkIcon({ className }: IconProps) {
   return (
     <svg className={className} aria-hidden="true" {...base}>
