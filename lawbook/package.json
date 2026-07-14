@@ -11,7 +11,7 @@
     "format": "biome format --write",
     "cf:build": "opennextjs-cloudflare build",
     "cf:preview": "opennextjs-cloudflare preview",
-    "cf:deploy": "npm run d1:migrate:remote && npm run d1:migrate:trajectories:remote && opennextjs-cloudflare deploy",
+    "cf:deploy": "npm run d1:migrate:remote && npm run d1:migrate:trajectories:remote && npm run cf:build && opennextjs-cloudflare deploy",
     "d1:create": "wrangler d1 create lawbook-auth",
     "d1:create:trajectories": "wrangler d1 create lawbook-trajectories",
     "d1:migrate:local": "wrangler d1 migrations apply lawbook-auth --local",
