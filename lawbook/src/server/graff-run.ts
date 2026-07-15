@@ -45,6 +45,19 @@ export interface GraffRunParams {
 
 const RUN_DEADLINE_MS = 300_000;
 
+/** Conservative guard against treating a visibly cut-off stream as success. */
+export function isLikelyCompleteAnswer(text: string): boolean {
+  const answer = text.trim();
+  if (answer.length < 40) return false;
+  if ((answer.match(/```/g) ?? []).length % 2 !== 0) return false;
+  if (/[,;:\-–—]\s*$/.test(answer)) return false;
+
+  const withoutMarkdownClosers = answer.replace(/[\])}"'_*`]+\s*$/g, "").trim();
+  return !/\b(?:a|an|and|as|at|because|by|for|from|if|in|of|on|or|the|that|to|under|with)\s*$/i.test(
+    withoutMarkdownClosers,
+  );
+}
+
 /** Holds the parse state for one graff run so a DO can drive it across alarms. */
 export class GraffRun {
   readonly startedAt: number;
@@ -331,6 +344,16 @@ export class GraffRun {
           message: diag
             ? `sandboxed graff ended before producing an answer: ${diag}`
             : "sandboxed graff ended before producing an answer (no output)",
+        },
+      ];
+    }
+    if (!isLikelyCompleteAnswer(this.finalText)) {
+      return [
+        ...tailEvents,
+        {
+          type: "error",
+          message:
+            "The research output ended before the answer was complete. Please retry.",
         },
       ];
     }

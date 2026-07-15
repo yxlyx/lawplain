@@ -76,6 +76,7 @@ export interface StatuteHit extends SearchHit {
   kind?: string;
   short_title?: string;
   year_enacted?: number;
+  commencement_status?: "not_commenced" | string | null;
 }
 
 export interface StatuteSectionHit extends SearchHit {
@@ -100,6 +101,7 @@ export interface StatuteDetail {
   short_title?: string;
   kind?: string;
   year_enacted?: number;
+  commencement_status?: "not_commenced" | string | null;
   sections?: StatuteSection[];
   url?: string; // official Singapore Statutes Online source
   [k: string]: unknown;
