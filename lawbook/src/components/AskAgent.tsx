@@ -909,7 +909,10 @@ export function AskAgent({
         }
         setAnswerRatings(nextRatings);
         setAnswerFeedbackReasons(nextReasons);
-        setRateableAnswerRuns(nextRateableRuns);
+        setRateableAnswerRuns((current) => ({
+          ...current,
+          ...nextRateableRuns,
+        }));
       })
       .catch(() => undefined);
 
@@ -1836,6 +1839,13 @@ export function AskAgent({
                 break;
               case "done": {
                 queueingOpenRef.current = false;
+                // The terminal event is authoritative. Make feedback available
+                // immediately even if the ratings GET briefly races trajectory
+                // persistence after reconnecting to a background run.
+                setRateableAnswerRuns((current) => ({
+                  ...current,
+                  [runId]: true,
+                }));
                 const finalSnapshot = runSnapshot.map((m) =>
                   m.id === aId
                     ? {

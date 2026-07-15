@@ -93,6 +93,14 @@ test("Ask feedback API and UI bind ratings to the authenticated run owner", () =
   assert.match(store, /WHERE runId = \? AND userId = \? AND status = 'done'/);
   assert.match(store, /AND rating = 'not_helpful'/);
   assert.match(ui, /runId: m\.runId/);
+  assert.match(
+    ui,
+    /case "done":[\s\S]*setRateableAnswerRuns\([\s\S]*\[runId\]: true/,
+  );
+  assert.match(
+    ui,
+    /setRateableAnswerRuns\(\(current\) => \(\{[\s\S]*\.\.\.nextRateableRuns/,
+  );
   assert.match(ui, /aria-pressed=\{rating === "helpful"\}/);
   assert.match(ui, /aria-pressed=\{rating === "not_helpful"\}/);
   assert.match(ui, /body: JSON\.stringify\(\{ runId, rating: desired \}\)/);
