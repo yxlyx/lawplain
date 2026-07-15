@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 
 const agent = readFileSync("src/lib/agent.ts", "utf8");
+const budget = readFileSync("src/lib/agent-budget.ts", "utf8");
 const client = readFileSync("src/lib/sgjudge.ts", "utf8");
 
 test("statutory research searches provision bodies before answering scope questions", () => {
@@ -32,8 +33,8 @@ test("statutory research searches provision bodies before answering scope questi
 });
 
 test("verified PDPA deceased-data questions get a one-call hard budget", () => {
-  assert.match(agent, /function researchToolCallBudget/);
-  assert.match(agent, /identifiesPdpa && concernsDeceasedData\) return 1/);
+  assert.match(budget, /function researchToolCallBudget/);
+  assert.match(budget, /identifiesPdpa && concernsDeceasedData\) return 1/);
   assert.match(
     agent,
     /const toolCallBudget = researchToolCallBudget\(question, context, history\)/,
@@ -56,9 +57,12 @@ test("PDPA historical archives retrieve both temporal provisions", () => {
   assert.match(agent, /section 19 permits use/);
   assert.match(agent, /not a blanket exemption from every PDPA/);
   assert.match(agent, /date does not establish that its subject is deceased/);
-  assert.match(agent, /identifiesPdpa && concernsHistoricalRecords\) return 2/);
-  assert.match(agent, /9\[89\]\|100\|101/);
-  assert.match(agent, /century/);
+  assert.match(
+    budget,
+    /identifiesPdpa && concernsHistoricalRecords\) return 2/,
+  );
+  assert.match(budget, /9\[89\]\|100\|101/);
+  assert.match(budget, /century/);
 });
 
 test("the typed client exposes provision-level search", () => {

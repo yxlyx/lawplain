@@ -16,6 +16,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { type Event, runAgent } from "@codegraff/sdk";
+import { researchToolCallBudget } from "@/lib/agent-budget";
 import { summarizeToolCall } from "@/lib/agent-tool-summary";
 import {
   createSandbox,
@@ -32,6 +33,8 @@ export const AGENT_MODEL = process.env.LAWPLAIN_AGENT_MODEL ?? "glm-5.2";
 
 /** Override the `graff` binary path (defaults to `graff` on PATH). */
 export const AGENT_BINARY = process.env.LAWGRAFF_BINARY ?? "graff";
+
+export { researchToolCallBudget } from "@/lib/agent-budget";
 
 /**
  * System prompt that turns graff into a focused Singapore-law research
@@ -114,6 +117,9 @@ For harder questions:
   calls unless the first search returns zero or genuinely ambiguous results.
 - Treat rerunning an endpoint with the same parameters but different quoting,
   jq, or parameter order as a duplicate. Do not call the same URL/citation twice.
+- If any tool call is rejected for budget or duplication, STOP calling tools
+  immediately and answer from the evidence already retrieved. Never react to a
+  rejection by retrying, rephrasing the command, or attempting a different tool.
 - PDPA ARCHIVE FAST PATH: if a question mentions historical archives, record
   years, legacy data, or pre-2014 collection, this path OVERRIDES the deceased-
   person path below. Run exactly these TWO full-body searches, once each:
@@ -133,6 +139,12 @@ For harder questions:
   surviving categories. Unless the user explicitly asks for those categories'
   detailed contents, do NOT fetch section 24 or search individual disclosure
   provisions; name the two categories from section 4 and answer immediately.
+- For any other PDPA question that does not ask for case law, the Act is already
+  identified as PDPA2012. Search /v1/statute-sections/search directly with
+  act_id=PDPA2012, include_body=true and limit=3. Never call
+  /v1/statutes/search to rediscover the Act and never fetch the whole Act merely
+  to locate a provision. Make at most two focused provision searches; fetch one
+  direct section only if the search response omitted its body, then answer.
 - For defamation-elements questions, good search terms are:
   "defamation defamatory reference publication" or "defamation elements plaintiff".
 - AGENCY GUIDANCE FAST PATH: when the user asks what TAFEP or PDPC recommends,
@@ -269,44 +281,6 @@ export interface ChatContext {
 export interface ChatTurn {
   role: "user" | "assistant";
   text: string;
-}
-
-/**
- * Known exact-rule questions can use a tighter hard budget without weakening
- * unrelated research. The system prompt supplies canonical one- and two-call
- * plans for the PDPA temporal rules reported in issue #182.
- */
-export function researchToolCallBudget(
-  question: string,
-  context?: ChatContext,
-  history?: ChatTurn[],
-): number {
-  const researchText = [
-    question,
-    context?.citation,
-    context?.title,
-    ...(history ?? []).map((turn) => turn.text),
-  ]
-    .filter(Boolean)
-    .join(" ");
-  const identifiesPdpa =
-    /\bPDPA\b/i.test(researchText) ||
-    /personal data protection act/i.test(researchText) ||
-    context?.citation === "PDPA2012";
-  const concernsDeceasedData =
-    /\b(?:deceased|dead|died|death)\b/i.test(researchText) ||
-    /passed away/i.test(researchText);
-  const concernsHistoricalRecords =
-    /\b(?:archive|archival|historical|legacy|records?|collected)\b/i.test(
-      researchText,
-    ) &&
-    (/\b(?:19|20)\d{2}\b/.test(researchText) ||
-      /\b(?:9[89]|100|101)[ -]?years?\b/i.test(researchText) ||
-      /\b(?:a |one )?century(?: old)?\b/i.test(researchText) ||
-      /2 July 2014/i.test(researchText));
-  if (identifiesPdpa && concernsHistoricalRecords) return 2;
-  if (identifiesPdpa && concernsDeceasedData) return 1;
-  return 6;
 }
 
 /**

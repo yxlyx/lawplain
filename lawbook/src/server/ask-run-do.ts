@@ -34,9 +34,12 @@ interface AskRunEnv {
 
 type RunStatus = "idle" | "running" | "done" | "error" | "stopped";
 
+const MAX_RUN_ATTEMPTS = 3;
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 export class AskRunDO extends DurableObject<AskRunEnv> {
+  private looping = false;
+
   constructor(ctx: DurableObjectState, env: AskRunEnv) {
     super(ctx, env);
     ctx.storage.sql.exec(
@@ -55,6 +58,7 @@ export class AskRunDO extends DurableObject<AskRunEnv> {
       return this.handleStart(req);
     }
     if (url.pathname.endsWith("/stream")) {
+      await this.ensureRunningAlarm();
       const from =
         Number.parseInt(url.searchParams.get("from") ?? "0", 10) || 0;
       return this.handleStream(from);
@@ -63,6 +67,7 @@ export class AskRunDO extends DurableObject<AskRunEnv> {
       return this.handleStop();
     }
     if (url.pathname.endsWith("/status")) {
+      await this.ensureRunningAlarm();
       return Response.json({
         status: await this.status(),
         count: this.eventCount(),
@@ -80,6 +85,14 @@ export class AskRunDO extends DurableObject<AskRunEnv> {
       .exec("SELECT COUNT(*) AS c FROM events")
       .one();
     return Number(row.c);
+  }
+
+  /** Reconnecting to an interrupted run re-arms its alarm after an isolate restart. */
+  private async ensureRunningAlarm(): Promise<void> {
+    if (this.looping || (await this.status()) !== "running") return;
+    if ((await this.ctx.storage.getAlarm()) === null) {
+      await this.ctx.storage.setAlarm(Date.now());
+    }
   }
 
   private async appendEvents(events: AgentEvent[]): Promise<void> {
@@ -178,12 +191,13 @@ export class AskRunDO extends DurableObject<AskRunEnv> {
         toolCallBudget:
           typeof body.toolCallBudget === "number"
             ? Math.min(6, Math.max(1, Math.trunc(body.toolCallBudget)))
-            : 6,
+            : 4,
         model: body.model,
         runId: body.runId,
         userId: body.userId,
         threadId: body.threadId,
         startedAt,
+        runAttempts: 0,
       });
       await startTrajectory(this.env.TRAJECTORY_DB, {
         runId: body.runId,
@@ -247,41 +261,90 @@ export class AskRunDO extends DurableObject<AskRunEnv> {
 
   /** Runs the whole graff loop once; survives client disconnect. */
   async alarm(): Promise<void> {
-    // Guard against a duplicate alarm re-entering the loop.
-    if (await this.ctx.storage.get<boolean>("looping")) return;
-    await this.ctx.storage.put("looping", true);
+    // This guard must be isolate-local. A persisted boolean survives a Worker
+    // deployment and used to strand a retried alarm in `running` forever.
+    if (this.looping) return;
+    this.looping = true;
 
-    const prompt = await this.ctx.storage.get<string>("prompt");
-    const systemPrompt = await this.ctx.storage.get<string>("systemPrompt");
-    const toolCallBudget =
-      (await this.ctx.storage.get<number>("toolCallBudget")) ?? 6;
-    const model = await this.ctx.storage.get<string>("model");
-    const startedAt =
-      (await this.ctx.storage.get<number>("startedAt")) ?? Date.now();
-
-    const gw = this.env.CUBESANDBOX_GATEWAY_URL;
-    const key = this.env.CUBESANDBOX_TENANT_KEY;
-    if (!gw || !key) {
-      return this.fail("CubeSandbox gateway not configured");
-    }
-    if (!prompt || !systemPrompt || !model) {
-      return this.fail("missing run params");
-    }
-    if (!askAgentEnabled(this.env)) return this.fail(safeAgentError());
-    const providerEnv = providerCredential(this.env);
-    if (!providerEnv) return this.fail(safeAgentError());
-
-    const sandbox = new CubeSandbox({ gatewayUrl: gw, tenantKey: key });
-    const run = new GraffRun(startedAt);
+    let sandbox: CubeSandbox | null = null;
+    let run: GraffRun | null = null;
+    let providerSecrets: string[] = [];
     try {
+      // Remove the legacy persisted guard from Durable Objects created by an
+      // older deployment. Retry attempts are bounded separately below.
+      await this.ctx.storage.delete("looping");
+      if ((await this.status()) !== "running") return;
+
+      const attempt =
+        ((await this.ctx.storage.get<number>("runAttempts")) ?? 0) + 1;
+      await this.ctx.storage.put("runAttempts", attempt);
+      if (attempt > MAX_RUN_ATTEMPTS) {
+        await this.fail(safeAgentError());
+        return;
+      }
+
+      const prompt = await this.ctx.storage.get<string>("prompt");
+      const systemPrompt = await this.ctx.storage.get<string>("systemPrompt");
+      const toolCallBudget =
+        (await this.ctx.storage.get<number>("toolCallBudget")) ?? 4;
+      const model = await this.ctx.storage.get<string>("model");
+      const startedAt =
+        (await this.ctx.storage.get<number>("startedAt")) ?? Date.now();
+      const hasPriorEvents = this.eventCount() > 0;
+      const gw = this.env.CUBESANDBOX_GATEWAY_URL;
+      const key = this.env.CUBESANDBOX_TENANT_KEY;
+
+      if (!gw || !key) {
+        await this.fail("CubeSandbox gateway not configured");
+        return;
+      }
+      if (!prompt || !systemPrompt || !model) {
+        await this.fail("missing run params");
+        return;
+      }
+      if (!askAgentEnabled(this.env)) {
+        await this.fail(safeAgentError());
+        return;
+      }
+      const providerEnv = providerCredential(this.env);
+      if (!providerEnv) {
+        await this.fail(safeAgentError());
+        return;
+      }
+      providerSecrets = Object.values(providerEnv);
+      const activeSandbox = new CubeSandbox({ gatewayUrl: gw, tenantKey: key });
+      sandbox = activeSandbox;
+
+      const orphanedSandboxId = await this.ctx.storage.get<string>("sandboxId");
+      if (orphanedSandboxId) {
+        await activeSandbox
+          .deleteSandbox(orphanedSandboxId)
+          .catch((error) =>
+            console.warn("Failed to remove interrupted Ask sandbox", error),
+          );
+        await this.ctx.storage.delete("sandboxId");
+      }
+      const recovering = attempt > 1 || hasPriorEvents || !!orphanedSandboxId;
+      if (recovering) {
+        await this.appendEvents([
+          {
+            type: "progress",
+            phase: "thinking",
+            message: "Previous research was interrupted; retrying safely…",
+            elapsedMs: Math.max(0, Date.now() - startedAt),
+          },
+        ]);
+      }
+
+      run = new GraffRun(recovering ? Date.now() : startedAt);
       if (await this.isStopped()) return;
       const launchEvents = await run.launch(
-        sandbox,
+        activeSandbox,
         { model, providerEnv, prompt, systemPrompt, toolCallBudget },
         async (sid) => {
           await this.ctx.storage.put("sandboxId", sid);
           if (await this.isStopped()) {
-            await sandbox.deleteSandbox(sid);
+            await activeSandbox.deleteSandbox(sid);
             throw new Error("stopped");
           }
         },
@@ -291,7 +354,7 @@ export class AskRunDO extends DurableObject<AskRunEnv> {
       let sawError = launchEvents.some((ev) => ev.type === "error");
       while (!run.done) {
         if (await this.isStopped()) break;
-        const events = await run.poll(sandbox);
+        const events = await run.poll(activeSandbox);
         if (events.some((ev) => ev.type === "error")) sawError = true;
         if (events.length) await this.appendEvents(events);
         if (run.done || (await this.isStopped())) break;
@@ -305,17 +368,22 @@ export class AskRunDO extends DurableObject<AskRunEnv> {
       }
     } catch (e) {
       if (await this.isStopped()) return;
-      console.error(
-        "Ask run failed",
-        redactSecrets(e, Object.values(providerEnv)),
-      );
+      console.error("Ask run failed", redactSecrets(e, providerSecrets));
       await this.appendEvents([{ type: "error", message: safeAgentError() }]);
       await this.ctx.storage.put("status", "error" satisfies RunStatus);
       await this.updateThreadStatus("error");
       await this.updateTrajectoryStatus("error");
     } finally {
-      if (run.sandboxId) await sandbox.deleteSandbox(run.sandboxId);
-      await this.ctx.storage.delete("sandboxId");
+      try {
+        if (run?.sandboxId && sandbox) {
+          await sandbox.deleteSandbox(run.sandboxId);
+        }
+      } catch (error) {
+        console.warn("Failed to remove Ask sandbox", error);
+      } finally {
+        await this.ctx.storage.delete("sandboxId");
+        this.looping = false;
+      }
     }
   }
 
