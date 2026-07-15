@@ -70,8 +70,8 @@ export function researchToolCallBudget(
   if (identifiesPdpa && concernsDeceasedData) return 1;
   if (asksForComparison) return 6;
   if (context) return 1;
-  if (concernsAgencyGuidance) return asksForBindingLaw ? 4 : 2;
+  if (concernsAgencyGuidance) return asksForBindingLaw ? 4 : 3;
   if (identifiesPdpa) return asksForCaseLaw ? 6 : 3;
-  if (asksForElementsOrTest) return 2;
+  if (asksForElementsOrTest) return 3;
   return 4;
 }

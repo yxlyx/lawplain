@@ -23,7 +23,7 @@ test("research budgets match the smallest sufficient evidence plan", () => {
   );
   assert.equal(
     researchToolCallBudget("What does PDPC guidance say about NRIC login?"),
-    2,
+    3,
   );
   assert.equal(
     researchToolCallBudget(
@@ -33,7 +33,7 @@ test("research budgets match the smallest sufficient evidence plan", () => {
   );
   assert.equal(
     researchToolCallBudget("What must a plaintiff prove in defamation?"),
-    2,
+    3,
   );
   assert.equal(researchToolCallBudget("When is a contract frustrated?"), 4);
   assert.equal(
