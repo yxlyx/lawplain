@@ -236,7 +236,7 @@ export async function POST(req: Request): Promise<Response> {
         body: JSON.stringify({
           runId,
           prompt,
-          systemPrompt: legalResearchPrompt(),
+          systemPrompt: legalResearchPrompt(toolCallBudget),
           toolCallBudget,
           model: AGENT_MODEL,
           userId: session.user.id,

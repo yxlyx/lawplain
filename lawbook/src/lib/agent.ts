@@ -38,7 +38,7 @@ export const AGENT_BINARY = process.env.LAWGRAFF_BINARY ?? "graff";
  * assistant. The endpoint list mirrors `src/lib/sgjudge.ts` so the agent
  * knows the exact shapes it can query.
  */
-export function legalResearchPrompt(): string {
+export function legalResearchPrompt(toolCallBudget = 6): string {
   return `You are Lawplain Research, an assistant for the Singapore legal
 corpus. You answer questions about case law, statutes, subsidiary
 legislation, parliamentary Hansard, bills and practice directions by
@@ -72,11 +72,13 @@ Endpoints (curl them with \`-s\`; use \`jq\` only for ordinary metadata searches
 - GET /v1/stats   (corpus counts, for orientation)
 
 Always URL-encode the query (use \`--data-urlencode\` with \`-G\`).
-Keep each curl's output small: select only the columns you need with jq, e.g.
+For metadata-only curls, select only the columns you need with jq, e.g.
   curl -sG "${BASE}/v1/judgments/search" --data-urlencode "q=defamation" | jq '.results[] | {citation,title,court,year,score}'
+Never pipe an include_body=true provision search through jq or another filter;
+its capped response is the evidence you need and must retain complete body_text.
 
 # How to work — STRICT BUDGET (this is enforced)
-You have a HARD LIMIT of 6 tool calls total for the whole turn. Count them.
+You have a HARD LIMIT of ${toolCallBudget} tool call${toolCallBudget === 1 ? "" : "s"} total for the whole turn. Count them.
 For broad doctrine questions like "what are the elements of X", use FAST PATH:
 - Run exactly ONE targeted search with limit=5.
 - Fetch exactly ONE best detail result if needed.
@@ -106,6 +108,18 @@ For harder questions:
   calls unless the first search returns zero or genuinely ambiguous results.
 - Treat rerunning an endpoint with the same parameters but different quoting,
   jq, or parameter order as a duplicate. Do not call the same URL/citation twice.
+- PDPA ARCHIVE FAST PATH: if a question mentions historical archives, record
+  years, legacy data, or pre-2014 collection, this path OVERRIDES the deceased-
+  person path below. Run exactly these TWO full-body searches, once each:
+  curl -sG "${BASE}/v1/statute-sections/search" --data-urlencode "q=record 100 years" --data-urlencode "act_id=PDPA2012" --data-urlencode "include_body=true" --data-urlencode "limit=3"
+  curl -sG "${BASE}/v1/statute-sections/search" --data-urlencode "q=collected 2 July 2014" --data-urlencode "act_id=PDPA2012" --data-urlencode "include_body=true" --data-urlencode "limit=3"
+  Do not filter either response and do not make another call. Apply section
+  4(4)(a) when the record itself has existed for at least 100 years. Separately,
+  section 19 permits use of data collected before 2 July 2014 for its original
+  collection purposes unless consent was withdrawn or the individual otherwise
+  indicated non-consent. Section 19 is not a blanket exemption from every PDPA
+  duty. A record's date does not establish that its subject is deceased, so do
+  not introduce the deceased-person rule unless the question mentions death.
 - For PDPA questions about deceased individuals, use this one-call research query:
   curl -sG "${BASE}/v1/statute-sections/search" --data-urlencode "q=dead 10 years" --data-urlencode "act_id=PDPA2012" --data-urlencode "include_body=true" --data-urlencode "limit=3"
   Copy that command verbatim, run it ONCE, and do not pipe it through jq, sed,
@@ -120,6 +134,11 @@ For harder questions:
 
 # Answering
 - Write in clear prose (markdown). Lead with the direct answer, then support.
+- ACCURACY INVARIANT FOR DECEASED DATA: section 4(4)(b) says the Act
+  generally does not apply to a deceased individual's data. For 10 years or
+  less after death, ONLY disclosure-related provisions and section 24 survive.
+  Never say the full PDPA or all obligations remain during that period. After
+  more than 10 years, neither of those residual categories survives.
 - Keep the answer concise: direct answer, 2-4 bullets/numbered points, citations.
 - When asked what a claimant/plaintiff "must prove", list only the legal elements.
   Keep defences, burden shifts, damages, or remedies in a short separate note only if needed.
@@ -219,8 +238,8 @@ export interface ChatTurn {
 
 /**
  * Known exact-rule questions can use a tighter hard budget without weakening
- * unrelated research. PDPA section 4 contains the complete deceased-data rule
- * in one provision; the system prompt supplies its canonical one-call query.
+ * unrelated research. The system prompt supplies canonical one- and two-call
+ * plans for the PDPA temporal rules reported in issue #182.
  */
 export function researchToolCallBudget(
   question: string,
@@ -242,7 +261,17 @@ export function researchToolCallBudget(
   const concernsDeceasedData =
     /\b(?:deceased|dead|died|death)\b/i.test(researchText) ||
     /passed away/i.test(researchText);
-  return identifiesPdpa && concernsDeceasedData ? 1 : 6;
+  const concernsHistoricalRecords =
+    /\b(?:archive|archival|historical|legacy|records?|collected)\b/i.test(
+      researchText,
+    ) &&
+    (/\b(?:19|20)\d{2}\b/.test(researchText) ||
+      /\b(?:9[89]|100|101)[ -]?years?\b/i.test(researchText) ||
+      /\b(?:a |one )?century(?: old)?\b/i.test(researchText) ||
+      /2 July 2014/i.test(researchText));
+  if (identifiesPdpa && concernsHistoricalRecords) return 2;
+  if (identifiesPdpa && concernsDeceasedData) return 1;
+  return 6;
 }
 
 /**
@@ -366,18 +395,15 @@ export async function* askLegalAgent(
   // Isolated cwd so yolo bash can't touch the project tree.
   const cwd = mkdtempSync(join(tmpdir(), "lawplain-agent-"));
   try {
+    const toolCallBudget = researchToolCallBudget(question, context, history);
     const stream = runAgent({
       prompt: composePrompt(question, context, history),
       model: AGENT_MODEL,
       yolo: true,
       binary: AGENT_BINARY,
       cwd,
-      systemPrompt: legalResearchPrompt(),
-      args: [
-        "--max-tool-calls",
-        String(researchToolCallBudget(question, context, history)),
-        "--dedupe-tool-calls",
-      ],
+      systemPrompt: legalResearchPrompt(toolCallBudget),
+      args: ["--max-tool-calls", String(toolCallBudget), "--dedupe-tool-calls"],
       // Minimal env: no host secrets reach the yolo-bash agent.
       env: agentEnv(),
     });
@@ -526,7 +552,8 @@ export async function* askLegalAgentSandboxed(
     //    envd doesn't support process stdin, so we use a bash pipe.
     //    All dynamic values are env vars to avoid shell-escaping issues.
     const prompt = composePrompt(question, context, history);
-    const systemPrompt = legalResearchPrompt();
+    const toolCallBudget = researchToolCallBudget(question, context, history);
+    const systemPrompt = legalResearchPrompt(toolCallBudget);
     const promptJson = JSON.stringify({ type: "user", text: prompt });
 
     const envs: Record<string, string> = {
@@ -534,9 +561,7 @@ export async function* askLegalAgentSandboxed(
       SYSTEM_PROMPT: systemPrompt,
       GRAFF_BIN: GRAFF_BIN_PATH,
       MODEL: AGENT_MODEL,
-      TOOL_CALL_BUDGET: String(
-        researchToolCallBudget(question, context, history),
-      ),
+      TOOL_CALL_BUDGET: String(toolCallBudget),
       ...providerEnv,
       HOME: "/home/user",
       PATH: "/usr/bin:/bin:/usr/local/bin",

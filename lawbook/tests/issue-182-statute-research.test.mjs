@@ -33,11 +33,32 @@ test("statutory research searches provision bodies before answering scope questi
 
 test("verified PDPA deceased-data questions get a one-call hard budget", () => {
   assert.match(agent, /function researchToolCallBudget/);
-  assert.match(agent, /identifiesPdpa && concernsDeceasedData \? 1 : 6/);
+  assert.match(agent, /identifiesPdpa && concernsDeceasedData\) return 1/);
   assert.match(
     agent,
-    /String\(researchToolCallBudget\(question, context, history\)\)/,
+    /const toolCallBudget = researchToolCallBudget\(question, context, history\)/,
   );
+  assert.match(agent, /legalResearchPrompt\(toolCallBudget\)/);
+  assert.match(agent, /HARD LIMIT of \$\{toolCallBudget\}/);
+  assert.match(
+    agent,
+    /ONLY disclosure-related provisions and section 24 survive/,
+  );
+  assert.match(agent, /Never say the full PDPA or all obligations remain/);
+});
+
+test("PDPA historical archives retrieve both temporal provisions", () => {
+  assert.match(agent, /PDPA ARCHIVE FAST PATH/);
+  assert.match(agent, /this path OVERRIDES the deceased/);
+  assert.match(agent, /q=record 100 years/);
+  assert.match(agent, /q=collected 2 July 2014/);
+  assert.match(agent, /section\s+4\(4\)\(a\)/);
+  assert.match(agent, /section 19 permits use/);
+  assert.match(agent, /not a blanket exemption from every PDPA/);
+  assert.match(agent, /date does not establish that its subject is deceased/);
+  assert.match(agent, /identifiesPdpa && concernsHistoricalRecords\) return 2/);
+  assert.match(agent, /9\[89\]\|100\|101/);
+  assert.match(agent, /century/);
 });
 
 test("the typed client exposes provision-level search", () => {
