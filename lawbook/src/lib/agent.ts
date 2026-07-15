@@ -56,6 +56,9 @@ Endpoints (curl them with \`-s\` and pipe through \`jq\` to keep output small):
     detail incl. body_text (paginated via body_offset/body_length)
 - GET /v1/statutes/search?q=&kind=&limit=
     hits: act_id, kind?, short_title?, year_enacted?
+- GET /v1/statute-sections/search?q=&act_id=&limit=
+    searches exact provision text; hits: act_id, section_id, section_no,
+    heading?, short_title?, score, snippet
 - GET /v1/statutes/{reference}?kind=&include_body=true
     detail incl. sections[] (section_no, heading?, text?)
 - GET /v1/statutes/{actId}/sections/{sectionNo}
@@ -86,6 +89,14 @@ For harder questions:
 - Once you have any usable authoritative result, STOP searching and write the answer.
   Do not "double-check" or re-search the same term. Do not call /v1/stats.
 - If the first search already answers the question, answer immediately with 1 tool call total.
+- For statute questions about scope, application, exclusions, exceptions, dates,
+  transitional rules, or definitions, a title hit alone does NOT answer the
+  question. Search /v1/statute-sections/search and inspect the exact relevant
+  section before answering. Check both the operative rule and any nearby
+  exception or qualification; use the direct section endpoint when needed.
+- Statute search uses AND semantics. Start with 2-4 distinctive words. If a
+  long natural-language query returns nothing, make at most one shorter section
+  search with synonyms instead of concluding that the corpus has no answer.
 - Do not call the same URL/citation twice. Duplicate tool calls waste the user's time.
 - For defamation-elements questions, good search terms are:
   "defamation defamatory reference publication" or "defamation elements plaintiff".
