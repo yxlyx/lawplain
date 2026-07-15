@@ -3868,6 +3868,12 @@ const AssistantMessage = memo(function AssistantMessage({
                 })}
               </ol>
             )}
+            {isSignedIn && (
+              <p className="mt-2 border-t border-border pt-2 text-[11px] leading-relaxed text-muted-2">
+                You can leave this page while we research. Come back to this
+                chat anytime—your answer will appear here when it’s ready.
+              </p>
+            )}
           </output>
         )}
 

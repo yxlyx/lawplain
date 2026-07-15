@@ -320,6 +320,23 @@ test("ask history polls running threads while closed and advertises unread done"
   );
 });
 
+test("live research tells signed-in users they can safely return later", () => {
+  const source = read("src/components/AskAgent.tsx");
+
+  assert.match(
+    source,
+    /\{isSignedIn && \([\s\S]*You can leave this page while we research\.[\s\S]*Come back to this[\s\S]*chat anytime—your answer will appear here when it’s ready\./,
+  );
+  assert.match(
+    source,
+    /Reconnect to a DO-hosted run still going after the user navigated away/,
+  );
+  assert.match(
+    source,
+    /Durable Object-backed research keeps running[\s\S]*explicit Stop is the only path that cancels backend work/,
+  );
+});
+
 test("the persistent app header discovers and dots completions", () => {
   const source = read("src/components/AskAgent.tsx");
   const appShell = read("src/components/AppShell.tsx");
