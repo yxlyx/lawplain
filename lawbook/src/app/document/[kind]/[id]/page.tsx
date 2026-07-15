@@ -16,6 +16,7 @@ import {
 import {
   type DocumentDetail,
   type DocumentKind,
+  guidanceLegalStatusLabel,
   isDocumentKind,
   sgjudge,
 } from "@/lib/sgjudge";
@@ -28,6 +29,7 @@ const KIND_LABELS: Record<DocumentKind, string> = {
   bills: "Bill",
   subsidiary: "Subsidiary Legislation",
   practice: "Practice Direction",
+  guidance: "Guidance",
 };
 
 export async function generateMetadata({
@@ -41,9 +43,10 @@ export async function generateMetadata({
     snippet?: string;
     meta?: string;
     returnTo?: string;
+    source?: string;
   }>;
 }): Promise<Metadata> {
-  const [{ kind, id }, { q, title, snippet, meta, returnTo }] =
+  const [{ kind, id }, { q, title, snippet, meta, returnTo, source }] =
     await Promise.all([params, searchParams]);
   const decodedKind = decodeURIComponent(kind);
   const decodedId = decodeURIComponent(id);
@@ -57,7 +60,9 @@ export async function generateMetadata({
     : metaDescription(
         `View ${displayTitle} on Lawplain. Search Singapore ${label.toLowerCase()} materials and related legal information.`,
       );
-  const hasQueryVariant = Boolean(q || title || snippet || meta || returnTo);
+  const hasQueryVariant = Boolean(
+    q || title || snippet || meta || returnTo || source,
+  );
 
   return buildMetadata({
     title: displayTitle,
@@ -80,9 +85,10 @@ export default async function DocumentResultPage({
     snippet?: string;
     meta?: string;
     returnTo?: string;
+    source?: string;
   }>;
 }) {
-  const [{ kind, id }, { q, title, snippet, meta, returnTo }] =
+  const [{ kind, id }, { q, title, snippet, meta, returnTo, source }] =
     await Promise.all([params, searchParams]);
   const decodedKind = decodeURIComponent(kind);
   const decodedId = decodeURIComponent(id);
@@ -101,7 +107,18 @@ export default async function DocumentResultPage({
   const initialLoaded =
     (detail?.body_offset ?? 0) + (detail?.body_text?.length ?? 0);
   const total = (detail?.body_length as number) ?? initialLoaded;
-  const sourceUrl = typeof detail?.url === "string" ? detail.url : undefined;
+  const sourceUrl = safeOfficialSourceUrl(
+    typeof detail?.source_url === "string"
+      ? detail.source_url
+      : typeof detail?.url === "string"
+        ? detail.url
+        : source,
+    decodedKind,
+  );
+  const guidanceStatus =
+    decodedKind === "guidance"
+      ? guidanceLegalStatusLabel(detail?.legal_status)
+      : undefined;
   const hasBody = Boolean(detail && initialText);
   const pagePath = `/document/${encodeURIComponent(decodedKind)}/${encodeURIComponent(decodedId)}`;
   const fallbackPath = buildFallbackDocumentPath(pagePath, {
@@ -112,6 +129,7 @@ export default async function DocumentResultPage({
       FALLBACK_SNIPPET_PATH_LIMIT,
     ),
     meta,
+    source: safeOfficialSourceUrl(source, decodedKind),
   });
   const recentlyViewedPath = detail ? pagePath : fallbackPath;
   const canRecordRecentlyViewed = Boolean(detail || (title && snippet));
@@ -126,7 +144,12 @@ export default async function DocumentResultPage({
       {canRecordRecentlyViewed && (
         <RecentlyViewedRecorder
           docType={
-            decodedKind as "hansard" | "bills" | "subsidiary" | "practice"
+            decodedKind as
+              | "hansard"
+              | "bills"
+              | "subsidiary"
+              | "practice"
+              | "guidance"
           }
           docId={decodedId}
           title={displayTitle}
@@ -164,6 +187,11 @@ export default async function DocumentResultPage({
               {label}
             </span>
             <span className="font-mono">{decodedId}</span>
+            {guidanceStatus && (
+              <span className="rounded-full border border-accent/35 bg-accent-soft px-2 py-0.5 font-semibold text-accent">
+                {guidanceStatus}
+              </span>
+            )}
           </div>
 
           <h1 className="font-serif text-2xl font-medium leading-tight tracking-tight text-foreground sm:text-3xl">
@@ -192,7 +220,9 @@ export default async function DocumentResultPage({
                 className="inline-flex items-center gap-1.5 rounded-lg border border-border-strong px-3.5 py-2 text-sm font-medium text-muted transition-colors hover:border-accent hover:text-foreground"
               >
                 <ExternalLinkIcon className="h-4 w-4" />
-                View official source
+                {decodedKind === "guidance"
+                  ? "View official agency source"
+                  : "View official source"}
               </a>
             </div>
           )}
@@ -272,10 +302,11 @@ async function loadDetail(
 
 function detailTitle(detail: DocumentDetail | null): string | undefined {
   if (!detail) return undefined;
+  const title = typeof detail.title === "string" ? detail.title.trim() : "";
   const topic = typeof detail.topic === "string" ? detail.topic.trim() : "";
   const shortTitle =
     typeof detail.short_title === "string" ? detail.short_title.trim() : "";
-  return topic || shortTitle || undefined;
+  return title || topic || shortTitle || undefined;
 }
 
 function documentDescription(
@@ -290,8 +321,12 @@ function documentDescription(
     .slice(0, 2)
     .map(([key, value]) => `${key}: ${value}`);
 
+  const status =
+    kind === "guidance"
+      ? " It is official agency guidance, not legislation."
+      : "";
   return metaDescription(
-    `Read ${title}, a Singapore ${label}${date ? ` from ${date}` : ""}. ${
+    `Read ${title}, a Singapore ${label}${date ? ` from ${date}` : ""}.${status} ${
       rows.length > 0 ? `${rows.join("; ")}. ` : ""
     }Search public legal materials on Lawplain.`,
   );
@@ -308,7 +343,9 @@ function documentDate(
         ? [detail.introduced_date, detail.second_reading_date, detail.year]
         : kind === "subsidiary"
           ? [detail.doc_date]
-          : [detail.effective_date];
+          : kind === "guidance"
+            ? [detail.updated_date, detail.published_date]
+            : [detail.effective_date];
 
   const value = candidates.find(
     (item) => typeof item === "string" || typeof item === "number",
@@ -351,6 +388,14 @@ function detailMeta(
     add("PD Number", detail.pd_number);
     add("Effective Date", detail.effective_date);
     add("Supersedes", detail.supersedes);
+  } else if (kind === "guidance") {
+    add("Agency", detail.agency);
+    add("Document Type", humanizeGuidanceKind(detail.document_kind));
+    add("Legal Status", guidanceLegalStatusLabel(detail.legal_status));
+    add("Published", detail.published_date);
+    add("Updated", detail.updated_date);
+    add("Effective", detail.effective_date);
+    add("Official Domain", detail.source_domain);
   }
 
   return rows;
@@ -363,6 +408,7 @@ function buildFallbackDocumentPath(
     title?: string;
     snippet?: string;
     meta?: string;
+    source?: string;
   },
 ): string {
   const searchParams = new URLSearchParams();
@@ -407,4 +453,37 @@ function parseMeta(value?: string): [string, string][] {
 function safeReturnTo(value?: string): string | null {
   if (!value?.startsWith("/") || value.startsWith("//")) return null;
   return value;
+}
+
+function safeOfficialSourceUrl(
+  value?: string,
+  kind?: DocumentKind,
+): string | undefined {
+  if (!value) return undefined;
+  try {
+    const url = new URL(value);
+    if (url.protocol !== "https:") return undefined;
+    if (kind === "guidance" && !isOfficialGuidanceHost(url.hostname)) {
+      return undefined;
+    }
+    return url.toString();
+  } catch {
+    return undefined;
+  }
+}
+
+function isOfficialGuidanceHost(hostname: string): boolean {
+  const normalized = hostname.toLowerCase();
+  return (
+    normalized === "tal.sg" ||
+    normalized.endsWith(".tal.sg") ||
+    normalized === "pdpc.gov.sg" ||
+    normalized.endsWith(".pdpc.gov.sg")
+  );
+}
+
+function humanizeGuidanceKind(value: unknown): string | undefined {
+  if (typeof value !== "string" || !value.trim()) return undefined;
+  const words = value.trim().replaceAll("_", " ");
+  return words.charAt(0).toUpperCase() + words.slice(1);
 }

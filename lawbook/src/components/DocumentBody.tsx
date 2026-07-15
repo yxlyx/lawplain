@@ -11,7 +11,7 @@ const PAGE = 60000;
 
 /**
  * Full-document reader for hansard / bills / subsidiary legislation / practice
- * directions. Mirrors the Judgment reading experience (lazy body loading,
+ * directions / agency guidance. Mirrors the Judgment reading experience (lazy body loading,
  * query highlighting, match count, prev/next match navigation, active-match
  * scrolling) using the shared FindToolbar + highlight primitives (issue #70).
  */

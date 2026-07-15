@@ -30,6 +30,7 @@ const CORPUS_LABELS: Record<string, string> = {
   hansard_speeches: "Hansard Speeches",
   bills: "Bills",
   practice_directions: "Practice Directions",
+  agency_guidance: "Agency Guidance",
   commentary: "Commentary",
 };
 

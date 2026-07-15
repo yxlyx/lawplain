@@ -24,11 +24,23 @@ const SECTIONS: Section[] = [
           <>
             Singapore{" "}
             <strong>
-              judgments, statutes, subsidiary legislation, Hansard, bills
+              judgments, statutes, subsidiary legislation, Hansard, bills,
+              official agency guidance
             </strong>{" "}
             and <strong>practice directions</strong>. Pick a tab under the
             search box; results are full-text ranked (relevance, with the
             matched phrase highlighted).
+          </>
+        ),
+      },
+      {
+        q: "Is agency guidance legislation?",
+        a: (
+          <>
+            No. It is official agency guidance, not legislation. The Guidance
+            tab keeps TAFEP, PDPC and similar material separate from primary
+            law. Every result links to its official source and should be checked
+            there for the current version.
           </>
         ),
       },
@@ -163,9 +175,9 @@ const SECTIONS: Section[] = [
         a: (
           <>
             It grants read-only (GET) access to the same endpoints the app uses
-            — judgments, statutes, Hansard, bills, subsidiary legislation and
-            practice directions. Keys are shown once at creation and can be
-            revoked anytime.
+            — judgments, statutes, Hansard, bills, subsidiary legislation,
+            practice directions and agency guidance. Keys are shown once at
+            creation and can be revoked anytime.
           </>
         ),
       },

@@ -7,6 +7,7 @@ export const RECENT_DOCUMENT_TYPES = [
   "bills",
   "subsidiary",
   "practice",
+  "guidance",
 ] as const;
 
 export type RecentDocumentType = (typeof RECENT_DOCUMENT_TYPES)[number];

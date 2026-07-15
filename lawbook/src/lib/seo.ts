@@ -6,7 +6,7 @@ export const SITE_ORIGIN = (
 ).replace(/\/+$/, "");
 export const DEFAULT_TITLE = "Lawplain | Singapore Legal Research";
 export const DEFAULT_DESCRIPTION =
-  "Search Singapore judgments, statutes, subsidiary legislation, Hansard, bills and practice directions. Read-only legal information, not advice.";
+  "Search Singapore judgments, statutes, Hansard and official agency guidance. Read-only legal information, not advice.";
 export const OG_IMAGE = "/opengraph-image.png";
 
 export const SITE_KEYWORDS = [
@@ -18,6 +18,9 @@ export const SITE_KEYWORDS = [
   "Singapore Hansard",
   "Singapore bills",
   "practice directions",
+  "Singapore agency guidance",
+  "TAFEP guidelines",
+  "PDPC guidance",
   "legal information",
   "Lawplain",
 ];

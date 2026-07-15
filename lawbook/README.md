@@ -187,6 +187,22 @@ Production Ask runs also write a private, Worker-only record to the separate
 status, timing and usage; `ask_trajectory_events` stores the ordered normalized
 progress and tool events. No public route exposes this database.
 
+## Official agency guidance
+
+The **Guidance** search corpus is deliberately separate from judgments and
+legislation. It contains public compliance material from official agencies,
+initially TAFEP and PDPC, and labels every item as **official agency guidance —
+not legislation**. Search results and full-document pages preserve the official
+source URL so readers can verify the current version on the agency website.
+
+The read-only API routes are:
+
+- `GET /api/v1/agency-guidance/search?q=&agency=&document_kind=&limit=`
+- `GET /api/v1/agency-guidance/{guidance_id}?include_body=true`
+
+Supported initial document kinds are `guideline`, `advisory_guideline`,
+`framework`, and `guide`.
+
 ## Saved research and Quotes
 
 `/saved` is the canonical signed-in workspace for saved documents, search

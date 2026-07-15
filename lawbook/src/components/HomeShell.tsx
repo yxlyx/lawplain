@@ -68,7 +68,7 @@ export function HomeShell({
           Lawplain<span className="text-accent">.</span>
         </h1>
         <p className="mt-3 text-sm font-semibold tracking-tight text-muted sm:text-base">
-          Search Singapore judgments, statutes, Hansard &amp; more
+          Search Singapore law and official agency guidance
         </p>
       </div>
 

@@ -16,6 +16,7 @@ import {
 } from "@/lib/search-state";
 import {
   ApiError,
+  guidanceLegalStatusLabel,
   type SearchHit,
   type SearchResponse,
   sgjudge,
@@ -27,7 +28,8 @@ type TabId =
   | "hansard"
   | "bills"
   | "subsidiary"
-  | "practice";
+  | "practice"
+  | "guidance";
 
 const TABS: { id: TabId; label: string }[] = [
   { id: "judgments", label: "Judgments" },
@@ -36,6 +38,7 @@ const TABS: { id: TabId; label: string }[] = [
   { id: "bills", label: "Bills" },
   { id: "subsidiary", label: "Subsidiary Leg." },
   { id: "practice", label: "Practice Dir." },
+  { id: "guidance", label: "Guidance" },
 ];
 
 const PLACEHOLDERS: Record<TabId, string> = {
@@ -45,6 +48,7 @@ const PLACEHOLDERS: Record<TabId, string> = {
   bills: "e.g. data protection",
   subsidiary: "e.g. traffic regulations",
   practice: "e.g. electronic filing",
+  guidance: "e.g. workplace fairness or consent",
 };
 
 interface Filters {
@@ -54,6 +58,8 @@ interface Filters {
   kind?: string;
   speaker?: string;
   since?: string;
+  agency?: string;
+  document_kind?: string;
 }
 
 interface ResultSnapshotItem {
@@ -134,6 +140,12 @@ function runSearch(
       return sgjudge.searchPracticeDirections(
         q,
         { court: f.court, limit: 20 },
+        init,
+      );
+    case "guidance":
+      return sgjudge.searchAgencyGuidance(
+        q,
+        { agency: f.agency, document_kind: f.document_kind, limit: 20 },
         init,
       );
   }
@@ -384,7 +396,9 @@ export function SearchExplorer({
           ? ["kind"]
           : tab === "hansard"
             ? ["speaker", "since"]
-            : []
+            : tab === "guidance"
+              ? ["agency", "document_kind"]
+              : []
     : [];
   const hiddenFilterFields = canonicalFilterFields(
     filters,
@@ -596,6 +610,16 @@ export function SearchExplorer({
         />
       )}
 
+      {tab === "guidance" && (
+        <aside className="mt-4 rounded-xl border border-border bg-surface-2/50 px-4 py-3 text-xs leading-relaxed text-muted">
+          <span className="font-semibold text-foreground">
+            Official agency guidance — not legislation.
+          </span>{" "}
+          Search source material from agencies such as TAFEP and PDPC, then
+          verify the current document on the linked official website.
+        </aside>
+      )}
+
       <div className="mt-5" aria-live="polite" aria-atomic="false">
         <output className="sr-only">
           {loading
@@ -639,7 +663,10 @@ export function SearchExplorer({
                 {ranked.map(({ hit, relevance }, i) => (
                   <li
                     key={
-                      (hit.citation as string) ?? (hit.act_id as string) ?? i
+                      (hit.citation as string) ??
+                      (hit.act_id as string) ??
+                      (hit.guidance_id as string) ??
+                      i
                     }
                     className="motion-fade-up"
                     style={{ animationDelay: `${Math.min(i, 8) * 35}ms` }}
@@ -811,6 +838,38 @@ function FilterRow({
       </Field>,
     );
   }
+  if (tab === "guidance") {
+    fields.push(
+      <Field key="agency" label="Agency">
+        <select
+          name="agency"
+          value={filters.agency ?? ""}
+          onChange={(e) => onChange({ agency: e.target.value || undefined })}
+          className={inputCls}
+        >
+          <option value="">All agencies</option>
+          <option value="TAFEP">TAFEP</option>
+          <option value="PDPC">PDPC</option>
+        </select>
+      </Field>,
+      <Field key="document-kind" label="Document type">
+        <select
+          name="document_kind"
+          value={filters.document_kind ?? ""}
+          onChange={(e) =>
+            onChange({ document_kind: e.target.value || undefined })
+          }
+          className={inputCls}
+        >
+          <option value="">All types</option>
+          <option value="guideline">Guideline</option>
+          <option value="advisory_guideline">Advisory guideline</option>
+          <option value="framework">Framework</option>
+          <option value="guide">Guide</option>
+        </select>
+      </Field>,
+    );
+  }
 
   if (fields.length === 0) return null;
 
@@ -963,6 +1022,9 @@ function detailHref(
 
   qs.set("title", cardTitle(tab, hit));
   if (hit.snippet) qs.set("snippet", String(hit.snippet));
+  if (tab === "guidance" && typeof hit.source_url === "string") {
+    qs.set("source", hit.source_url);
+  }
   const meta = detailMeta(tab, hit);
   if (meta.length > 0) qs.set("meta", JSON.stringify(meta));
   return `/document/${encodeURIComponent(tab)}/${encodeURIComponent(id)}?${qs.toString()}`;
@@ -978,7 +1040,9 @@ function resultDetailId(tab: TabId, hit: SearchHit): string | null {
           ? hit.sl_id
           : tab === "practice"
             ? hit.pd_id
-            : null;
+            : tab === "guidance"
+              ? hit.guidance_id
+              : null;
   return typeof key === "string" && key ? key : null;
 }
 
@@ -1008,6 +1072,13 @@ function detailMeta(tab: TabId, hit: SearchHit): [string, string][] {
     add("Court", hit.court);
     add("Number", hit.pd_number);
     add("Effective", hit.effective_date);
+  } else if (tab === "guidance") {
+    add("Agency", hit.agency);
+    add("Document type", humanizeGuidanceKind(hit.document_kind));
+    add("Legal status", guidanceLegalStatusLabel(hit.legal_status));
+    add("Published", hit.published_date);
+    add("Updated", hit.updated_date);
+    add("Effective", hit.effective_date);
   }
 
   return out;
@@ -1031,9 +1102,12 @@ function buildSnapshot(
     const citation =
       typeof hit.citation === "string" ? hit.citation : undefined;
     const reference = typeof hit.act_id === "string" ? hit.act_id : undefined;
+    const guidanceId =
+      typeof hit.guidance_id === "string" ? hit.guidance_id : undefined;
     const id =
       citation ??
       reference ??
+      guidanceId ??
       (typeof hit.id === "string" ? hit.id : undefined) ??
       (typeof hit.url === "string" ? hit.url : undefined) ??
       `${tab}:${title}`;
@@ -1062,6 +1136,7 @@ function cardTitle(tab: TabId, hit: SearchHit): string {
     return (hit.topic as string) || (hit.speaker as string) || "Hansard record";
   if (tab === "bills")
     return (hit.title as string) || (hit.short_title as string) || "Bill";
+  if (tab === "guidance") return (hit.title as string) || "Agency guidance";
   return (
     (hit.title as string) ||
     (hit.short_title as string) ||
@@ -1107,8 +1182,25 @@ function cardMeta(tab: TabId, hit: SearchHit): MetaItem[] {
     if (hit.status && String(hit.status).toLowerCase() !== "introduced") {
       text("status", hit.status);
     }
+  } else if (tab === "guidance") {
+    if (hit.agency) tag("agency", String(hit.agency));
+    if (hit.document_kind) {
+      text("document-kind", humanizeGuidanceKind(hit.document_kind));
+    }
+    tag("legal-status", guidanceLegalStatusLabel(hit.legal_status));
+    if (hit.updated_date || hit.published_date) {
+      text("date", hit.updated_date ?? hit.published_date);
+    }
+    if (hit.effective_date)
+      text("effective", `Effective ${hit.effective_date}`);
   }
   return out;
+}
+
+function humanizeGuidanceKind(value: unknown): string {
+  if (typeof value !== "string" || !value.trim()) return "";
+  const words = value.trim().replaceAll("_", " ");
+  return words.charAt(0).toUpperCase() + words.slice(1);
 }
 
 /**

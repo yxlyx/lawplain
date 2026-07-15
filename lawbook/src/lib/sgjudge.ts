@@ -119,12 +119,33 @@ export interface BillHit extends SearchHit {
   title?: string;
 }
 
+export const AGENCY_GUIDANCE_LEGAL_STATUS =
+  "official_agency_guidance_not_legislation" as const;
+
+export interface AgencyGuidanceHit extends SearchHit {
+  guidance_id: string;
+  agency: "TAFEP" | "PDPC" | string;
+  title: string;
+  document_kind:
+    | "guideline"
+    | "advisory_guideline"
+    | "framework"
+    | "guide"
+    | string;
+  legal_status: typeof AGENCY_GUIDANCE_LEGAL_STATUS | string;
+  source_url: string;
+  published_date?: string;
+  updated_date?: string;
+  effective_date?: string;
+}
+
 export interface StatsResponse {
   counts: Record<string, number>;
   judgments_by_court: { court: string; n: number }[];
+  agency_guidance_by_agency?: { agency: string; n: number }[];
 }
 
-/** Generic full-detail document (hansard / bills / subsidiary / practice). */
+/** Generic full-detail document (hansard / bills / subsidiary / practice / guidance). */
 export interface DocumentDetail {
   body_text?: string;
   body_offset?: number;
@@ -133,13 +154,30 @@ export interface DocumentDetail {
   [k: string]: unknown;
 }
 
+export interface AgencyGuidanceDetail extends DocumentDetail {
+  guidance_id: string;
+  agency: string;
+  title: string;
+  document_kind: string;
+  legal_status: typeof AGENCY_GUIDANCE_LEGAL_STATUS | string;
+  source_url: string;
+  content_url?: string;
+  source_domain?: string;
+  published_date?: string;
+  updated_date?: string;
+  effective_date?: string;
+  content_sha256?: string;
+  fetched_at?: string;
+}
+
 /** UI document kind -> backend resource path segment. */
-export const DOCUMENT_KIND_PATHS: Record<string, string> = {
+export const DOCUMENT_KIND_PATHS = {
   hansard: "hansard",
   bills: "bills",
   subsidiary: "subsidiary-legislation",
   practice: "practice-directions",
-};
+  guidance: "agency-guidance",
+} as const satisfies Record<string, string>;
 
 export type DocumentKind = keyof typeof DOCUMENT_KIND_PATHS;
 
@@ -300,6 +338,17 @@ export const sgjudge = {
   ) =>
     get<SearchResponse>("/v1/practice-directions/search", { q, ...opts }, init),
 
+  searchAgencyGuidance: (
+    q: string,
+    opts: { agency?: string; document_kind?: string; limit?: number } = {},
+    init?: RequestInit,
+  ) =>
+    get<SearchResponse<AgencyGuidanceHit>>(
+      "/v1/agency-guidance/search",
+      { q, ...opts },
+      init,
+    ),
+
   getDocument: (
     kind: DocumentKind,
     id: string,
@@ -325,6 +374,12 @@ export const sgjudge = {
 
   stats: (init?: RequestInit) => get<StatsResponse>("/v1/stats", {}, init),
 };
+
+export function guidanceLegalStatusLabel(value: unknown): string {
+  return value === AGENCY_GUIDANCE_LEGAL_STATUS
+    ? "Official agency guidance — not legislation"
+    : "Agency guidance — not legislation";
+}
 
 /* ------------------------------------------------------------------ */
 /* Helpers                                                             */

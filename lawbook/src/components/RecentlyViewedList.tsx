@@ -39,6 +39,7 @@ function docLabel(docType: string): string {
     bills: "Bill",
     subsidiary: "Subsidiary Leg.",
     practice: "Practice Dir.",
+    guidance: "Guidance",
   };
   return map[docType] ?? docType;
 }

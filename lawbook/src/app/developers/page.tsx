@@ -53,7 +53,7 @@ export default function DevelopersPage() {
         <p className="mt-3 text-sm leading-relaxed text-muted">
           Pass your key as a Bearer token. The API mirrors the corpus endpoints
           (judgments, statutes, Hansard, bills, subsidiary legislation, practice
-          directions).
+          directions, agency guidance).
         </p>
         <pre className="mt-3 overflow-x-auto rounded-xl border border-border bg-surface-2/50 p-4 font-mono text-[13px] leading-relaxed text-foreground">
           {`curl -H "Authorization: Bearer lp_live_…" \\
@@ -63,6 +63,10 @@ export default function DevelopersPage() {
           Read-only (GET). Endpoints and parameters match{" "}
           <span className="font-mono">/v1/*</span> on the corpus API — e.g.{" "}
           <span className="font-mono">/api/v1/statutes/search?q=</span>,{" "}
+          <span className="font-mono">
+            /api/v1/agency-guidance/search?q=&amp;agency=PDPC
+          </span>
+          ,{" "}
           <span className="font-mono">
             /api/v1/judgments/&#123;citation&#125;
           </span>

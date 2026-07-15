@@ -7,6 +7,7 @@ export const SEARCH_TABS = [
   "bills",
   "subsidiary",
   "practice",
+  "guidance",
 ] as const;
 
 export type SearchTab = (typeof SEARCH_TABS)[number];

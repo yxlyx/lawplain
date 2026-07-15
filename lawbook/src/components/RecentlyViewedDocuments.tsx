@@ -37,6 +37,8 @@ function docLabel(docType: RecentDocumentType): string {
       return "Subsidiary Leg.";
     case "practice":
       return "Practice Direction";
+    case "guidance":
+      return "Guidance";
   }
 }
 

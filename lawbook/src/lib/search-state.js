@@ -5,6 +5,8 @@ export const SEARCH_FILTER_KEYS = [
   "kind",
   "speaker",
   "since",
+  "agency",
+  "document_kind",
 ];
 
 export const SEARCH_TABS = [
@@ -14,6 +16,7 @@ export const SEARCH_TABS = [
   "bills",
   "subsidiary",
   "practice",
+  "guidance",
 ];
 
 export function canonicalSearchState(params) {
