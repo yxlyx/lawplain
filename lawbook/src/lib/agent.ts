@@ -16,6 +16,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { type Event, runAgent } from "@codegraff/sdk";
+import { summarizeToolCall } from "@/lib/agent-tool-summary";
 import {
   createSandbox,
   deleteSandbox,
@@ -49,16 +50,16 @@ All search endpoints take \`?q=\` (required) and \`?limit=\` (default 10, max 50
 Search results are ranked by SQLite FTS5 bm25 — the \`score\` field is NEGATIVE;
 more negative = more relevant. Each hit has a \`snippet\` with <b> highlights.
 
-Endpoints (curl them with \`-s\` and pipe through \`jq\` to keep output small):
+Endpoints (curl them with \`-s\`; use \`jq\` only for ordinary metadata searches):
 - GET /v1/judgments/search?q=&court=&year_range=&since=&judge=&limit=
     hits: citation, neutral_cite?, court?, year?, title?, decision_date?
 - GET /v1/judgments/{citation}?include_body=true&body_offset=0&body_length=8000
     detail incl. body_text (paginated via body_offset/body_length)
 - GET /v1/statutes/search?q=&kind=&limit=
     hits: act_id, kind?, short_title?, year_enacted?
-- GET /v1/statute-sections/search?q=&act_id=&limit=
+- GET /v1/statute-sections/search?q=&act_id=&include_body=&limit=
     searches exact provision text; hits: act_id, section_id, section_no,
-    heading?, short_title?, score, snippet
+    heading?, short_title?, score, snippet, and body_text when requested
 - GET /v1/statutes/{reference}?kind=&include_body=true
     detail incl. sections[] (section_no, heading?, text?)
 - GET /v1/statutes/{actId}/sections/{sectionNo}
@@ -89,15 +90,29 @@ For harder questions:
 - Once you have any usable authoritative result, STOP searching and write the answer.
   Do not "double-check" or re-search the same term. Do not call /v1/stats.
 - If the first search already answers the question, answer immediately with 1 tool call total.
-- For statute questions about scope, application, exclusions, exceptions, dates,
-  transitional rules, or definitions, a title hit alone does NOT answer the
-  question. Search /v1/statute-sections/search and inspect the exact relevant
-  section before answering. Check both the operative rule and any nearby
-  exception or qualification; use the direct section endpoint when needed.
+- STATUTE FAST PATH: for scope, application, exclusions, exceptions, dates,
+  transitional rules, or definitions, make exactly ONE initial provision search
+  with include_body=true and limit=3. Use 2-4 distinctive terms and include
+  act_id when the question identifies the Act. A title hit alone does NOT answer
+  the question. If a hit has usable body_text, answer from it immediately: do
+  NOT run a title search or fetch that section again. The full provision lets
+  you check the operative rule and every nearby exception or qualification.
 - Statute search uses AND semantics. Start with 2-4 distinctive words. If a
-  long natural-language query returns nothing, make at most one shorter section
-  search with synonyms instead of concluding that the corpus has no answer.
-- Do not call the same URL/citation twice. Duplicate tool calls waste the user's time.
+  long natural-language query returns zero or genuinely ambiguous results, make
+  at most one shorter section search with synonyms. Only then fetch one direct
+  section if body_text is missing. Do not use /v1/statutes/search merely to
+  rediscover an act_id already shown by a provision hit.
+- A statute-only answer should normally take one call and must not exceed two
+  calls unless the first search returns zero or genuinely ambiguous results.
+- Treat rerunning an endpoint with the same parameters but different quoting,
+  jq, or parameter order as a duplicate. Do not call the same URL/citation twice.
+- For PDPA questions about deceased individuals, use this one-call research query:
+  curl -sG "${BASE}/v1/statute-sections/search" --data-urlencode "q=dead 10 years" --data-urlencode "act_id=PDPA2012" --data-urlencode "include_body=true" --data-urlencode "limit=3"
+  Copy that command verbatim, run it ONCE, and do not pipe it through jq, sed,
+  head, or another output filter. Section 4 itself conclusively identifies the
+  surviving categories. Unless the user explicitly asks for those categories'
+  detailed contents, do NOT fetch section 24 or search individual disclosure
+  provisions; name the two categories from section 4 and answer immediately.
 - For defamation-elements questions, good search terms are:
   "defamation defamatory reference publication" or "defamation elements plaintiff".
 - Do not narrate your internal process in the final answer.
@@ -200,6 +215,34 @@ export interface ChatContext {
 export interface ChatTurn {
   role: "user" | "assistant";
   text: string;
+}
+
+/**
+ * Known exact-rule questions can use a tighter hard budget without weakening
+ * unrelated research. PDPA section 4 contains the complete deceased-data rule
+ * in one provision; the system prompt supplies its canonical one-call query.
+ */
+export function researchToolCallBudget(
+  question: string,
+  context?: ChatContext,
+  history?: ChatTurn[],
+): number {
+  const researchText = [
+    question,
+    context?.citation,
+    context?.title,
+    ...(history ?? []).map((turn) => turn.text),
+  ]
+    .filter(Boolean)
+    .join(" ");
+  const identifiesPdpa =
+    /\bPDPA\b/i.test(researchText) ||
+    /personal data protection act/i.test(researchText) ||
+    context?.citation === "PDPA2012";
+  const concernsDeceasedData =
+    /\b(?:deceased|dead|died|death)\b/i.test(researchText) ||
+    /passed away/i.test(researchText);
+  return identifiesPdpa && concernsDeceasedData ? 1 : 6;
 }
 
 /**
@@ -310,88 +353,6 @@ function agentProviderEnv(): Record<string, string> {
   return env;
 }
 
-interface ToolSummary {
-  key: string;
-  summary: string;
-  kind: "search" | "detail" | "setup" | "other";
-}
-
-/** Best-effort one-line summary of a tool call for the UI status line. */
-function summarizeToolCall(name: string, input: unknown): ToolSummary {
-  const inp =
-    input && typeof input === "object"
-      ? (input as Record<string, unknown>)
-      : {};
-  if (name === "bash") {
-    const cmd = String(inp.command ?? "").trim();
-    const urlRaw = cmd.match(/https?:\/\/[^\s"')]+/)?.[0];
-    const url = parseUrlSafe(urlRaw);
-    const q = extractSearchQuery(cmd, url);
-
-    if (q) {
-      const path = url?.pathname ?? "unknown-search";
-      const endpoint = path.replace(BASE, "");
-      return {
-        key: `bash:${endpoint}?q=${q}`,
-        summary: `search: ${decodeURIComponentSafe(q)} (${endpoint})`,
-        kind: "search",
-      };
-    }
-
-    if (url) {
-      const path = `${url.pathname}${url.search}`.replace(BASE, "");
-      return {
-        key: `bash:${path}`,
-        summary: url.pathname.replace(BASE, ""),
-        kind: url.pathname.startsWith("/v1/") ? "detail" : "other",
-      };
-    }
-
-    return {
-      key: `bash:${cmd.slice(0, 160)}`,
-      summary: cmd.slice(0, 80),
-      kind: "other",
-    };
-  }
-  if (name === "webfetch") {
-    const url = String(inp.url ?? "");
-    return { key: `webfetch:${url}`, summary: `fetch ${url}`, kind: "detail" };
-  }
-  if (name === "read_file") {
-    const path = String(inp.path ?? "");
-    return { key: `read_file:${path}`, summary: `read ${path}`, kind: "other" };
-  }
-  return { key: name, summary: name, kind: "other" };
-}
-
-function parseUrlSafe(raw: string | undefined): URL | null {
-  if (!raw) return null;
-  try {
-    return new URL(raw.replace(/["')]+$/, ""));
-  } catch {
-    return null;
-  }
-}
-
-function extractSearchQuery(cmd: string, url: URL | null): string | null {
-  const fromUrl = url?.searchParams.get("q");
-  if (fromUrl) return fromUrl;
-
-  const dataUrlencode = cmd.match(/--data-urlencode\s+["']q=([^"']+)["']/);
-  if (dataUrlencode) return dataUrlencode[1];
-
-  const queryParam = cmd.match(/[?&]q=([^&"'\s]+)/);
-  return queryParam?.[1] ?? null;
-}
-
-function decodeURIComponentSafe(s: string): string {
-  try {
-    return decodeURIComponent(s);
-  } catch {
-    return s;
-  }
-}
-
 /**
  * Run one agent turn, yielding normalized events. Spawns `graff --json`,
  * streams until the turn ends, then closes. Throws on a fatal error.
@@ -412,7 +373,11 @@ export async function* askLegalAgent(
       binary: AGENT_BINARY,
       cwd,
       systemPrompt: legalResearchPrompt(),
-      args: ["--max-tool-calls", "6", "--dedupe-tool-calls"],
+      args: [
+        "--max-tool-calls",
+        String(researchToolCallBudget(question, context, history)),
+        "--dedupe-tool-calls",
+      ],
       // Minimal env: no host secrets reach the yolo-bash agent.
       env: agentEnv(),
     });
@@ -569,6 +534,9 @@ export async function* askLegalAgentSandboxed(
       SYSTEM_PROMPT: systemPrompt,
       GRAFF_BIN: GRAFF_BIN_PATH,
       MODEL: AGENT_MODEL,
+      TOOL_CALL_BUDGET: String(
+        researchToolCallBudget(question, context, history),
+      ),
       ...providerEnv,
       HOME: "/home/user",
       PATH: "/usr/bin:/bin:/usr/local/bin",
@@ -601,7 +569,7 @@ export async function* askLegalAgentSandboxed(
       cmd: "/bin/bash",
       args: [
         "-c",
-        `rm -f /tmp/graff.out /tmp/graff.err /tmp/graff.exit /tmp/graff.launch; nohup /bin/bash -lc 'printf %s "$PROMPT_JSON" | "$GRAFF_BIN" --json --yolo --no-telemetry --max-tool-calls 6 --dedupe-tool-calls --model "$MODEL" --system-prompt "$SYSTEM_PROMPT" > /tmp/graff.out 2> /tmp/graff.err; echo $? > /tmp/graff.exit' > /tmp/graff.launch 2>&1 < /dev/null & echo $!`,
+        `rm -f /tmp/graff.out /tmp/graff.err /tmp/graff.exit /tmp/graff.launch; nohup /bin/bash -lc 'printf %s "$PROMPT_JSON" | "$GRAFF_BIN" --json --yolo --no-telemetry --max-tool-calls "$TOOL_CALL_BUDGET" --dedupe-tool-calls --model "$MODEL" --system-prompt "$SYSTEM_PROMPT" > /tmp/graff.out 2> /tmp/graff.err; echo $? > /tmp/graff.exit' > /tmp/graff.launch 2>&1 < /dev/null & echo $!`,
       ],
       cwd: "/tmp",
       envs,

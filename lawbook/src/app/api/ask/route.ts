@@ -24,6 +24,7 @@ import {
   type ChatTurn,
   composePrompt,
   legalResearchPrompt,
+  researchToolCallBudget,
 } from "@/lib/agent";
 import { loadChatContext } from "@/lib/ask-context";
 import { recordAskQuestion } from "@/lib/ask-history";
@@ -224,6 +225,7 @@ export async function POST(req: Request): Promise<Response> {
         askRuns.idFromName(userRunName(session.user.id, runId)),
       );
       const prompt = composePrompt(question, context, history);
+      const toolCallBudget = researchToolCallBudget(question, context, history);
       const ownerHeaders = {
         "content-type": "application/json",
         "x-lawplain-user-id": session.user.id,
@@ -235,6 +237,7 @@ export async function POST(req: Request): Promise<Response> {
           runId,
           prompt,
           systemPrompt: legalResearchPrompt(),
+          toolCallBudget,
           model: AGENT_MODEL,
           userId: session.user.id,
           threadId,

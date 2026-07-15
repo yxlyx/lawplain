@@ -13,6 +13,7 @@
  */
 import type { AgentEvent } from "../lib/agent";
 import { normalizeToolRejected } from "../lib/agent-event-normalizer";
+import { summarizeToolCall } from "../lib/agent-tool-summary";
 import { type CubeSandbox, GRAFF_BIN_PATH } from "../lib/cubesandbox";
 import { ReasoningSanitizer, sanitizeAnswer } from "../lib/reasoning-sanitizer";
 import {
@@ -20,8 +21,6 @@ import {
   MAX_ASK_TEXT_BYTES,
   safeAgentError,
 } from "./ask-security";
-
-const BASE = "https://backend.lawplain.com";
 
 /** graff `--json` stdout events. */
 type GraffEvent =
@@ -41,82 +40,7 @@ export interface GraffRunParams {
   providerEnv: Record<string, string>;
   prompt: string;
   systemPrompt: string;
-}
-
-interface ToolSummary {
-  key: string;
-  summary: string;
-  kind: "search" | "detail" | "setup" | "other";
-}
-
-function decodeURIComponentSafe(s: string): string {
-  try {
-    return decodeURIComponent(s);
-  } catch {
-    return s;
-  }
-}
-
-function parseUrlSafe(raw: string | undefined): URL | null {
-  if (!raw) return null;
-  try {
-    return new URL(raw.replace(/["')]+$/, ""));
-  } catch {
-    return null;
-  }
-}
-
-function extractSearchQuery(cmd: string, url: URL | null): string | null {
-  const fromUrl = url?.searchParams.get("q");
-  if (fromUrl) return fromUrl;
-  const dataUrlencode = cmd.match(/--data-urlencode\s+["']q=([^"']+)["']/);
-  if (dataUrlencode) return dataUrlencode[1];
-  const queryParam = cmd.match(/[?&]q=([^&"'\s]+)/);
-  return queryParam?.[1] ?? null;
-}
-
-function summarizeToolCall(name: string, input: unknown): ToolSummary {
-  const inp =
-    input && typeof input === "object"
-      ? (input as Record<string, unknown>)
-      : {};
-  if (name === "bash") {
-    const cmd = String(inp.command ?? "").trim();
-    const urlRaw = cmd.match(/https?:\/\/[^\s"')]+/)?.[0];
-    const url = parseUrlSafe(urlRaw);
-    const q = extractSearchQuery(cmd, url);
-    if (q) {
-      const path = url?.pathname ?? "unknown-search";
-      const endpoint = path.replace(BASE, "");
-      return {
-        key: `bash:${endpoint}?q=${q}`,
-        summary: `search: ${decodeURIComponentSafe(q)} (${endpoint})`,
-        kind: "search",
-      };
-    }
-    if (url) {
-      const path = `${url.pathname}${url.search}`.replace(BASE, "");
-      return {
-        key: `bash:${path}`,
-        summary: url.pathname.replace(BASE, ""),
-        kind: url.pathname.startsWith("/v1/") ? "detail" : "other",
-      };
-    }
-    return {
-      key: `bash:${cmd.slice(0, 160)}`,
-      summary: cmd.slice(0, 80),
-      kind: "other",
-    };
-  }
-  if (name === "webfetch") {
-    const url = String(inp.url ?? "");
-    return { key: `webfetch:${url}`, summary: `fetch ${url}`, kind: "detail" };
-  }
-  if (name === "read_file") {
-    const path = String(inp.path ?? "");
-    return { key: `read_file:${path}`, summary: `read ${path}`, kind: "other" };
-  }
-  return { key: name, summary: name, kind: "other" };
+  toolCallBudget: number;
 }
 
 const RUN_DEADLINE_MS = 300_000;
@@ -182,6 +106,9 @@ export class GraffRun {
       SYSTEM_PROMPT: params.systemPrompt,
       GRAFF_BIN: GRAFF_BIN_PATH,
       MODEL: params.model,
+      TOOL_CALL_BUDGET: String(
+        Math.min(6, Math.max(1, Math.trunc(params.toolCallBudget))),
+      ),
       ...params.providerEnv,
       HOME: "/home/user",
       PATH: "/usr/bin:/bin:/usr/local/bin",
@@ -199,7 +126,7 @@ export class GraffRun {
       cmd: "/bin/bash",
       args: [
         "-c",
-        `rm -f /tmp/graff.out /tmp/graff.err /tmp/graff.exit /tmp/graff.launch; nohup /bin/bash -lc 'printf %s "$PROMPT_JSON" | "$GRAFF_BIN" --json --yolo --no-telemetry --max-tool-calls 6 --dedupe-tool-calls --model "$MODEL" --system-prompt "$SYSTEM_PROMPT" > /tmp/graff.out 2> /tmp/graff.err; echo $? > /tmp/graff.exit' > /tmp/graff.launch 2>&1 < /dev/null & echo $!`,
+        `rm -f /tmp/graff.out /tmp/graff.err /tmp/graff.exit /tmp/graff.launch; nohup /bin/bash -lc 'printf %s "$PROMPT_JSON" | "$GRAFF_BIN" --json --yolo --no-telemetry --max-tool-calls "$TOOL_CALL_BUDGET" --dedupe-tool-calls --model "$MODEL" --system-prompt "$SYSTEM_PROMPT" > /tmp/graff.out 2> /tmp/graff.err; echo $? > /tmp/graff.exit' > /tmp/graff.launch 2>&1 < /dev/null & echo $!`,
       ],
       cwd: "/tmp",
       envs,

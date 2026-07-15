@@ -44,6 +44,9 @@ test("sandbox and local SDK execution enforce the same tool controls", () => {
     assert.match(source, /--max-tool-calls/);
     assert.match(source, /--dedupe-tool-calls/);
   }
+  assert.match(agent, /TOOL_CALL_BUDGET/);
+  assert.match(durable, /TOOL_CALL_BUDGET/);
+  assert.match(durable, /Math\.min\(6, Math\.max\(1/);
 });
 
 test("sandbox runtime is pinned and verifies the published release checksum", () => {

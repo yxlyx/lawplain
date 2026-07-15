@@ -147,6 +147,7 @@ export class AskRunDO extends DurableObject<AskRunEnv> {
     const body = (await req.json().catch(() => null)) as {
       prompt?: string;
       systemPrompt?: string;
+      toolCallBudget?: number;
       model?: string;
       runId?: string;
       userId?: string;
@@ -174,6 +175,10 @@ export class AskRunDO extends DurableObject<AskRunEnv> {
         status: "running" satisfies RunStatus,
         prompt: body.prompt,
         systemPrompt: body.systemPrompt,
+        toolCallBudget:
+          typeof body.toolCallBudget === "number"
+            ? Math.min(6, Math.max(1, Math.trunc(body.toolCallBudget)))
+            : 6,
         model: body.model,
         runId: body.runId,
         userId: body.userId,
@@ -248,6 +253,8 @@ export class AskRunDO extends DurableObject<AskRunEnv> {
 
     const prompt = await this.ctx.storage.get<string>("prompt");
     const systemPrompt = await this.ctx.storage.get<string>("systemPrompt");
+    const toolCallBudget =
+      (await this.ctx.storage.get<number>("toolCallBudget")) ?? 6;
     const model = await this.ctx.storage.get<string>("model");
     const startedAt =
       (await this.ctx.storage.get<number>("startedAt")) ?? Date.now();
@@ -270,7 +277,7 @@ export class AskRunDO extends DurableObject<AskRunEnv> {
       if (await this.isStopped()) return;
       const launchEvents = await run.launch(
         sandbox,
-        { model, providerEnv, prompt, systemPrompt },
+        { model, providerEnv, prompt, systemPrompt, toolCallBudget },
         async (sid) => {
           await this.ctx.storage.put("sandboxId", sid);
           if (await this.isStopped()) {

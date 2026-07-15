@@ -84,6 +84,7 @@ export interface StatuteSectionHit extends SearchHit {
   section_no: string;
   heading?: string;
   short_title?: string;
+  body_text?: string;
 }
 
 export interface StatuteSection {
@@ -241,7 +242,7 @@ export const sgjudge = {
 
   searchStatuteSections: (
     q: string,
-    opts: { act_id?: string; limit?: number } = {},
+    opts: { act_id?: string; include_body?: boolean; limit?: number } = {},
     init?: RequestInit,
   ) =>
     get<SearchResponse<StatuteSectionHit>>(
