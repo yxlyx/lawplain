@@ -2247,9 +2247,7 @@ export function AskAgent({
       } catch {
         /* ignore */
       }
-      if (pathname !== "/ask") {
-        router.replace("/ask", { scroll: false });
-      }
+      router.replace("/ask", { scroll: false });
     },
     [
       clearDraft,
@@ -2257,7 +2255,6 @@ export function AskAgent({
       activeRunKey,
       sessionUserId,
       upsertOptimisticThread,
-      pathname,
       router,
     ],
   );

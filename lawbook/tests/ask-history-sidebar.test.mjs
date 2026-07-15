@@ -525,6 +525,10 @@ test("new chat preserves the previous thread while creating the blank placeholde
   assert.match(source, /router\.replace\("\/ask", \{ scroll: false \}\)/);
   assert.doesNotMatch(
     source,
+    /if \(pathname !== "\/ask"\) \{\s*router\.replace\("\/ask"/,
+  );
+  assert.doesNotMatch(
+    source,
     /window\.history\.replaceState\(null, "", "\/ask"\)/,
   );
   assert.match(
