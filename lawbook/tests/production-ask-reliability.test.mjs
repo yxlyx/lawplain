@@ -40,6 +40,12 @@ test("research budgets match the smallest sufficient evidence plan", () => {
     researchToolCallBudget("Compare several authorities on frustration."),
     6,
   );
+  assert.equal(
+    researchToolCallBudget(
+      "Compare [2020] SGCA 119 with [2020] SGCA 4 on penalty clauses.",
+    ),
+    1,
+  );
 });
 
 test("pinned sources use one call unless the user requests a comparison", () => {
@@ -72,6 +78,17 @@ test("the agent stops after a rejected call and avoids known-Act title search", 
   assert.match(
     agent,
     /Never call\s+\/v1\/statutes\/search to rediscover the Act/,
+  );
+});
+
+test("two exact judgments use one focused evidence batch without narration", () => {
+  const agent = read("src/lib/agent.ts");
+  assert.match(agent, /\/v1\/judgments\/\{citation\}\/extract\?q=&tokens=350/);
+  assert.match(agent, /exactly ONE tool call/);
+  assert.match(agent, /do not fetch either full judgment/i);
+  assert.match(
+    agent,
+    /Emit no assistant prose before all permitted tool calls finish/,
   );
 });
 

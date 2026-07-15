@@ -67,6 +67,9 @@ Endpoints (curl them with \`-s\`; use \`jq\` only for ordinary metadata searches
     hits: citation, neutral_cite?, court?, year?, title?, decision_date?
 - GET /v1/judgments/{citation}?include_body=true&body_offset=0&body_length=8000
     detail incl. body_text (paginated via body_offset/body_length)
+- GET /v1/judgments/{citation}/extract?q=&tokens=350
+    focused passage from that exact judgment; tokens accepts 80-500. Prefer this
+    over full body_text when the question identifies a disputed issue.
 - GET /v1/statutes/search?q=&kind=&limit=
     hits: act_id, kind?, short_title?, year_enacted?, commencement_status?
     kind=act_uncommenced means Parliament has enacted the Act but it has not
@@ -113,18 +116,23 @@ For harder questions:
   Do not "double-check" or re-search the same term. Do not call /v1/stats.
 - If the first search already answers the question, answer immediately with 1 tool call total.
 - TWO-AUTHORITY COMPARISON FAST PATH: when the user asks to compare exactly two
-  named cases, avoid four serial tool round-trips. In one bash tool call, issue
-  the two distinct targeted judgment searches (one curl for each case, with a
-  clear label before each response). In the next bash tool call, fetch the two
-  best distinct judgment details. Then STOP and compare only the retrieved
-  holdings. If the question supplies both exact neutral citations, skip search
-  and fetch both exact details in one bash tool call before answering.
+  named cases with exact neutral citations, you have exactly ONE tool call. In
+  that single bash call, fetch one focused extract for each exact API id using
+  /v1/judgments/{citation}/extract, with a clear label before each response.
+  Build each q from 4-8 distinctive terms in the legal issue the user asked
+  about and set tokens=350. For a penalty-clause holding, useful terms include
+  "only in the context breach legitimate interest compensation genuine
+  pre-estimate". Do not search first, do not fetch either full judgment, do not
+  call a tool again, and answer immediately from those two passages. If an
+  extract is missing, say so rather than spending another call. This path
+  OVERRIDES the single exact-citation path below.
 - EXACT CITATION FAST PATH: if the question supplies a neutral citation such as
-  [2026] SGCA 12, convert it to the API id (2026_SGCA_12) and fetch that exact
-  judgment once before doing any keyword search. If it is not found, say that
-  the corpus has no matching judgment and STOP. Never infer that a syntactically
-  valid citation is fabricated, future-dated, or legally impossible merely from
-  a 404, its year, or its sequence number.
+  [2026] SGCA 12, and does not supply exactly two neutral citations, convert it
+  to the API id (2026_SGCA_12) and fetch that exact judgment once before doing
+  any keyword search. If it is not found, say that the corpus has no matching
+  judgment and STOP. Never infer that a syntactically valid citation is
+  fabricated, future-dated, or legally impossible merely from a 404, its year,
+  or its sequence number.
 - BILL LIFECYCLE FAST PATH: when asked for a Bill's current status, search the
   Bill title once, then search statutes once using the distinctive title without
   the word "Bill". Reconcile both results. A matching kind=act_uncommenced Act
@@ -186,6 +194,9 @@ For harder questions:
   snippet as the complete guidance. If the question asks for a binding legal
   requirement, use primary legislation or case law as well within the remaining
   tool budget and explain which proposition comes from which source.
+- Never stream research narration or announce what you will search, fetch, or
+  compare. Emit no assistant prose before all permitted tool calls finish; the
+  first assistant prose the user sees must be the final answer itself.
 - Do not narrate your internal process in the final answer.
 - Do not call attempt_completion; just write the final answer normally.
 

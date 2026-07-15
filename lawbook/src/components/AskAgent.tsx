@@ -1635,6 +1635,7 @@ export function AskAgent({
       let runSnapshot = reuseRunningAssistant
         ? [...existing]
         : [...messagesRef.current, userMsg, assistantMsg];
+      let requestStage = "preparing";
 
       const patch = (fn: (m: Message) => Message) => {
         runSnapshot = runSnapshot.map((m) => (m.id === aId ? fn(m) : m));
@@ -1719,6 +1720,7 @@ export function AskAgent({
               .catch(() => {});
           }
         }
+        requestStage = "requesting research";
         const res = await fetch("/api/ask", {
           method: "POST",
           headers: { "content-type": "application/json" },
@@ -1736,6 +1738,7 @@ export function AskAgent({
           }),
           signal: ac.signal,
         });
+        requestStage = "opening response";
         if (res.status === 401) {
           throw new Error("Please sign in to use Ask Lawplain.");
         }
@@ -1745,6 +1748,7 @@ export function AskAgent({
         }
 
         const reader = res.body.getReader();
+        requestStage = "reading response";
         const decoder = new TextDecoder();
         let buf = "";
         let acc = reuseRunningAssistant ? assistantMsg.text : "";
@@ -1927,6 +1931,12 @@ export function AskAgent({
       } catch (err) {
         queueingOpenRef.current = false;
         if ((err as Error).name !== "AbortError") {
+          const name = err instanceof Error ? err.name : "UnknownError";
+          const message =
+            err instanceof Error ? err.message.slice(0, 300) : String(err);
+          console.error(
+            `Ask client failed while ${requestStage}: ${name}: ${message}`,
+          );
           patch((m) => ({
             ...m,
             phase: "error",
@@ -2225,12 +2235,6 @@ export function AskAgent({
           status: null,
         });
       }
-      if (
-        typeof window !== "undefined" &&
-        window.location.pathname !== "/ask"
-      ) {
-        window.history.replaceState(null, "", "/ask");
-      }
       runIdRef.current = null;
       try {
         const lastThreadKey = askCacheKey(sessionUserId, LAST_THREAD_ID_KEY);
@@ -2243,6 +2247,9 @@ export function AskAgent({
       } catch {
         /* ignore */
       }
+      if (pathname !== "/ask") {
+        router.replace("/ask", { scroll: false });
+      }
     },
     [
       clearDraft,
@@ -2250,6 +2257,8 @@ export function AskAgent({
       activeRunKey,
       sessionUserId,
       upsertOptimisticThread,
+      pathname,
+      router,
     ],
   );
 

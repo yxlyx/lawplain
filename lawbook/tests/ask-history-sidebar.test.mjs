@@ -522,6 +522,11 @@ test("new chat preserves the previous thread while creating the blank placeholde
   assert.match(source, /const finalThreadId = runThreadId/);
   assert.match(source, /sendGenerationRef\.current \+= 1/);
   assert.match(source, /abortCurrent = true/);
+  assert.match(source, /router\.replace\("\/ask", \{ scroll: false \}\)/);
+  assert.doesNotMatch(
+    source,
+    /window\.history\.replaceState\(null, "", "\/ask"\)/,
+  );
   assert.match(
     source,
     /resetChatState\(\{\s*createPlaceholder: true,\s*abortCurrent: false,?\s*\}\)/,

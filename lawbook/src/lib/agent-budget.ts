@@ -49,6 +49,9 @@ export function researchToolCallBudget(
       question,
     ) ||
     /\b(?:line|list) of cases\b/i.test(question);
+  const exactNeutralCitations = new Set(
+    question.match(/\[\d{4}\]\s+SG[A-Z]+(?:\([A-Z]\))?\s+\d+/gi) ?? [],
+  );
   const asksForCaseLaw =
     /\b(?:case law|cases|judgments?|court decisions?|authorities)\b/i.test(
       question,
@@ -68,6 +71,7 @@ export function researchToolCallBudget(
 
   if (identifiesPdpa && concernsHistoricalRecords) return 2;
   if (identifiesPdpa && concernsDeceasedData) return 1;
+  if (exactNeutralCitations.size === 2) return 1;
   if (asksForComparison) return 6;
   if (context) return 1;
   if (concernsAgencyGuidance) return asksForBindingLaw ? 4 : 3;

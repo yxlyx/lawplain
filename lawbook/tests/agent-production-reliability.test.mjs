@@ -34,9 +34,9 @@ test("Ask preserves a legally accurate source hierarchy", () => {
 test("two-case comparisons batch independent source retrieval", () => {
   const agent = read("src/lib/agent.ts");
   assert.match(agent, /TWO-AUTHORITY COMPARISON FAST PATH/);
-  assert.match(agent, /avoid four serial tool round-trips/);
-  assert.match(agent, /In one bash tool call/);
-  assert.match(agent, /fetch both exact details in one bash tool call/);
+  assert.match(agent, /exactly ONE tool call/);
+  assert.match(agent, /focused extract for each exact API id/);
+  assert.match(agent, /do not fetch either full judgment/i);
 });
 
 test("graff output cannot report success when it visibly cuts off", () => {
@@ -45,4 +45,12 @@ test("graff output cannot report success when it visibly cuts off", () => {
   assert.match(run, /unclosed Markdown fence|match\(\/```/);
   assert.match(run, /The research output ended before the answer was complete/);
   assert.match(run, /if \(!isLikelyCompleteAnswer\(this\.finalText\)\)/);
+});
+
+test("client-side Ask startup failures retain a safe diagnostic stage", () => {
+  const ask = read("src/components/AskAgent.tsx");
+  assert.match(ask, /let requestStage = "preparing"/);
+  assert.match(ask, /requestStage = "requesting research"/);
+  assert.match(ask, /Ask client failed while \$\{requestStage\}/);
+  assert.match(ask, /err\.message\.slice\(0, 300\)/);
 });
