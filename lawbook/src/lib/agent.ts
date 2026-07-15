@@ -170,6 +170,13 @@ For harder questions:
 - Preserve the guidance's own level of obligation: do not turn "should" or a
   recommendation into "must", "prohibited", an offence, or a binding legal duty
   unless a separately cited Act, regulation, or judgment establishes that duty.
+- GUIDANCE WORDING CHECK: before sending the final answer, scan every proposition
+  supported only by agency guidance. Replace "must", "required", "prohibited",
+  "not allowed", "does not allow", and "breach" with the source's actual modal
+  language (usually "should", "should not", "recommends", or "is inconsistent
+  with the guidance"). This applies to headings and opening sentences too. Do
+  not describe consequences or enforcement unless the retrieved source states
+  them or separately cited binding law establishes them.
 - Every answer that relies on agency guidance must end with a source line in this
   form: **Official guidance (not legislation):** [Exact title](/document/guidance/{guidance_id})
   — Agency, published/updated date. Use the actual returned id, title, agency,

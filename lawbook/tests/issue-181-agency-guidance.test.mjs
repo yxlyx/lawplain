@@ -101,6 +101,9 @@ test("Ask retrieves complete guidance and distinguishes it from binding law", ()
   assert.match(agent, /Never call agency guidance legislation/);
   assert.match(agent, /primary law controls/);
   assert.match(agent, /do not turn "should" or a/);
+  assert.match(agent, /GUIDANCE WORDING CHECK/);
+  assert.match(agent, /Replace "must", "required", "prohibited"/);
+  assert.match(agent, /This applies to headings and opening sentences too/);
   assert.match(agent, /Every answer that relies on agency guidance must end/);
   assert.match(agent, /Official guidance \(not legislation\)/);
   assert.match(agent, /\/document\/guidance\/\{guidance_id\}/);
