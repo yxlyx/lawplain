@@ -21,6 +21,13 @@
       "service": "lawbook"
     }
   ],
+  "ratelimits": [
+    {
+      "name": "API_RATE_LIMITER",
+      "namespace_id": "184001",
+      "simple": { "limit": 120, "period": 60 }
+    }
+  ],
   "durable_objects": {
     "bindings": [{ "name": "ASK_RUN_DO", "class_name": "AskRunDO" }]
   },

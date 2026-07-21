@@ -70,7 +70,9 @@ export default function DevelopersPage() {
           <span className="font-mono">
             /api/v1/judgments/&#123;citation&#125;
           </span>
-          . Legal information, not advice.
+          . Always use the Authorization header; API keys in query strings are
+          rejected to keep them out of URLs and logs. Legal information, not
+          advice.
         </p>
       </section>
     </main>

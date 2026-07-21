@@ -5,6 +5,7 @@ declare global {
     AUTH_DB?: D1Database;
     TRAJECTORY_DB?: D1Database;
     ASK_RUN_DO?: DurableObjectNamespace;
+    API_RATE_LIMITER?: RateLimit;
     BETTER_AUTH_SECRET?: string;
     BETTER_AUTH_TRUSTED_ORIGINS?: string;
     BETTER_AUTH_URL?: string;

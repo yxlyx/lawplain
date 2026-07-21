@@ -32,14 +32,20 @@ export function ApiKeysManager() {
   const [creating, setCreating] = useState(false);
   const [freshKey, setFreshKey] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const [revokingId, setRevokingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
     setLoading(true);
-    const res = await fetch("/api/keys").catch(() => null);
+    const res = await fetch("/api/keys", { cache: "no-store" }).catch(
+      () => null,
+    );
     if (res?.ok) {
       const data = (await res.json()) as { keys?: ApiKey[] };
       setKeys(data.keys ?? []);
+      setError(null);
+    } else {
+      setError("Could not load your API keys.");
     }
     setLoading(false);
   }, []);
@@ -77,10 +83,18 @@ export function ApiKeysManager() {
   }
 
   async function revoke(id: string) {
-    setKeys((ks) => ks.filter((k) => k.id !== id));
-    await fetch(`/api/keys?id=${encodeURIComponent(id)}`, {
+    if (!window.confirm("Revoke this API key? This cannot be undone.")) return;
+    setRevokingId(id);
+    setError(null);
+    const res = await fetch(`/api/keys?id=${encodeURIComponent(id)}`, {
       method: "DELETE",
-    }).catch(() => {});
+    }).catch(() => null);
+    setRevokingId(null);
+    if (!res?.ok) {
+      setError("Could not revoke the key. Please try again.");
+      return;
+    }
+    setKeys((current) => current.filter((key) => key.id !== id));
   }
 
   async function copyFresh() {
@@ -175,11 +189,12 @@ export function ApiKeysManager() {
               <button
                 type="button"
                 onClick={() => void revoke(k.id)}
-                aria-label="Revoke key"
-                className="inline-flex shrink-0 items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium text-muted-2 transition-colors hover:bg-surface-2 hover:text-red-500"
+                disabled={revokingId === k.id}
+                aria-label={`Revoke ${k.name}`}
+                className="inline-flex shrink-0 items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium text-muted-2 transition-colors hover:bg-surface-2 hover:text-red-500 disabled:cursor-wait disabled:opacity-60"
               >
                 <XIcon className="h-3.5 w-3.5" />
-                Revoke
+                {revokingId === k.id ? "Revoking…" : "Revoke"}
               </button>
             </li>
           ))}

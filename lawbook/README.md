@@ -187,6 +187,47 @@ Production Ask runs also write a private, Worker-only record to the separate
 status, timing and usage; `ask_trajectory_events` stores the ordered normalized
 progress and tool events. No public route exposes this database.
 
+## Personal API keys
+
+The supported developer API is the read-only `/api/v1/*` gateway. Every request
+except a CORS preflight requires a personal API key:
+
+1. Sign in and open [`/developers`](https://lawplain.com/developers).
+2. Create a named key and copy it immediately. The plaintext is shown once;
+   only its SHA-256 hash is stored in D1.
+3. Pass the key in the `Authorization` header:
+
+   ```bash
+   curl --fail-with-body \
+     -H 'Authorization: Bearer lp_live_REPLACE_ME' \
+     'https://lawplain.com/api/v1/judgments/search?q=negligence&limit=5'
+   ```
+
+Keys are never accepted in query strings because URLs are commonly retained in
+logs, browser history, referrers, and analytics. Missing, malformed, unknown,
+and revoked credentials receive the same `401` response. API responses are
+marked private and non-cacheable so a shared cache cannot serve an authenticated
+response to another caller.
+
+Signed-in users can list and revoke only their own keys through `/api/keys`.
+There is a limit of 20 active keys per account; revocation takes effect on the
+next request. The Cloudflare rate-limiter binding caps the gateway at 120
+requests per minute for both the client IP and signed-in account, returning
+`429` with `Retry-After` when exceeded. Key metadata includes its non-secret
+prefix, creation time, and last-used time. Apply the `AUTH_DB` migrations before
+enabling the gateway:
+
+```bash
+bun run d1:migrate:local   # local development
+bun run d1:migrate:remote  # production
+```
+
+The gateway proxies to the corpus service without forwarding the caller's
+credential. Production operators must also restrict the upstream corpus origin
+to trusted Lawplain infrastructure; leaving that origin publicly reachable
+would allow callers to bypass this gateway. Never put personal keys in source,
+client bundles, prompts, logs, or `wrangler.jsonc`.
+
 ## Official agency guidance
 
 The **Guidance** search corpus is deliberately separate from judgments and
