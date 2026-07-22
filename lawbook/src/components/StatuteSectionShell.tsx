@@ -17,11 +17,13 @@ interface Suggestion {
 export function StatuteSectionShell({
   docId,
   query,
+  savedQuoteId,
   sections,
   children,
 }: {
   docId: string;
   query: string;
+  savedQuoteId?: string;
   sections: { id: string; label: string }[];
   children: ReactNode;
 }) {
@@ -36,7 +38,7 @@ export function StatuteSectionShell({
     query,
   );
 
-  useSavedQuoteTarget(containerRef, "statute");
+  useSavedQuoteTarget(containerRef, "statute", savedQuoteId);
 
   useSectionEngagement({
     containerRef,

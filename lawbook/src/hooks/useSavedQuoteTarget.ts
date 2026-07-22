@@ -5,8 +5,9 @@ import type { SavedQuote } from "@/lib/saved-quotes";
 
 const HIGHLIGHT_NAME = "saved-quote-target";
 const HIGHLIGHT_DURATION_MS = 5_000;
+const HIGHLIGHT_COLOR = "rgba(125, 164, 221, 0.22)";
 const HIGHLIGHT_STYLES = `::highlight(${HIGHLIGHT_NAME}) {
-  background: rgba(125, 164, 221, 0.22);
+  background: ${HIGHLIGHT_COLOR};
   color: inherit;
 }`;
 
@@ -25,15 +26,13 @@ type HighlightConstructor = new (...ranges: Range[]) => unknown;
 export function useSavedQuoteTarget(
   containerRef: RefObject<HTMLElement | null>,
   docType: SavedQuote["docType"],
+  quoteId: string | undefined,
   onTargetMissing?: () => boolean,
 ) {
   const onTargetMissingRef = useRef(onTargetMissing);
   onTargetMissingRef.current = onTargetMissing;
 
   useEffect(() => {
-    const quoteId = new URL(window.location.href).searchParams.get(
-      "savedQuote",
-    );
     if (!quoteId) return;
     const savedQuoteId = quoteId;
 
@@ -43,6 +42,32 @@ export function useSavedQuoteTarget(
     let removeHighlight: (() => void) | null = null;
     let restoreFocusTarget: (() => void) | null = null;
 
+    function tryFallback() {
+      if (cancelled) return true;
+      const fallbackId = currentHashId();
+      const target = fallbackId ? document.getElementById(fallbackId) : null;
+      if (target) {
+        observer?.disconnect();
+        scrollElementIntoView(target);
+        return true;
+      }
+      const shouldRetry = onTargetMissingRef.current?.() ?? false;
+      if (!shouldRetry) observer?.disconnect();
+      return !shouldRetry;
+    }
+
+    function observeUntilResolved(attempt: () => boolean) {
+      if (attempt()) return;
+      const root = containerRef.current;
+      if (!root) return;
+      observer = new MutationObserver(attempt);
+      observer.observe(root, {
+        childList: true,
+        characterData: true,
+        subtree: true,
+      });
+    }
+
     async function revealQuote() {
       try {
         const res = await fetch(
@@ -51,7 +76,10 @@ export function useSavedQuoteTarget(
             cache: "no-store",
           },
         );
-        if (!res.ok) return;
+        if (!res.ok) {
+          observeUntilResolved(tryFallback);
+          return;
+        }
         const data = (await res.json()) as { quote?: SavedQuote };
         const quote = data.quote;
         if (
@@ -60,6 +88,7 @@ export function useSavedQuoteTarget(
           quote.docType !== docType ||
           !isCurrentDocument(quote.path)
         ) {
+          observeUntilResolved(tryFallback);
           return;
         }
 
@@ -70,8 +99,7 @@ export function useSavedQuoteTarget(
           const range = findQuoteRange(root, quote);
           if (!range) {
             const shouldRetry = onTargetMissingRef.current?.() ?? false;
-            if (!shouldRetry) observer?.disconnect();
-            return !shouldRetry;
+            return shouldRetry ? false : tryFallback();
           }
 
           observer?.disconnect();
@@ -81,18 +109,15 @@ export function useSavedQuoteTarget(
           highlightTimer = window.setTimeout(() => {
             removeHighlight?.();
             removeHighlight = null;
+            restoreFocusTarget?.();
+            restoreFocusTarget = null;
           }, HIGHLIGHT_DURATION_MS);
           return true;
         };
 
-        if (tryReveal()) return;
-
-        const root = containerRef.current;
-        if (!root) return;
-        observer = new MutationObserver(tryReveal);
-        observer.observe(root, { childList: true, subtree: true });
+        observeUntilResolved(tryReveal);
       } catch {
-        // The section hash still provides a useful fallback if lookup fails.
+        observeUntilResolved(tryFallback);
       }
     }
 
@@ -105,7 +130,15 @@ export function useSavedQuoteTarget(
       removeHighlight?.();
       restoreFocusTarget?.();
     };
-  }, [containerRef, docType]);
+  }, [containerRef, docType, quoteId]);
+}
+
+function currentHashId() {
+  try {
+    return decodeURIComponent(window.location.hash.slice(1));
+  } catch {
+    return window.location.hash.slice(1);
+  }
 }
 
 function isCurrentDocument(path: string) {
@@ -120,32 +153,69 @@ function isCurrentDocument(path: string) {
 }
 
 function findQuoteRange(root: HTMLElement, quote: SavedQuote): Range | null {
-  const candidates = Array.from(
+  const elements = Array.from(
     root.querySelectorAll<HTMLElement>("[data-section-id]"),
-  ).filter((element) => element.dataset.sectionId === quote.anchor);
+  );
+  const anchored = elements.filter(
+    (element) => element.dataset.quoteAnchor === quote.anchor,
+  );
+  const anchoredMatch = bestQuoteMatch(anchored, quote);
+  if (anchoredMatch) return rangeForMatch(anchoredMatch, quote);
 
-  let best: { element: HTMLElement; offset: number; score: number } | null =
-    null;
+  // Older quotes used the section id as their anchor. The section hash also
+  // lets a quote survive a changed block anchor while retaining exact/context
+  // matching across that section.
+  const sectionIds = new Set([quote.anchor, currentHashId()]);
+  const sectionMatch = bestQuoteMatch(
+    elements.filter((element) =>
+      sectionIds.has(element.dataset.sectionId ?? ""),
+    ),
+    quote,
+  );
+  return sectionMatch ? rangeForMatch(sectionMatch, quote) : null;
+}
 
-  for (const element of candidates) {
+type QuoteMatch = {
+  element: HTMLElement;
+  offset: number;
+  context: number;
+  storedOffset: boolean;
+};
+
+function bestQuoteMatch(elements: HTMLElement[], quote: SavedQuote) {
+  let best: QuoteMatch | null = null;
+  for (const element of elements) {
     const text = element.textContent ?? "";
     let offset = text.indexOf(quote.exactText);
     while (offset !== -1) {
-      const isStoredOffset =
-        offset === quote.startOffset &&
-        offset + quote.exactText.length === quote.endOffset;
-      const score =
-        contextScore(text, offset, quote) + (isStoredOffset ? 1_000 : 0);
-      if (!best || score > best.score) best = { element, offset, score };
+      const match: QuoteMatch = {
+        element,
+        offset,
+        context: contextScore(text, offset, quote),
+        storedOffset:
+          offset === quote.startOffset &&
+          offset + quote.exactText.length === quote.endOffset,
+      };
+      if (
+        !best ||
+        match.context > best.context ||
+        (match.context === best.context &&
+          match.storedOffset &&
+          !best.storedOffset)
+      ) {
+        best = match;
+      }
       offset = text.indexOf(quote.exactText, offset + 1);
     }
   }
+  return best;
+}
 
-  if (!best) return null;
+function rangeForMatch(match: QuoteMatch, quote: SavedQuote) {
   return rangeForOffsets(
-    best.element,
-    best.offset,
-    best.offset + quote.exactText.length,
+    match.element,
+    match.offset,
+    match.offset + quote.exactText.length,
   );
 }
 
@@ -238,19 +308,43 @@ function applyTemporaryHighlight(range: Range) {
     };
   }
 
-  // CSS Custom Highlight is unavailable only in older browsers. Selecting the
-  // range still gives those users an exact, temporary visual location cue.
-  const selection = window.getSelection();
-  selection?.removeAllRanges();
-  selection?.addRange(range);
+  // Avoid commandeering the user's text selection in older browsers. A fixed
+  // overlay follows each range rect while the page smoothly scrolls.
+  const layer = document.createElement("div");
+  layer.setAttribute("aria-hidden", "true");
+  Object.assign(layer.style, {
+    position: "fixed",
+    inset: "0",
+    pointerEvents: "none",
+    zIndex: "20",
+  });
+
+  const draw = () => {
+    layer.replaceChildren(
+      ...Array.from(range.getClientRects(), (rect) => {
+        const highlight = document.createElement("span");
+        Object.assign(highlight.style, {
+          position: "absolute",
+          top: `${rect.top}px`,
+          left: `${rect.left}px`,
+          width: `${rect.width}px`,
+          height: `${rect.height}px`,
+          borderRadius: "2px",
+          background: HIGHLIGHT_COLOR,
+        });
+        return highlight;
+      }),
+    );
+  };
+
+  document.body.appendChild(layer);
+  draw();
+  window.addEventListener("scroll", draw, { passive: true });
+  window.addEventListener("resize", draw);
   return () => {
-    const current = window.getSelection();
-    if (
-      current?.rangeCount &&
-      current.getRangeAt(0).toString() === range.toString()
-    ) {
-      current.removeAllRanges();
-    }
+    window.removeEventListener("scroll", draw);
+    window.removeEventListener("resize", draw);
+    layer.remove();
   };
 }
 
@@ -270,6 +364,16 @@ function focusRangeStart(range: Range) {
     if (previousTabIndex === null) target.removeAttribute("tabindex");
     else target.setAttribute("tabindex", previousTabIndex);
   };
+}
+
+function scrollElementIntoView(element: HTMLElement) {
+  const reduceMotion = window.matchMedia(
+    "(prefers-reduced-motion: reduce)",
+  ).matches;
+  element.scrollIntoView({
+    block: "start",
+    behavior: reduceMotion ? "auto" : "smooth",
+  });
 }
 
 function scrollRangeIntoView(range: Range) {

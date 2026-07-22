@@ -44,14 +44,18 @@ export async function generateMetadata({
   searchParams,
 }: {
   params: Promise<{ citation: string }>;
-  searchParams: Promise<{ q?: string; returnTo?: string }>;
+  searchParams: Promise<{
+    q?: string;
+    returnTo?: string;
+    savedQuote?: string;
+  }>;
 }): Promise<Metadata> {
-  const [{ citation }, { q, returnTo }] = await Promise.all([
+  const [{ citation }, { q, returnTo, savedQuote }] = await Promise.all([
     params,
     searchParams,
   ]);
   const decoded = decodeURIComponent(citation);
-  const hasQueryVariant = Boolean(q || returnTo);
+  const hasQueryVariant = Boolean(q || returnTo || savedQuote);
   try {
     const j = await sgjudge.getJudgment(
       decoded,
@@ -86,9 +90,13 @@ export default async function JudgmentPage({
   searchParams,
 }: {
   params: Promise<{ citation: string }>;
-  searchParams: Promise<{ q?: string; returnTo?: string }>;
+  searchParams: Promise<{
+    q?: string;
+    returnTo?: string;
+    savedQuote?: string;
+  }>;
 }) {
-  const [{ citation }, { q, returnTo }] = await Promise.all([
+  const [{ citation }, { q, returnTo, savedQuote }] = await Promise.all([
     params,
     searchParams,
   ]);
@@ -256,6 +264,7 @@ export default async function JudgmentPage({
             initialLoaded={initialLoaded}
             total={j.body_length ?? initialLoaded}
             query={q ?? ""}
+            savedQuoteId={savedQuote}
             initialSections={j.sections}
           />
         </section>

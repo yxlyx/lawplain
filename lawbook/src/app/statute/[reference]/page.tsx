@@ -114,6 +114,7 @@ export async function generateMetadata({
   searchParams: Promise<{
     q?: string | string[];
     returnTo?: string | string[];
+    savedQuote?: string | string[];
   }>;
 }): Promise<Metadata> {
   const [{ reference }, rawSearchParams] = await Promise.all([
@@ -122,7 +123,9 @@ export async function generateMetadata({
   ]);
   const decoded = decodeURIComponent(reference);
   const hasQueryVariant = Boolean(
-    firstString(rawSearchParams.q) || firstString(rawSearchParams.returnTo),
+    firstString(rawSearchParams.q) ||
+      firstString(rawSearchParams.returnTo) ||
+      firstString(rawSearchParams.savedQuote),
   );
   try {
     const s = await sgjudge.getStatute(decoded, {}, { cache: "no-store" });
@@ -154,6 +157,7 @@ export default async function StatutePage({
   searchParams: Promise<{
     q?: string | string[];
     returnTo?: string | string[];
+    savedQuote?: string | string[];
   }>;
 }) {
   const [{ reference }, rawSearchParams] = await Promise.all([
@@ -162,6 +166,7 @@ export default async function StatutePage({
   ]);
   const q = firstString(rawSearchParams.q);
   const returnTo = firstString(rawSearchParams.returnTo);
+  const savedQuote = firstString(rawSearchParams.savedQuote);
   const decoded = decodeURIComponent(reference);
   const s = await load(decoded);
   const sections = sortStatuteSections(s.sections);
@@ -263,6 +268,7 @@ export default async function StatutePage({
             <StatuteSectionShell
               docId={decoded}
               query={q}
+              savedQuoteId={savedQuote || undefined}
               sections={sections.map((sec) => ({
                 id: `s-${sec.section_no}`,
                 label: sec.heading
@@ -278,6 +284,7 @@ export default async function StatutePage({
                       key={sec.section_no}
                       id={`s-${sec.section_no}`}
                       data-section-id={`s-${sec.section_no}`}
+                      data-quote-anchor={`s-${sec.section_no}`}
                       className="scroll-mt-24"
                     >
                       <h2 className="grid max-w-[68ch] grid-cols-[2.25rem_1fr] gap-3 pt-3 font-sans text-xs font-semibold uppercase tracking-[0.14em] text-accent">
