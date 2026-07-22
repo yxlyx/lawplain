@@ -1,13 +1,19 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import {
+  PRIVATE_ANNOTATION_LABELS,
+  type PrivateAnnotationLabelKey,
+} from "@/lib/annotation-labels";
 import { authClient } from "@/lib/auth-client";
 
 const MAX_QUOTE_LENGTH = 5_000;
+const MAX_NOTE_LENGTH = 10_000;
 
 type SelectionDraft = {
   exactText: string;
   anchor: string;
+  sectionAnchor: string;
   startOffset: number;
   endOffset: number;
   contextBefore: string;
@@ -17,11 +23,13 @@ type SelectionDraft = {
 export function SelectionTools({
   title,
   citation,
+  docId,
   path,
   askKind,
 }: {
   title: string;
   citation: string;
+  docId: string;
   path: string;
   askKind?: "judgment" | "statute";
 }) {
@@ -73,11 +81,13 @@ export function SelectionTools({
       const startOffset = beforeRange.toString().length;
       const endOffset = startOffset + exactText.length;
       const sourceText = startBlock.textContent ?? "";
-      const anchor = startBlock.dataset.sectionId || startBlock.id;
+      const sectionAnchor = startBlock.dataset.sectionId || startBlock.id;
+      const anchor = startBlock.dataset.quoteAnchor || sectionAnchor;
       const box = range.getBoundingClientRect();
       setDraft({
         exactText,
         anchor,
+        sectionAnchor,
         startOffset,
         endOffset,
         contextBefore: sourceText.slice(
@@ -95,7 +105,7 @@ export function SelectionTools({
   }, []);
 
   if (!rect || !draft) return null;
-  const deepPath = `${path}#${encodeURIComponent(draft.anchor)}`;
+  const deepPath = `${path}#${encodeURIComponent(draft.sectionAnchor)}`;
   const link = `${window.location.origin}${deepPath}`;
   const formatted = `“${draft.exactText}”\n\n— ${title}${citation ? `, ${citation}` : ""}\n${link}`;
 

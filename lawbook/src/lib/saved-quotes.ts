@@ -34,8 +34,9 @@ export function normalizeQuote(value: unknown): QuoteInput | null {
   const raw = value as Record<string, unknown>;
   if (raw.docType !== "judgment" && raw.docType !== "statute") return null;
   const exactText =
-    typeof raw.exactText === "string"
-      ? raw.exactText.slice(0, MAX_QUOTE_LENGTH)
+    typeof raw.exactText === "string" &&
+    raw.exactText.length <= MAX_QUOTE_LENGTH
+      ? raw.exactText
       : "";
   const docId = clean(raw.docId, MAX_SHORT);
   const sourceTitle = clean(raw.sourceTitle, MAX_SHORT);
@@ -55,7 +56,7 @@ export function normalizeQuote(value: unknown): QuoteInput | null {
     startOffset === null ||
     endOffset === null ||
     startOffset < 0 ||
-    endOffset < startOffset
+    endOffset - startOffset !== exactText.length
   )
     return null;
   return {
@@ -68,8 +69,8 @@ export function normalizeQuote(value: unknown): QuoteInput | null {
     anchor,
     startOffset,
     endOffset,
-    contextBefore: clean(raw.contextBefore, MAX_CONTEXT),
-    contextAfter: clean(raw.contextAfter, MAX_CONTEXT),
+    contextBefore: contextBefore(raw.contextBefore),
+    contextAfter: contextAfter(raw.contextAfter),
   };
 }
 
@@ -85,6 +86,19 @@ export async function listSavedQuotes(userId: string): Promise<SavedQuote[]> {
     .bind(userId)
     .all<SavedQuote>();
   return result.results ?? [];
+}
+
+export async function getSavedQuote(userId: string, id: string) {
+  const db = await getAuthDb();
+  return db
+    .prepare(
+      `SELECT id, docType, docId, exactText, sourceTitle, citation, path, anchor,
+              startOffset, endOffset, contextBefore, contextAfter, createdAt
+       FROM saved_quotes
+       WHERE userId = ? AND id = ? AND deletedAt IS NULL`,
+    )
+    .bind(userId, id)
+    .first<SavedQuote>();
 }
 
 export async function createSavedQuote(userId: string, quote: QuoteInput) {
@@ -201,6 +215,14 @@ export async function restoreSavedQuote(userId: string, id: string) {
 
 function clean(value: unknown, max: number) {
   return typeof value === "string" ? value.trim().slice(0, max) : "";
+}
+
+function contextBefore(value: unknown) {
+  return typeof value === "string" ? value.slice(-MAX_CONTEXT) : "";
+}
+
+function contextAfter(value: unknown) {
+  return typeof value === "string" ? value.slice(0, MAX_CONTEXT) : "";
 }
 
 function integer(value: unknown) {

@@ -11,6 +11,7 @@ import {
 import { BackToTop } from "@/components/BackToTop";
 import { FindToolbar } from "@/components/FindToolbar";
 import { SectionNav, type SectionNavItem } from "@/components/SectionNav";
+import { useSavedQuoteTarget } from "@/hooks/useSavedQuoteTarget";
 import { useSectionEngagement } from "@/hooks/useSectionEngagement";
 import { highlightText } from "@/lib/highlight";
 import {
@@ -74,6 +75,7 @@ export function JudgmentBody({
   initialLoaded,
   total,
   query,
+  savedQuoteId,
   initialSections,
   mockSuggestions,
 }: {
@@ -85,6 +87,7 @@ export function JudgmentBody({
   initialLoaded: number;
   total: number;
   query: string;
+  savedQuoteId?: string;
   initialSections?: JudgmentSection[];
   mockSuggestions?: Record<string, Suggestion>;
 }) {
@@ -160,6 +163,12 @@ export function JudgmentBody({
     }
   }, [citation, loaded, total]);
 
+  useSavedQuoteTarget(containerRef, "judgment", savedQuoteId, () => {
+    if (!hasMore) return false;
+    void loadMore();
+    return true;
+  });
+
   useEffect(() => {
     if (
       terms.length > 0 &&
@@ -187,7 +196,7 @@ export function JudgmentBody({
   // before client content settles, so re-apply it once the target exists.
   // biome-ignore lint/correctness/useExhaustiveDependencies: re-run as `text` grows so the target can resolve after pagination.
   useEffect(() => {
-    if (hashScrolled.current) return;
+    if (savedQuoteId || hashScrolled.current) return;
     const id = initialHash.current;
     if (!id) {
       hashScrolled.current = true;
@@ -198,7 +207,7 @@ export function JudgmentBody({
     requestAnimationFrame(() => {
       document.getElementById(id)?.scrollIntoView({ block: "start" });
     });
-  }, [text]);
+  }, [text, savedQuoteId]);
 
   useEffect(() => {
     if (mockSuggestions) {
@@ -433,6 +442,7 @@ function renderBlock(
     return (
       <h3
         data-section-id={currentSectionId}
+        data-quote-anchor={b.key}
         className="pt-3 font-sans text-xs font-semibold uppercase tracking-[0.14em] text-accent"
       >
         {highlightText(b.body, regex, b.key)}
@@ -444,6 +454,7 @@ function renderBlock(
       <p
         id={b.id}
         data-section-id={currentSectionId}
+        data-quote-anchor={b.key}
         className="flex scroll-mt-24 gap-3"
       >
         <span className="w-7 shrink-0 select-none text-right font-sans text-sm font-medium tabular-nums text-muted-2">
@@ -457,6 +468,7 @@ function renderBlock(
     <p
       id={b.id}
       data-section-id={currentSectionId}
+      data-quote-anchor={b.key}
       className="scroll-mt-24 pl-10"
     >
       {highlightText(b.body, regex, b.key)}

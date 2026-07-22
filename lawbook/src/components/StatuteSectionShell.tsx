@@ -4,6 +4,7 @@ import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { BackToTop } from "@/components/BackToTop";
 import { FindToolbar } from "@/components/FindToolbar";
 import { SectionNav, type SectionNavItem } from "@/components/SectionNav";
+import { useSavedQuoteTarget } from "@/hooks/useSavedQuoteTarget";
 import { useSectionEngagement } from "@/hooks/useSectionEngagement";
 import { useTextFind } from "@/hooks/useTextFind";
 import { parseTerms } from "@/lib/sections";
@@ -16,11 +17,13 @@ interface Suggestion {
 export function StatuteSectionShell({
   docId,
   query,
+  savedQuoteId,
   sections,
   children,
 }: {
   docId: string;
   query: string;
+  savedQuoteId?: string;
   sections: { id: string; label: string }[];
   children: ReactNode;
 }) {
@@ -34,6 +37,8 @@ export function StatuteSectionShell({
     containerRef,
     query,
   );
+
+  useSavedQuoteTarget(containerRef, "statute", savedQuoteId);
 
   useSectionEngagement({
     containerRef,
