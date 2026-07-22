@@ -5,6 +5,12 @@ import { useEffect, useRef, useState } from "react";
 import { authClient } from "@/lib/auth-client";
 import type { SavedQuote } from "@/lib/saved-quotes";
 
+function quoteTargetPath(quote: SavedQuote) {
+  const url = new URL(quote.path, "https://lawplain.invalid");
+  url.searchParams.set("savedQuote", quote.id);
+  return `${url.pathname}${url.search}${url.hash}`;
+}
+
 export function SavedQuotes() {
   const { data: session } = authClient.useSession();
   const [quotes, setQuotes] = useState<SavedQuote[]>([]);
@@ -111,12 +117,18 @@ export function SavedQuotes() {
                 key={quote.id}
                 className="rounded-xl border border-border bg-background p-4"
               >
-                <blockquote className="line-clamp-4 font-serif text-foreground">
-                  “{quote.exactText}”
-                </blockquote>
+                <Link
+                  href={quoteTargetPath(quote)}
+                  aria-label={`Open saved quote in ${quote.sourceTitle}`}
+                  className="block rounded-md hover:text-accent"
+                >
+                  <blockquote className="line-clamp-4 font-serif text-foreground transition-colors hover:text-accent">
+                    “{quote.exactText}”
+                  </blockquote>
+                </Link>
                 <div className="mt-3 flex items-end justify-between gap-3">
                   <Link
-                    href={quote.path}
+                    href={quoteTargetPath(quote)}
                     className="min-w-0 text-xs text-muted hover:text-accent"
                   >
                     <span className="block truncate font-medium">

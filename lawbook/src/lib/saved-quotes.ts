@@ -87,6 +87,19 @@ export async function listSavedQuotes(userId: string): Promise<SavedQuote[]> {
   return result.results ?? [];
 }
 
+export async function getSavedQuote(userId: string, id: string) {
+  const db = await getAuthDb();
+  return db
+    .prepare(
+      `SELECT id, docType, docId, exactText, sourceTitle, citation, path, anchor,
+              startOffset, endOffset, contextBefore, contextAfter, createdAt
+       FROM saved_quotes
+       WHERE userId = ? AND id = ? AND deletedAt IS NULL`,
+    )
+    .bind(userId, id)
+    .first<SavedQuote>();
+}
+
 export async function createSavedQuote(userId: string, quote: QuoteInput) {
   const db = await getAuthDb();
   const saved = { ...quote, id: crypto.randomUUID(), createdAt: Date.now() };

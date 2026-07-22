@@ -11,6 +11,7 @@ import {
 import { BackToTop } from "@/components/BackToTop";
 import { FindToolbar } from "@/components/FindToolbar";
 import { SectionNav, type SectionNavItem } from "@/components/SectionNav";
+import { useSavedQuoteTarget } from "@/hooks/useSavedQuoteTarget";
 import { useSectionEngagement } from "@/hooks/useSectionEngagement";
 import { highlightText } from "@/lib/highlight";
 import {
@@ -159,6 +160,12 @@ export function JudgmentBody({
       setLoading(false);
     }
   }, [citation, loaded, total]);
+
+  useSavedQuoteTarget(containerRef, "judgment", () => {
+    if (!hasMore) return false;
+    void loadMore();
+    return true;
+  });
 
   useEffect(() => {
     if (

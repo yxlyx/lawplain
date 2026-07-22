@@ -4,6 +4,7 @@ import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { BackToTop } from "@/components/BackToTop";
 import { FindToolbar } from "@/components/FindToolbar";
 import { SectionNav, type SectionNavItem } from "@/components/SectionNav";
+import { useSavedQuoteTarget } from "@/hooks/useSavedQuoteTarget";
 import { useSectionEngagement } from "@/hooks/useSectionEngagement";
 import { useTextFind } from "@/hooks/useTextFind";
 import { parseTerms } from "@/lib/sections";
@@ -34,6 +35,8 @@ export function StatuteSectionShell({
     containerRef,
     query,
   );
+
+  useSavedQuoteTarget(containerRef, "statute");
 
   useSectionEngagement({
     containerRef,
