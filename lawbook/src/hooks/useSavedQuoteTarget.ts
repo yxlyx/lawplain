@@ -1,6 +1,7 @@
 "use client";
 
 import { type RefObject, useEffect, useRef } from "react";
+import { authClient } from "@/lib/auth-client";
 import type { SavedQuote } from "@/lib/saved-quotes";
 
 const HIGHLIGHT_NAME = "saved-quote-target";
@@ -29,12 +30,15 @@ export function useSavedQuoteTarget(
   quoteId: string | undefined,
   onTargetMissing?: () => boolean,
 ) {
+  const { data: session } = authClient.useSession();
+  const ownerId = session?.user.id;
   const onTargetMissingRef = useRef(onTargetMissing);
   onTargetMissingRef.current = onTargetMissing;
 
   useEffect(() => {
-    if (!quoteId) return;
+    if (!quoteId || !ownerId) return;
     const savedQuoteId = quoteId;
+    const controller = new AbortController();
 
     let cancelled = false;
     let observer: MutationObserver | null = null;
@@ -74,6 +78,7 @@ export function useSavedQuoteTarget(
           `/api/quotes/${encodeURIComponent(savedQuoteId)}`,
           {
             cache: "no-store",
+            signal: controller.signal,
           },
         );
         if (!res.ok) {
@@ -125,12 +130,13 @@ export function useSavedQuoteTarget(
 
     return () => {
       cancelled = true;
+      controller.abort();
       observer?.disconnect();
       if (highlightTimer !== null) window.clearTimeout(highlightTimer);
       removeHighlight?.();
       restoreFocusTarget?.();
     };
-  }, [containerRef, docType, quoteId]);
+  }, [containerRef, docType, ownerId, quoteId]);
 }
 
 function currentHashId() {

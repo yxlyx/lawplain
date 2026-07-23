@@ -35,7 +35,10 @@ test("recently viewed documents require auth, are persisted, and stay off the sa
   assert.match(migration, /REFERENCES user\(id\) ON DELETE CASCADE/);
   assert.match(migration, /idx_recently_viewed_documents_user_doc/);
   assert.doesNotMatch(savedPage, /RecentlyViewedDocuments/);
-  assert.match(savedPage, /Your saved documents live here\./);
+  assert.match(
+    savedPage,
+    /Your saved documents and private annotations live here\./,
+  );
   assert.doesNotMatch(
     savedPage,
     /Your saved judgments and statutes live here\./,

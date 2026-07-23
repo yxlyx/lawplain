@@ -271,6 +271,7 @@ export default async function JudgmentPage({
         <SelectionTools
           title={title}
           citation={j.neutral_cite || j.citation || decoded}
+          docId={decoded}
           path={pagePath}
           askKind="judgment"
         />

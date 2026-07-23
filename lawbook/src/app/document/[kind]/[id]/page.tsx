@@ -264,6 +264,7 @@ export default async function DocumentResultPage({
           <SelectionTools
             title={displayTitle}
             citation={decodedId}
+            docId={decodedId}
             path={`/document/${encodeURIComponent(decodedKind)}/${encodeURIComponent(decodedId)}`}
           />
         )}

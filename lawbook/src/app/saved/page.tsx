@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
+import { SavedAnnotations } from "@/components/SavedAnnotations";
 import { SavedAnswers } from "@/components/SavedAnswers";
-import { SavedQuotes } from "@/components/SavedQuotes";
 import { SavedSearchHistory } from "@/components/SavedSearchHistory";
 import { SavedWorkspace } from "@/components/SavedWorkspace";
 import { buildMetadata } from "@/lib/seo";
@@ -23,11 +23,12 @@ export default function SavedPage() {
           Saved research
         </h1>
         <p className="mt-2 max-w-2xl text-sm leading-6 text-muted">
-          Your saved documents live here. Quotes, searches, and answers do too.
+          Your saved documents and private annotations live here. Searches and
+          answers do too.
         </p>
       </div>
       <SavedWorkspace />
-      <SavedQuotes />
+      <SavedAnnotations />
       <SavedSearchHistory />
       <SavedAnswers />
     </main>

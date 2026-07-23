@@ -304,6 +304,7 @@ export default async function StatutePage({
         <SelectionTools
           title={title}
           citation={s.act_id ?? decoded}
+          docId={decoded}
           path={pagePath}
           askKind="statute"
         />

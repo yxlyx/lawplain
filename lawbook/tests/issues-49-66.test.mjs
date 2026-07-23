@@ -113,18 +113,22 @@ test("soft-deleted quotes are hidden and restorable only inside the deadline", (
   );
 });
 
-test("quotes are owner scoped, bounded, soft-deleted, and payload-free on restore", () => {
+test("canonical annotations are owner scoped, bounded, and payload-free on legacy restore", () => {
   const route = read("src/app/api/quotes/route.ts");
   const itemRoute = read("src/app/api/quotes/[id]/route.ts");
-  const model = read("src/lib/saved-quotes.ts");
+  const model = read("src/lib/private-annotations.ts");
   assert.match(route, /getSession\(req\.headers\)/);
   assert.doesNotMatch(route, /body\.userId/);
-  assert.match(itemRoute, /restoreSavedQuote\(session\.user\.id, id\)/);
+  assert.match(itemRoute, /getAnnotation\(session\.user\.id/);
   assert.doesNotMatch(itemRoute, /req\.json/);
-  assert.match(model, /MAX_QUOTE_LENGTH = 5_000/);
-  assert.match(model, /deletedAt IS NULL/);
-  assert.match(model, /deletedAt >= \?/);
-  assert.match(model, /RETURNING id/);
+  assert.doesNotMatch(itemRoute, /deleteAnnotation/);
+  assert.match(model, /MAX_TEXT = 5_000/);
+  assert.match(model, /MAX_NOTE = 10_000/);
+  assert.match(model, /WHERE p\.userId = \? AND p\.id = \?/);
+  assert.match(
+    model,
+    /DELETE FROM passage_annotations WHERE userId = \? AND id = \?/,
+  );
 });
 
 test("selection tools use one anchored block and keep guest Copy available", () => {
@@ -138,16 +142,16 @@ test("selection tools use one anchored block and keep guest Copy available", () 
   assert.match(source, /\.slice\([\s\S]*0,[\s\S]*5_500/);
 });
 
-test("saved workspace includes quote and search management without discarded result sets", () => {
+test("saved workspace includes annotation and search management without discarded result sets", () => {
   const page = read("src/app/saved/page.tsx");
   const searches = read("src/components/SavedSearchHistory.tsx");
-  const quotes = read("src/components/SavedQuotes.tsx");
-  assert.match(page, /SavedQuotes/);
+  const annotations = read("src/components/SavedAnnotations.tsx");
+  assert.match(page, /SavedAnnotations/);
   assert.match(page, /SavedSearchHistory/);
   assert.match(searches, /replayPath/);
   assert.match(searches, /Clear all/);
   assert.doesNotMatch(searches, /result set/i);
-  assert.match(quotes, /aria-live="polite"/);
-  assert.match(quotes, /method: "POST"/);
-  assert.doesNotMatch(quotes, /JSON\.stringify\(quote\)/);
+  assert.match(annotations, /method: "PATCH"/);
+  assert.match(annotations, /method: "DELETE"/);
+  assert.match(annotations, /Permanently delete this annotation/);
 });

@@ -7,8 +7,12 @@ export interface SavedAuthority {
   docType: SavedDocType;
   docId: string;
   title: string;
+  citation: string;
   path: string;
+  savedAt: number;
   createdAt: number;
+  activityAt: number;
+  /** Compatibility alias used by the existing saved-workspace UI. */
   updatedAt: number;
 }
 
@@ -20,18 +24,17 @@ export function cleanText(value: unknown, maxLength: number): string {
   return typeof value === "string" ? value.trim().slice(0, maxLength) : "";
 }
 
+const SAVED_COLUMNS = `id, docType, docId, title, citation, path, savedAt,
+  createdAt, activityAt, activityAt AS updatedAt`;
+
 export async function listSavedAuthorities(
   userId: string,
 ): Promise<SavedAuthority[]> {
   const db = await getAuthDb();
   const result = await db
-    .prepare(
-      `SELECT id, docType, docId, title, path, createdAt, updatedAt
-       FROM saved_authorities
-       WHERE userId = ?
-       ORDER BY updatedAt DESC, createdAt DESC
-       LIMIT 100`,
-    )
+    .prepare(`SELECT ${SAVED_COLUMNS}
+    FROM saved_authorities WHERE userId = ? AND savedAt IS NOT NULL
+    ORDER BY activityAt DESC, id DESC LIMIT 100`)
     .bind(userId)
     .all<SavedAuthority>();
   return result.results ?? [];
@@ -49,11 +52,8 @@ export async function getSavedAuthority({
   const db = await getAuthDb();
   return (
     (await db
-      .prepare(
-        `SELECT id, docType, docId, title, path, createdAt, updatedAt
-         FROM saved_authorities
-         WHERE userId = ? AND docType = ? AND docId = ?`,
-      )
+      .prepare(`SELECT ${SAVED_COLUMNS} FROM saved_authorities
+    WHERE userId = ? AND docType = ? AND docId = ? AND savedAt IS NOT NULL`)
       .bind(userId, docType, docId)
       .first<SavedAuthority>()) ?? null
   );
@@ -65,30 +65,47 @@ export async function saveAuthority({
   docId,
   title,
   path,
+  citation = "",
 }: {
   userId: string;
   docType: SavedDocType;
   docId: string;
   title: string;
   path: string;
+  citation?: string;
 }): Promise<SavedAuthority> {
   const db = await getAuthDb();
-  const existing = await getSavedAuthority({ userId, docType, docId });
   const now = Date.now();
-  const id = existing?.id ?? crypto.randomUUID();
-  const createdAt = existing?.createdAt ?? now;
   await db
-    .prepare(
-      `INSERT INTO saved_authorities (id, userId, docType, docId, title, path, createdAt, updatedAt)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-       ON CONFLICT(userId, docType, docId) DO UPDATE SET
-         title = excluded.title,
-         path = excluded.path,
-         updatedAt = excluded.updatedAt`,
+    .prepare(`INSERT INTO saved_authorities
+    (id, userId, docType, docId, title, path, createdAt, updatedAt,
+     citation, savedAt, activityAt)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(userId, docType, docId) DO UPDATE SET
+      title = excluded.title,
+      citation = CASE WHEN excluded.citation = '' THEN saved_authorities.citation
+        ELSE excluded.citation END,
+      path = excluded.path,
+      savedAt = COALESCE(saved_authorities.savedAt, excluded.savedAt),
+      activityAt = MAX(saved_authorities.activityAt, excluded.activityAt),
+      updatedAt = excluded.updatedAt`)
+    .bind(
+      crypto.randomUUID(),
+      userId,
+      docType,
+      docId,
+      title,
+      path,
+      now,
+      now,
+      citation,
+      now,
+      now,
     )
-    .bind(id, userId, docType, docId, title, path, createdAt, now)
     .run();
-  return { id, docType, docId, title, path, createdAt, updatedAt: now };
+  const saved = await getSavedAuthority({ userId, docType, docId });
+  if (!saved) throw new Error("Saved authority write did not produce a row");
+  return saved;
 }
 
 export async function deleteSavedAuthority({
@@ -101,10 +118,16 @@ export async function deleteSavedAuthority({
   docId: string;
 }): Promise<void> {
   const db = await getAuthDb();
-  await db
-    .prepare(
-      "DELETE FROM saved_authorities WHERE userId = ? AND docType = ? AND docId = ?",
-    )
-    .bind(userId, docType, docId)
-    .run();
+  await db.batch([
+    db
+      .prepare(`UPDATE saved_authorities SET savedAt = NULL, updatedAt = ?
+      WHERE userId = ? AND docType = ? AND docId = ? AND savedAt IS NOT NULL`)
+      .bind(Date.now(), userId, docType, docId),
+    db
+      .prepare(`DELETE FROM saved_authorities
+      WHERE userId = ? AND docType = ? AND docId = ? AND savedAt IS NULL
+        AND NOT EXISTS (SELECT 1 FROM passage_annotations
+          WHERE userId = ? AND authorityId = saved_authorities.id)`)
+      .bind(userId, docType, docId, userId),
+  ]);
 }
