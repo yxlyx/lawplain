@@ -1148,5 +1148,5 @@ test("normalization and owner-isolation contracts are explicit", () => {
   assert.match(source, /FOREIGN|userId = \? AND p\.id = \?/i);
   assert.match(source, /p\.title, p\.citation, p\.path/);
   assert.match(source, /canonicalAuthorityPath\(input\.path\)/);
-  assert.match(source, /PATCH|updateAnnotationNote/);
+  assert.match(source, /PATCH|updateAnnotation/);
 });
