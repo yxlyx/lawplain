@@ -2,6 +2,7 @@
 
 import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { BackToTop } from "@/components/BackToTop";
+import { DocumentAnnotations } from "@/components/DocumentAnnotations";
 import { FindToolbar } from "@/components/FindToolbar";
 import { SectionNav, type SectionNavItem } from "@/components/SectionNav";
 import { useSavedQuoteTarget } from "@/hooks/useSavedQuoteTarget";
@@ -140,6 +141,12 @@ export function StatuteSectionShell({
         </div>
       </div>
       {showSectionNav && <SectionNav items={navItems} />}
+      <DocumentAnnotations
+        containerRef={containerRef}
+        docType="statute"
+        docId={docId}
+        isFullyLoaded
+      />
       <BackToTop />
     </div>
   );

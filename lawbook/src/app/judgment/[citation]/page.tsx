@@ -260,6 +260,7 @@ export default async function JudgmentPage({
         <section className="mt-8">
           <JudgmentBody
             citation={decoded}
+            docId={decoded}
             initialText={j.body_text ?? ""}
             initialLoaded={initialLoaded}
             total={j.body_length ?? initialLoaded}

@@ -9,6 +9,7 @@ import {
   useState,
 } from "react";
 import { BackToTop } from "@/components/BackToTop";
+import { DocumentAnnotations } from "@/components/DocumentAnnotations";
 import { FindToolbar } from "@/components/FindToolbar";
 import { SectionNav, type SectionNavItem } from "@/components/SectionNav";
 import { useSavedQuoteTarget } from "@/hooks/useSavedQuoteTarget";
@@ -71,6 +72,7 @@ interface Suggestion {
  */
 export function JudgmentBody({
   citation,
+  docId,
   initialText,
   initialLoaded,
   total,
@@ -80,6 +82,8 @@ export function JudgmentBody({
   mockSuggestions,
 }: {
   citation: string;
+  /** Canonical id for private data; `citation` is also the API lookup key. */
+  docId?: string;
   source?: unknown;
   pagePath?: string;
   title?: string;
@@ -113,6 +117,9 @@ export function JudgmentBody({
   }
 
   const hasMore = loaded < total;
+  // Private data is keyed by the canonical id SelectionTools saves under, not
+  // by the display citation.
+  const annotationDocId = docId ?? citation;
   const pct = total > 0 ? Math.round((loaded / total) * 100) : 100;
   const terms = useMemo(() => parseTerms(query), [query]);
   const regex = useMemo(() => buildRegex(terms), [terms]);
@@ -377,6 +384,13 @@ export function JudgmentBody({
       </div>
 
       {showSectionNav && <SectionNav items={navItems} />}
+      <DocumentAnnotations
+        containerRef={containerRef}
+        docType="judgment"
+        docId={annotationDocId}
+        isFullyLoaded={!hasMore}
+        onRequestMore={hasMore ? () => void loadMore() : undefined}
+      />
       <BackToTop />
     </div>
   );
