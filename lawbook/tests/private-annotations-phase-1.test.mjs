@@ -195,6 +195,24 @@ test("relabelling never clears a note and vice versa", () => {
   assert.match(source, /EMPTY_UPDATE/);
 });
 
+test("the saved list shows and can change an annotation's label", () => {
+  const source = read("src/components/SavedAnnotations.tsx");
+  // A colour with no readable name would leave the meaning inaccessible.
+  assert.match(source, /resolveAnnotationLabel\(label\)/);
+  assert.match(source, /\{resolved\.name\}/);
+  assert.match(source, /aria-hidden="true"/);
+  // Relabelling reuses the same owner/version discipline as note editing, so a
+  // response for a previous account can never repaint the current one.
+  assert.match(
+    source,
+    /const version = requestVersion\.current;[\s\S]*?body: JSON\.stringify\(\{ label \}\)/,
+  );
+  assert.match(source, /if \(version !== requestVersion\.current\) return;/);
+  assert.match(source, /htmlFor=\{`annotation-label-\$\{annotation\.id\}`\}/);
+  // An id from a newer client stays selectable rather than silently switching.
+  assert.match(source, /ANNOTATION_LABELS\.some\(/);
+});
+
 test("passage anchoring is shared by deep links and restored annotations", () => {
   const anchor = read("src/lib/passage-anchor.ts");
   const hook = read("src/hooks/useSavedQuoteTarget.ts");

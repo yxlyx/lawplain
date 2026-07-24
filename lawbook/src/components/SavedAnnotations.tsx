@@ -2,6 +2,11 @@
 
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
+import {
+  ANNOTATION_LABELS,
+  annotationLabelToken,
+  resolveAnnotationLabel,
+} from "@/lib/annotation-labels";
 import { authClient } from "@/lib/auth-client";
 
 type Annotation = {
@@ -13,6 +18,7 @@ type Annotation = {
   path: string;
   exactText: string;
   note: string | null;
+  label: string;
   createdAt: number;
   updatedAt: number;
 };
@@ -38,6 +44,25 @@ function formatDate(timestamp: number) {
 
 function announceLibraryChanged() {
   window.dispatchEvent(new Event("lawplain:library-changed"));
+}
+
+/** Colour is an aid only; the name beside it is what carries the meaning. */
+function LabelChip({ label }: { label: string }) {
+  const resolved = resolveAnnotationLabel(label);
+  const token = annotationLabelToken(label);
+  return (
+    <span className="inline-flex items-center gap-1.5 text-[11px] font-medium text-muted">
+      <span
+        aria-hidden="true"
+        className="h-2.5 w-2.5 shrink-0 rounded-full border"
+        style={{
+          backgroundColor: `var(--annotation-${token})`,
+          borderColor: `var(--annotation-${token}-ink)`,
+        }}
+      />
+      {resolved.name}
+    </span>
+  );
 }
 
 export function SavedAnnotations() {
@@ -189,6 +214,41 @@ export function SavedAnnotations() {
     }
   }
 
+  async function relabel(annotation: Annotation, label: string) {
+    if (busyId || label === annotation.label) return;
+    const version = requestVersion.current;
+    setBusyId(annotation.id);
+    setError(null);
+    try {
+      const response = await fetch(
+        `/api/annotations/${encodeURIComponent(annotation.id)}`,
+        {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ label }),
+        },
+      );
+      if (!response.ok) throw new Error("Could not change the label.");
+      const data = (await response.json()) as { annotation: Annotation };
+      if (version !== requestVersion.current) return;
+      setAnnotations((items) =>
+        items.map((item) =>
+          item.id === annotation.id ? data.annotation : item,
+        ),
+      );
+      announceLibraryChanged();
+    } catch (caught) {
+      if (version !== requestVersion.current) return;
+      setError(
+        caught instanceof Error
+          ? caught.message
+          : "Could not change the label.",
+      );
+    } finally {
+      if (version === requestVersion.current) setBusyId(null);
+    }
+  }
+
   async function remove(annotation: Annotation) {
     if (
       busyId ||
@@ -255,10 +315,11 @@ export function SavedAnnotations() {
               key={annotation.id}
               className="rounded-xl border border-border bg-background p-4"
             >
+              <LabelChip label={annotation.label} />
               <Link
                 href={annotationTargetPath(annotation)}
                 aria-label={`Open annotation in ${annotation.title}`}
-                className="block rounded-md hover:text-accent"
+                className="mt-2 block rounded-md hover:text-accent"
               >
                 <blockquote className="line-clamp-4 font-serif text-foreground transition-colors hover:text-accent">
                   “{annotation.exactText}”
@@ -325,7 +386,35 @@ export function SavedAnnotations() {
                 </div>
               )}
 
-              <div className="mt-3 flex flex-wrap justify-end gap-2">
+              <div className="mt-3 flex flex-wrap items-center justify-end gap-2">
+                <label
+                  htmlFor={`annotation-label-${annotation.id}`}
+                  className="mr-auto text-xs text-muted-2"
+                >
+                  Label
+                </label>
+                <select
+                  id={`annotation-label-${annotation.id}`}
+                  value={annotation.label}
+                  onChange={(event) =>
+                    void relabel(annotation, event.target.value)
+                  }
+                  disabled={busyId === annotation.id}
+                  className="rounded-full border border-border bg-background px-3 py-1.5 text-xs font-medium text-muted disabled:opacity-60"
+                >
+                  {ANNOTATION_LABELS.some(
+                    (item) => item.id === annotation.label,
+                  ) ? null : (
+                    <option value={annotation.label}>
+                      {resolveAnnotationLabel(annotation.label).name}
+                    </option>
+                  )}
+                  {ANNOTATION_LABELS.map((item) => (
+                    <option key={item.id} value={item.id}>
+                      {item.name}
+                    </option>
+                  ))}
+                </select>
                 <button
                   type="button"
                   onClick={() => beginEditing(annotation)}
