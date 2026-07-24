@@ -2,6 +2,7 @@
 
 import { type RefObject, useEffect, useRef } from "react";
 import { authClient } from "@/lib/auth-client";
+import { findPassageRange } from "@/lib/passage-anchor";
 import type { SavedQuote } from "@/lib/saved-quotes";
 
 const HIGHLIGHT_NAME = "saved-quote-target";
@@ -101,7 +102,7 @@ export function useSavedQuoteTarget(
           if (cancelled) return true;
           const root = containerRef.current;
           if (!root) return false;
-          const range = findQuoteRange(root, quote);
+          const range = findPassageRange(root, quote, [currentHashId()]);
           if (!range) {
             const shouldRetry = onTargetMissingRef.current?.() ?? false;
             return shouldRetry ? false : tryFallback();
@@ -156,144 +157,6 @@ function isCurrentDocument(path: string) {
   } catch {
     return false;
   }
-}
-
-function findQuoteRange(root: HTMLElement, quote: SavedQuote): Range | null {
-  const elements = Array.from(
-    root.querySelectorAll<HTMLElement>("[data-section-id]"),
-  );
-  const anchored = elements.filter(
-    (element) => element.dataset.quoteAnchor === quote.anchor,
-  );
-  const anchoredMatch = bestQuoteMatch(anchored, quote);
-  if (anchoredMatch) return rangeForMatch(anchoredMatch, quote);
-
-  // Older quotes used the section id as their anchor. The section hash also
-  // lets a quote survive a changed block anchor while retaining exact/context
-  // matching across that section.
-  const sectionIds = new Set([quote.anchor, currentHashId()]);
-  const sectionMatch = bestQuoteMatch(
-    elements.filter((element) =>
-      sectionIds.has(element.dataset.sectionId ?? ""),
-    ),
-    quote,
-  );
-  return sectionMatch ? rangeForMatch(sectionMatch, quote) : null;
-}
-
-type QuoteMatch = {
-  element: HTMLElement;
-  offset: number;
-  context: number;
-  storedOffset: boolean;
-};
-
-function bestQuoteMatch(elements: HTMLElement[], quote: SavedQuote) {
-  let best: QuoteMatch | null = null;
-  for (const element of elements) {
-    const text = element.textContent ?? "";
-    let offset = text.indexOf(quote.exactText);
-    while (offset !== -1) {
-      const match: QuoteMatch = {
-        element,
-        offset,
-        context: contextScore(text, offset, quote),
-        storedOffset:
-          offset === quote.startOffset &&
-          offset + quote.exactText.length === quote.endOffset,
-      };
-      if (
-        !best ||
-        match.context > best.context ||
-        (match.context === best.context &&
-          match.storedOffset &&
-          !best.storedOffset)
-      ) {
-        best = match;
-      }
-      offset = text.indexOf(quote.exactText, offset + 1);
-    }
-  }
-  return best;
-}
-
-function rangeForMatch(match: QuoteMatch, quote: SavedQuote) {
-  return rangeForOffsets(
-    match.element,
-    match.offset,
-    match.offset + quote.exactText.length,
-  );
-}
-
-function contextScore(text: string, offset: number, quote: SavedQuote) {
-  const before = text.slice(
-    Math.max(0, offset - quote.contextBefore.length),
-    offset,
-  );
-  const after = text.slice(
-    offset + quote.exactText.length,
-    offset + quote.exactText.length + quote.contextAfter.length,
-  );
-  return (
-    matchingSuffixLength(before, quote.contextBefore) +
-    matchingPrefixLength(after, quote.contextAfter)
-  );
-}
-
-function matchingPrefixLength(a: string, b: string) {
-  let length = 0;
-  while (length < a.length && length < b.length && a[length] === b[length]) {
-    length += 1;
-  }
-  return length;
-}
-
-function matchingSuffixLength(a: string, b: string) {
-  let length = 0;
-  while (
-    length < a.length &&
-    length < b.length &&
-    a[a.length - 1 - length] === b[b.length - 1 - length]
-  ) {
-    length += 1;
-  }
-  return length;
-}
-
-function rangeForOffsets(
-  element: HTMLElement,
-  startOffset: number,
-  endOffset: number,
-): Range | null {
-  const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT);
-  const nodes: Text[] = [];
-  let node = walker.nextNode();
-  while (node) {
-    nodes.push(node as Text);
-    node = walker.nextNode();
-  }
-
-  let position = 0;
-  let start: { node: Text; offset: number } | null = null;
-  let end: { node: Text; offset: number } | null = null;
-
-  for (const textNode of nodes) {
-    const nextPosition = position + textNode.data.length;
-    if (!start && startOffset <= nextPosition) {
-      start = { node: textNode, offset: startOffset - position };
-    }
-    if (endOffset <= nextPosition) {
-      end = { node: textNode, offset: endOffset - position };
-      break;
-    }
-    position = nextPosition;
-  }
-
-  if (!start || !end) return null;
-  const range = document.createRange();
-  range.setStart(start.node, start.offset);
-  range.setEnd(end.node, end.offset);
-  return range;
 }
 
 function applyTemporaryHighlight(range: Range) {
