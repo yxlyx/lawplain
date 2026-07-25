@@ -672,6 +672,9 @@ test("legacy Undo synchronization and expiry purge remove private compatibility 
     ('other-quote','other','judgment','other-doc','other text','Other title',
      'Other cite','/judgment/other-doc#p1','p1',0,10,'','',103,NULL)`).run();
   db.exec(read("migrations/0020_private_research_foundation.sql"));
+  // The purge now spares an authority that only holds a document note (#194),
+  // so its statements reference that table.
+  db.exec(read("migrations/0022_document_notes.sql"));
 
   const model = read("src/lib/private-annotations.ts");
   const statements = (start, end) => {

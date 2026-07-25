@@ -349,15 +349,25 @@ async function purgeExpiredSoftDeletedAnnotationsWithDb(
         SELECT 1 FROM passage_annotations p
         WHERE p.userId = ?
           AND p.authorityId = private_research_authority_guards.authorityId
+      ) AND NOT EXISTS (
+        SELECT 1 FROM document_notes n
+        WHERE n.userId = ?
+          AND n.authorityId = private_research_authority_guards.authorityId
       )`)
-      .bind(userId, userId),
+      .bind(userId, userId, userId),
+    // A document note (#194) is reason enough to keep the root. Without this the
+    // purge that runs before every My Library read would delete a note-only
+    // document and cascade the reader's note away with it.
     db
       .prepare(`DELETE FROM saved_authorities
       WHERE userId = ? AND savedAt IS NULL AND NOT EXISTS (
         SELECT 1 FROM passage_annotations p
         WHERE p.userId = ? AND p.authorityId = saved_authorities.id
+      ) AND NOT EXISTS (
+        SELECT 1 FROM document_notes n
+        WHERE n.userId = ? AND n.authorityId = saved_authorities.id
       )`)
-      .bind(userId, userId),
+      .bind(userId, userId, userId),
   ]);
 }
 

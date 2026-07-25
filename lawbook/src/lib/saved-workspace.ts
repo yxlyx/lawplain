@@ -123,11 +123,16 @@ export async function deleteSavedAuthority({
       .prepare(`UPDATE saved_authorities SET savedAt = NULL, updatedAt = ?
       WHERE userId = ? AND docType = ? AND docId = ? AND savedAt IS NOT NULL`)
       .bind(Date.now(), userId, docType, docId),
+    // Unsaving a bookmark must not destroy research attached to it: a highlight
+    // or a document note (#194) keeps the root alive even once the explicit save
+    // is gone.
     db
       .prepare(`DELETE FROM saved_authorities
       WHERE userId = ? AND docType = ? AND docId = ? AND savedAt IS NULL
         AND NOT EXISTS (SELECT 1 FROM passage_annotations
+          WHERE userId = ? AND authorityId = saved_authorities.id)
+        AND NOT EXISTS (SELECT 1 FROM document_notes
           WHERE userId = ? AND authorityId = saved_authorities.id)`)
-      .bind(userId, docType, docId, userId),
+      .bind(userId, docType, docId, userId, userId),
   ]);
 }

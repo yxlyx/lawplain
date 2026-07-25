@@ -260,6 +260,102 @@ test("a first note adds the document to My Library without duplicating it", () =
   assert.match(libraryQuery, /AS documentNoteCount/);
 });
 
+/**
+ * Every statement that deletes a saved_authorities row must spare one that only
+ * holds a document note. Found by walking the deployed app: the purge below runs
+ * before every My Library read, so opening the library silently destroyed a
+ * note-only document and cascaded the note away. The #195 test missed it because
+ * its fixture always had an annotation, which satisfied the annotation guard.
+ */
+test("no authority-delete site strips a document-note-only root", () => {
+  const sites = [
+    ...annotations.matchAll(/DELETE FROM saved_authorities([\s\S]*?)`\)/g),
+    ...readFileSync("src/lib/saved-workspace.ts", "utf8").matchAll(
+      /DELETE FROM saved_authorities([\s\S]*?)`\)/g,
+    ),
+    ...notes.matchAll(/DELETE FROM saved_authorities([\s\S]*?)`\)/g),
+  ].map((m) => m[1]);
+  assert.ok(
+    sites.length >= 4,
+    `expected every delete site, saw ${sites.length}`,
+  );
+  for (const sql of sites) {
+    assert.match(
+      sql,
+      /NOT EXISTS \(\s*SELECT 1 FROM document_notes/,
+      `an authority delete ignores document notes:\n${sql.trim().slice(0, 200)}`,
+    );
+  }
+});
+
+test("running the purge leaves a note-only document intact", () => {
+  const db = migratedDb();
+  db.prepare(`INSERT INTO saved_authorities
+    (id,userId,docType,docId,title,path,createdAt,updatedAt,citation,savedAt,
+     activityAt)
+    VALUES ('auth1','owner','judgment','doc','T','/judgment/doc',10,10,'C',
+      NULL,10)`).run();
+  db.prepare(`INSERT INTO document_notes
+    (id,userId,authorityId,title,citation,path,body,template,createdAt,updatedAt)
+    VALUES ('n1','owner','auth1','T','C','/judgment/doc','my note','free',10,10)`).run();
+
+  // The exact statement listLibrary runs before reading, with no annotations
+  // present at all — the shape that used to delete the row.
+  db.prepare(`DELETE FROM saved_authorities
+    WHERE userId = ? AND savedAt IS NULL AND NOT EXISTS (
+      SELECT 1 FROM passage_annotations p
+      WHERE p.userId = ? AND p.authorityId = saved_authorities.id
+    ) AND NOT EXISTS (
+      SELECT 1 FROM document_notes n
+      WHERE n.userId = ? AND n.authorityId = saved_authorities.id
+    )`).run("owner", "owner", "owner");
+
+  assert.equal(
+    db.prepare("SELECT COUNT(*) AS n FROM saved_authorities").get().n,
+    1,
+    "the purge deleted a note-only authority",
+  );
+  assert.equal(
+    db.prepare("SELECT COUNT(*) AS n FROM document_notes").get().n,
+    1,
+    "the reader's note was cascaded away",
+  );
+});
+
+test("unsaving a bookmark keeps a document note that has no highlight", () => {
+  const db = migratedDb();
+  db.prepare(`INSERT INTO saved_authorities
+    (id,userId,docType,docId,title,path,createdAt,updatedAt,citation,savedAt,
+     activityAt)
+    VALUES ('auth1','owner','judgment','doc','T','/judgment/doc',10,10,'C',
+      10,10)`).run();
+  db.prepare(`INSERT INTO document_notes
+    (id,userId,authorityId,title,citation,path,body,template,createdAt,updatedAt)
+    VALUES ('n1','owner','auth1','T','C','/judgment/doc','my note','free',10,10)`).run();
+
+  // deleteSavedAuthority: clear savedAt, then drop the root if nothing remains.
+  db.prepare(
+    "UPDATE saved_authorities SET savedAt=NULL WHERE userId='owner' AND id='auth1'",
+  ).run();
+  db.prepare(`DELETE FROM saved_authorities
+    WHERE userId = ? AND docType = ? AND docId = ? AND savedAt IS NULL
+      AND NOT EXISTS (SELECT 1 FROM passage_annotations
+        WHERE userId = ? AND authorityId = saved_authorities.id)
+      AND NOT EXISTS (SELECT 1 FROM document_notes
+        WHERE userId = ? AND authorityId = saved_authorities.id)`).run(
+    "owner",
+    "judgment",
+    "doc",
+    "owner",
+    "owner",
+  );
+  assert.equal(
+    db.prepare("SELECT COUNT(*) AS n FROM document_notes").get().n,
+    1,
+    "unsaving destroyed the reader's note",
+  );
+});
+
 test("deleting the last highlight cannot cascade a document note away", () => {
   // Both the guard row and the authority root must survive while a note exists.
   const guards = annotations.match(
