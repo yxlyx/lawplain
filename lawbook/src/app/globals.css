@@ -14,7 +14,10 @@
   --surface-2: #eef1f8; /* sunken wells, navy-tinted */
   --foreground: #161a26; /* semi-black ink with a navy cast */
   --muted: #4a5264; /* secondary text */
-  --muted-2: #7a8194; /* faint meta */
+  /* 4.5:1 on both the white canvas and the sunken well. The previous #7a8194
+     measured 3.89:1 on white — under AA for normal text, and #193 asks for
+     accessible text in both themes. Dark already passed at 5.46:1. */
+  --muted-2: #666e80; /* faint meta */
   --border: #e5e8f0; /* hairline */
   --border-strong: #d4d9e6;
   --primary: #161a26; /* ink buttons */
