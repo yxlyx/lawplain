@@ -13,6 +13,7 @@ import {
 } from "react";
 import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { AskPrivateNotes } from "@/components/AskPrivateNotes";
 import {
   Bubble,
   MessageAvatar,
@@ -2704,6 +2705,9 @@ export function AskAgent({
           </button>
         </div>
       )}
+      {/* Private notes are opt-in per question (#200), so the control sits with
+          the composer rather than in settings — there is no standing choice. */}
+      <AskPrivateNotes />
       <form onSubmit={onSubmit} className="flex items-end gap-2">
         <textarea
           ref={bindComposerInput}

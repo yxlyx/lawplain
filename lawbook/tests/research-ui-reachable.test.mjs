@@ -36,9 +36,7 @@ const NOT_CALLED_BY_UI = {
  * shrink, never grow — the assertion below is an equality, so building a UI
  * without removing its entry fails just as loudly as adding a new orphan.
  */
-const PENDING_UI = [
-  "/api/ask-private-context", // #200 — deferred until the privacy contract is reviewed
-];
+const PENDING_UI = [];
 
 test("no research API is shipped without a way to reach it", () => {
   const routes = all
