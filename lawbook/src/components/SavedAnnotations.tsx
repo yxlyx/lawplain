@@ -8,6 +8,20 @@ import {
   resolveAnnotationLabel,
 } from "@/lib/annotation-labels";
 import { authClient } from "@/lib/auth-client";
+import { formatCopiedQuote } from "@/lib/research-export";
+
+/** Label id -> display name, for a copied quote (#198). */
+const LABEL_NAMES: Record<string, string> = Object.fromEntries(
+  ANNOTATION_LABELS.map((label) => [label.id, label.name]),
+);
+
+type FollowUp = {
+  annotationId: string;
+  note: string | null;
+  dueAt: number | null;
+  resolvedAt: number | null;
+  overdue: boolean;
+};
 
 type Annotation = {
   id: string;
@@ -77,8 +91,95 @@ export function SavedAnnotations() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [noteDraft, setNoteDraft] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [followUps, setFollowUps] = useState<Record<string, FollowUp>>({});
   const requestVersion = useRef(0);
   const paginationController = useRef<AbortController | null>(null);
+
+  /**
+   * Copy a passage with its citation, deep link and label. The reader's own note
+   * is only included when they pick the button that says so (#198).
+   */
+  async function copyQuote(annotation: Annotation, includeNote: boolean) {
+    const text = formatCopiedQuote(
+      { title: annotation.title, citation: annotation.citation },
+      {
+        annotationId: annotation.id,
+        exactText: annotation.exactText,
+        note: annotation.note,
+        label: annotation.label,
+        path: annotation.path,
+        startOffset: 0,
+        endOffset: annotation.exactText.length,
+        createdAt: annotation.createdAt,
+        updatedAt: annotation.updatedAt,
+      },
+      LABEL_NAMES,
+      { includeNote, origin: window.location.origin },
+    );
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopiedId(`${annotation.id}:${includeNote}`);
+      window.setTimeout(() => setCopiedId(null), 1500);
+    } catch {
+      setError("Could not copy. Your clipboard blocked the request.");
+    }
+  }
+
+  /** Open, resolve or reopen a follow-up on one passage (#199). */
+  async function toggleFollowUp(
+    annotation: Annotation,
+    change: { resolved?: boolean; open?: boolean },
+  ) {
+    setBusyId(annotation.id);
+    setError(null);
+    try {
+      const response = await fetch("/api/follow-ups", {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          annotationId: annotation.id,
+          resolved: change.resolved ?? false,
+          ...(change.open ? { note: null } : {}),
+        }),
+      });
+      if (!response.ok) throw new Error("Could not update the follow-up.");
+      const body = (await response.json()) as { followUp: FollowUp };
+      setFollowUps((current) => ({
+        ...current,
+        [annotation.id]: body.followUp,
+      }));
+      announceLibraryChanged();
+    } catch (caught) {
+      setError(
+        caught instanceof Error
+          ? caught.message
+          : "Could not update the follow-up.",
+      );
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  async function clearFollowUp(annotation: Annotation) {
+    setBusyId(annotation.id);
+    try {
+      await fetch(
+        `/api/follow-ups?annotationId=${encodeURIComponent(annotation.id)}`,
+        { method: "DELETE" },
+      );
+      setFollowUps((current) => {
+        const next = { ...current };
+        delete next[annotation.id];
+        return next;
+      });
+      announceLibraryChanged();
+    } catch {
+      setError("Could not remove the follow-up.");
+    } finally {
+      setBusyId(null);
+    }
+  }
 
   useEffect(() => {
     const version = ++requestVersion.current;
@@ -124,7 +225,30 @@ export function SavedAnnotations() {
       }
     }
 
+    // Follow-up state lives beside the annotation, not on it, so it loads on its
+    // own. A failure here leaves the annotations usable and simply shows none.
+    async function loadFollowUps() {
+      try {
+        const response = await fetch("/api/follow-ups?state=all", {
+          cache: "no-store",
+          signal: controller.signal,
+        });
+        if (!response.ok) return;
+        const body = (await response.json()) as { followUps: FollowUp[] };
+        if (controller.signal.aborted || version !== requestVersion.current)
+          return;
+        setFollowUps(
+          Object.fromEntries(
+            (body.followUps ?? []).map((f) => [f.annotationId, f]),
+          ),
+        );
+      } catch {
+        // Non-fatal.
+      }
+    }
+
     void load();
+    void loadFollowUps();
     return () => {
       controller.abort();
       paginationController.current?.abort();
@@ -415,6 +539,79 @@ export function SavedAnnotations() {
                     </option>
                   ))}
                 </select>
+                <button
+                  type="button"
+                  onClick={() => void copyQuote(annotation, false)}
+                  className="rounded-full border border-border px-3 py-1.5 text-xs font-medium text-muted hover:border-accent hover:text-accent"
+                >
+                  {copiedId === `${annotation.id}:false` ? "Copied" : "Copy"}
+                </button>
+                {annotation.note && (
+                  // A separate control, so including a private note is always an
+                  // explicit choice rather than a default (#198).
+                  <button
+                    type="button"
+                    onClick={() => void copyQuote(annotation, true)}
+                    className="rounded-full border border-border px-3 py-1.5 text-xs font-medium text-muted hover:border-accent hover:text-accent"
+                  >
+                    {copiedId === `${annotation.id}:true`
+                      ? "Copied"
+                      : "Copy with my note"}
+                  </button>
+                )}
+                {(() => {
+                  const followUp = followUps[annotation.id];
+                  if (!followUp) {
+                    return (
+                      <button
+                        type="button"
+                        onClick={() =>
+                          void toggleFollowUp(annotation, { open: true })
+                        }
+                        disabled={busyId === annotation.id}
+                        className="rounded-full border border-border px-3 py-1.5 text-xs font-medium text-muted hover:border-accent hover:text-accent disabled:opacity-60"
+                      >
+                        Follow up
+                      </button>
+                    );
+                  }
+                  const open = followUp.resolvedAt === null;
+                  return (
+                    <>
+                      <span
+                        className={
+                          open
+                            ? "rounded-full bg-amber-50 px-2.5 py-1 text-[11px] font-medium text-amber-800"
+                            : "rounded-full bg-surface-2 px-2.5 py-1 text-[11px] font-medium text-muted-2"
+                        }
+                      >
+                        {open
+                          ? followUp.overdue
+                            ? "Follow-up overdue"
+                            : "Following up"
+                          : "Resolved"}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          void toggleFollowUp(annotation, { resolved: open })
+                        }
+                        disabled={busyId === annotation.id}
+                        className="rounded-full border border-border px-3 py-1.5 text-xs font-medium text-muted hover:border-accent hover:text-accent disabled:opacity-60"
+                      >
+                        {open ? "Resolve" : "Reopen"}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => void clearFollowUp(annotation)}
+                        disabled={busyId === annotation.id}
+                        className="rounded-full px-2.5 py-1.5 text-xs font-medium text-muted hover:bg-surface-2 disabled:opacity-60"
+                      >
+                        Remove follow-up
+                      </button>
+                    </>
+                  );
+                })()}
                 <button
                   type="button"
                   onClick={() => beginEditing(annotation)}

@@ -539,6 +539,33 @@ export function SavedWorkspace() {
               Clear filters
             </button>
           )}
+
+          {/* Export (#198). Notes are a separate choice, never the default, and
+              the download is generated per request rather than stored. */}
+          <span className="ml-auto flex items-center gap-1.5">
+            <a
+              href="/api/research-export?format=md"
+              download
+              className="rounded-full border border-border px-3 py-1 text-xs font-medium text-muted hover:border-accent hover:text-foreground"
+            >
+              Export Markdown
+            </a>
+            <a
+              href="/api/research-export?format=json"
+              download
+              className="rounded-full border border-border px-3 py-1 text-xs font-medium text-muted hover:border-accent hover:text-foreground"
+            >
+              JSON
+            </a>
+            <a
+              href="/api/research-export?format=md&includeNotes=true"
+              download
+              className="rounded-full border border-border px-3 py-1 text-xs font-medium text-muted hover:border-accent hover:text-foreground"
+              title="Includes the text of your private notes"
+            >
+              Export with my notes
+            </a>
+          </span>
         </fieldset>
         {visibleAuthorities.length === 0 ? (
           <div className="rounded-xl border border-dashed border-border-strong p-5 text-sm text-muted">
