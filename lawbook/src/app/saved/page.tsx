@@ -1,4 +1,6 @@
 import type { Metadata } from "next";
+import { ResearchGroupManager } from "@/components/ResearchGroupManager";
+import { ResearchOutline } from "@/components/ResearchOutline";
 import { ResearchSearch } from "@/components/ResearchSearch";
 import { SavedAnnotations } from "@/components/SavedAnnotations";
 import { SavedAnswers } from "@/components/SavedAnswers";
@@ -30,6 +32,8 @@ export default function SavedPage() {
       </div>
       <ResearchSearch />
       <SavedWorkspace />
+      <ResearchGroupManager />
+      <ResearchOutline />
       <SavedAnnotations />
       <SavedSearchHistory />
       <SavedAnswers />

@@ -37,9 +37,6 @@ const NOT_CALLED_BY_UI = {
  * without removing its entry fails just as loudly as adding a new orphan.
  */
 const PENDING_UI = [
-  // #197 attach/detach and inline create are wired; rename, archive, merge and
-  // delete are not, so the issue is only partly reachable.
-  "/api/research-groups/[id]",
   "/api/ask-private-context", // #200 — deferred until the privacy contract is reviewed
 ];
 
