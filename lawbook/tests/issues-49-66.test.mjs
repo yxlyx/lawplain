@@ -133,8 +133,17 @@ test("canonical annotations are owner scoped, bounded, and payload-free on legac
 
 test("selection tools use one anchored block and keep guest Copy available", () => {
   const source = read("src/components/SelectionTools.tsx");
-  assert.match(source, /startBlock !== endBlock/);
+  // An annotation still anchors to exactly one block. A selection that runs past
+  // that block is now clamped to it rather than refused outright, because a
+  // triple-click overshoots by one character and used to offer nothing at all.
+  assert.match(source, /if \(endBlock !== startBlock\)/);
+  assert.match(
+    source,
+    /effective\.setEnd\(startBlock, startBlock\.childNodes\.length\)/,
+  );
+  assert.match(source, /const exactText = effective\.toString\(\)/);
   assert.match(source, /selectNodeContents\(startBlock\)/);
+  assert.match(source, /beforeRange\.setEnd\(effective\.startContainer/);
   assert.match(source, /contextBefore/);
   assert.match(source, /saving/);
   assert.match(source, /Create account/);

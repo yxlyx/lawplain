@@ -257,6 +257,15 @@ export default async function StatutePage({
           </div>
         </header>
 
+        {/* Above the provisions, for the same reason as on a judgment. */}
+        <DocumentNotes
+          docType="statute"
+          docId={decoded}
+          title={title}
+          citation={s.act_id ?? decoded}
+          path={pagePath}
+        />
+
         {sections.length === 0 ? (
           <section className="flex flex-1 items-center justify-center">
             <EmptyState
@@ -302,13 +311,6 @@ export default async function StatutePage({
             </StatuteSectionShell>
           </div>
         )}
-        <DocumentNotes
-          docType="statute"
-          docId={decoded}
-          title={title}
-          citation={s.act_id ?? decoded}
-          path={pagePath}
-        />
         <SelectionTools
           title={title}
           citation={s.act_id ?? decoded}

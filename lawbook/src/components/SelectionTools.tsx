@@ -140,27 +140,35 @@ export function SelectionTools({
       const selectable = start?.closest("[data-selectable]");
       const startBlock = start?.closest<HTMLElement>("[data-section-id]");
       const endBlock = end?.closest<HTMLElement>("[data-section-id]");
-      const exactText = selection.toString();
-      if (
-        !selectable ||
-        !startBlock ||
-        startBlock !== endBlock ||
-        !selectable.contains(endBlock) ||
-        exactText.trim().length < 2 ||
-        exactText.length > MAX_QUOTE_LENGTH
-      ) {
+      if (!selectable || !startBlock || !selectable.contains(startBlock)) {
+        setRect(null);
+        return;
+      }
+
+      // Offsets and the anchor are relative to the block the selection starts in,
+      // so a selection may not run past it. Rather than refuse one that does,
+      // clamp it to that block: a triple-click selects a paragraph plus one
+      // boundary character, which lands endContainer in the *next* paragraph and
+      // used to silently offer nothing at all for the commonest way a reader
+      // picks out a passage.
+      const effective = range.cloneRange();
+      if (endBlock !== startBlock) {
+        effective.setEnd(startBlock, startBlock.childNodes.length);
+      }
+      const exactText = effective.toString();
+      if (exactText.trim().length < 2 || exactText.length > MAX_QUOTE_LENGTH) {
         setRect(null);
         return;
       }
       const beforeRange = document.createRange();
       beforeRange.selectNodeContents(startBlock);
-      beforeRange.setEnd(range.startContainer, range.startOffset);
+      beforeRange.setEnd(effective.startContainer, effective.startOffset);
       const startOffset = beforeRange.toString().length;
       const endOffset = startOffset + exactText.length;
       const sourceText = startBlock.textContent ?? "";
       const sectionAnchor = startBlock.dataset.sectionId || startBlock.id;
       const anchor = startBlock.dataset.quoteAnchor || sectionAnchor;
-      const box = range.getBoundingClientRect();
+      const box = effective.getBoundingClientRect();
       selectionVersion.current += 1;
       setSaving(false);
       setDraftOwnerId(ownerIdRef.current);

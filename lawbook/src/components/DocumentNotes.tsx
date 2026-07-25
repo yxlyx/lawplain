@@ -1,6 +1,6 @@
 "use client";
 
-import { useId, useState } from "react";
+import { useEffect, useId, useState } from "react";
 import {
   MAX_DOCUMENT_NOTE_LENGTH,
   type NoteSaveState,
@@ -11,6 +11,23 @@ import {
   templatesForDocType,
 } from "@/lib/document-note-templates";
 import type { SavedDocType } from "@/lib/saved-workspace";
+
+/** Small page icon, so the collapsed control reads as notes rather than a filter. */
+function NoteIcon() {
+  return (
+    <svg
+      aria-hidden="true"
+      viewBox="0 0 16 16"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.5"
+      className="h-3.5 w-3.5"
+    >
+      <path d="M4 2.5h5.5L12.5 5.5V13a.5.5 0 0 1-.5.5H4a.5.5 0 0 1-.5-.5V3a.5.5 0 0 1 .5-.5Z" />
+      <path d="M9.25 2.75V5.5h2.75M5.75 8.5h4.5M5.75 10.75h3" />
+    </svg>
+  );
+}
 
 function statusText(state: NoteSaveState): string | null {
   switch (state.kind) {
@@ -62,24 +79,59 @@ export function DocumentNotes({
     remove,
   } = useDocumentNote({ docType, docId, title, citation, path });
   const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const [open, setOpen] = useState(false);
   const editorId = useId();
   const headingId = useId();
   const statusId = useId();
   const templates = templatesForDocType(docType);
   const status = statusText(state);
 
+  // An existing note opens itself, so a reader never has to remember it is here.
+  // An empty one stays shut: this sits above the document, and a full-height
+  // editor would push the text the reader came for off the screen.
+  const hasNote = Boolean(note);
+  useEffect(() => {
+    if (hasNote) setOpen(true);
+  }, [hasNote]);
+
   // Nothing private renders for a signed-out reader, and the panel never hints
   // that a note exists.
   if (!ownerId) return null;
 
+  const kind = docType === "statute" ? "statute" : "judgment";
+
+  if (!open) {
+    return (
+      <div className="mt-6">
+        <button
+          type="button"
+          onClick={() => setOpen(true)}
+          className="inline-flex items-center gap-2 rounded-full border border-border bg-surface px-3.5 py-1.5 text-xs font-medium text-muted transition-colors hover:border-accent hover:text-foreground"
+        >
+          <NoteIcon />
+          {hasNote ? `My notes on this ${kind}` : `Add notes on this ${kind}`}
+        </button>
+      </div>
+    );
+  }
+
   return (
     <section
       aria-labelledby={headingId}
-      className="mt-8 rounded-2xl border border-border bg-surface p-4 shadow-sm"
+      className="mt-6 rounded-2xl border border-border bg-surface p-4 shadow-sm"
     >
-      <h2 id={headingId} className="text-sm font-medium text-foreground">
-        My notes on this {docType === "statute" ? "statute" : "judgment"}
-      </h2>
+      <div className="flex items-start justify-between gap-2">
+        <h2 id={headingId} className="text-sm font-medium text-foreground">
+          My notes on this {kind}
+        </h2>
+        <button
+          type="button"
+          onClick={() => setOpen(false)}
+          className="rounded-full px-2.5 py-1 text-xs font-medium text-muted hover:bg-surface-2 hover:text-foreground"
+        >
+          Hide
+        </button>
+      </div>
       <p className="mt-0.5 text-[11px] text-muted-2">
         Private to you. Separate from your highlighted passages — this note
         covers the whole document.

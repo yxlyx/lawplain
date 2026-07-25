@@ -258,6 +258,15 @@ export default async function JudgmentPage({
           </div>
         </header>
 
+        {/* Above the body: a 300k-character judgment put this ~28 screens down. */}
+        <DocumentNotes
+          docType="judgment"
+          docId={decoded}
+          title={title}
+          citation={j.neutral_cite || j.citation || decoded}
+          path={pagePath}
+        />
+
         <section className="mt-8">
           <JudgmentBody
             citation={decoded}
@@ -270,13 +279,6 @@ export default async function JudgmentPage({
             initialSections={j.sections}
           />
         </section>
-        <DocumentNotes
-          docType="judgment"
-          docId={decoded}
-          title={title}
-          citation={j.neutral_cite || j.citation || decoded}
-          path={pagePath}
-        />
         <SelectionTools
           title={title}
           citation={j.neutral_cite || j.citation || decoded}
