@@ -331,8 +331,8 @@ const SUGGESTIONS = [
 
 const TOOL_DOT: Record<ToolStep["kind"], string> = {
   search: "bg-accent",
-  fetch: "bg-emerald-500",
-  read: "bg-amber-500",
+  fetch: "bg-success",
+  read: "bg-warning",
   setup: "bg-violet-500",
   other: "bg-muted-2",
 };
@@ -3313,8 +3313,8 @@ function ThreadSidebar({
                           </span>
                         )}
                         {!researching && status === "stopped" && (
-                          <span className="inline-flex items-center gap-1 text-[10px] font-medium uppercase tracking-wide text-amber-700">
-                            <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
+                          <span className="inline-flex items-center gap-1 text-[10px] font-medium uppercase tracking-wide text-warning">
+                            <span className="h-1.5 w-1.5 rounded-full bg-warning" />
                             exited
                           </span>
                         )}
@@ -3750,7 +3750,7 @@ function AnswerActions({
                   type="button"
                   onClick={() => void saveReason(null)}
                   disabled={reasonState === "saving"}
-                  className={`${btn} text-red-600 hover:text-red-700`}
+                  className={`${btn} text-danger hover:text-danger`}
                 >
                   Remove reason
                 </button>
@@ -3924,12 +3924,12 @@ const AssistantMessage = memo(function AssistantMessage({
 
         {/* Stopped / error */}
         {m.phase === "stopped" && (
-          <p className="w-fit rounded-2xl rounded-bl-md bg-amber-50 px-3 py-2 text-[13px] text-amber-800">
+          <p className="w-fit rounded-2xl rounded-bl-md bg-warning-soft px-3 py-2 text-[13px] text-warning">
             Research exited. Any partial answer above may be incomplete.
           </p>
         )}
         {m.phase === "error" && m.error && (
-          <p className="w-fit rounded-2xl rounded-bl-md bg-red-50 px-3 py-2 text-[13px] text-red-700">
+          <p className="w-fit rounded-2xl rounded-bl-md bg-danger-soft px-3 py-2 text-[13px] text-danger">
             {m.error === "Please sign in to use Ask Lawplain." ? (
               <>
                 Please{" "}

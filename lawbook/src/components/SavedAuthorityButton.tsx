@@ -391,7 +391,7 @@ export function SavedAuthorityButton({
                 : "Save"}
       </button>
       {messageDisplay && (
-        <p className="max-w-64 text-right text-xs text-red-700">
+        <p className="max-w-64 text-right text-xs text-danger">
           {messageDisplay}
         </p>
       )}

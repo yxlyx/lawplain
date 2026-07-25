@@ -154,7 +154,7 @@ export function ApiKeysManager() {
           {creating ? "Creating…" : "Create key"}
         </button>
       </div>
-      {error && <p className="text-sm text-red-500">{error}</p>}
+      {error && <p className="text-sm text-danger">{error}</p>}
 
       {active.length === 0 ? (
         <p className="text-sm text-muted-2">No keys yet.</p>
@@ -176,7 +176,7 @@ export function ApiKeysManager() {
                 type="button"
                 onClick={() => void revoke(k.id)}
                 aria-label="Revoke key"
-                className="inline-flex shrink-0 items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium text-muted-2 transition-colors hover:bg-surface-2 hover:text-red-500"
+                className="inline-flex shrink-0 items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium text-muted-2 transition-colors hover:bg-surface-2 hover:text-danger"
               >
                 <XIcon className="h-3.5 w-3.5" />
                 Revoke

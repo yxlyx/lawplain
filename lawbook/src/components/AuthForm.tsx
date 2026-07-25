@@ -380,7 +380,7 @@ export function AuthForm({ mode, socialProviders }: AuthFormProps) {
         )}
 
         {error && (
-          <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">
+          <p className="rounded-lg bg-danger-soft px-3 py-2 text-sm text-danger">
             {error.kind === "unregistered" ? (
               <>
                 No account found for “{error.username}”.{" "}

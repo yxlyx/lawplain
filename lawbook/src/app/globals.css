@@ -2,13 +2,13 @@
 @import "tailwindcss";
 
 /*
- * Design system — "Counsel Emerald" (light only).
+ * Design system — "Counsel Emerald", light and dark (#206).
  * Pure white canvas, navy-cast neutrals, one deep emerald accent, pill
  * geometry. Google Sans Flex for UI (semi-black weights for emphasis);
  * Lora for editorial/legal text.
  */
 :root {
-  color-scheme: light; /* always light */
+  color-scheme: light; /* the dark override lives further down (#206) */
   --background: #ffffff; /* pure white canvas */
   --surface: #ffffff; /* cards */
   --surface-2: #eef1f8; /* sunken wells, navy-tinted */
@@ -23,6 +23,18 @@
   --accent-soft: rgba(13, 117, 97, 0.09);
   --ring: #0d7561;
   --highlight: rgba(13, 117, 97, 0.16); /* search highlight */
+  /*
+   * Semantic states. Components used Tailwind palette literals (bg-amber-50,
+   * text-red-700) which cannot follow a theme — every one of them stayed light
+   * on a dark canvas. Naming them here is what makes dark mode possible at all.
+   */
+  --danger: #b91c1c;
+  --danger-soft: #fef2f2;
+  --danger-border: #fca5a5;
+  --warning: #92400e;
+  --warning-soft: #fffbeb;
+  --warning-border: #fde68a;
+  --success: #047857;
 }
 
 @theme inline {
@@ -40,6 +52,13 @@
   --color-accent-soft: var(--accent-soft);
   --color-ring: var(--ring);
   --color-highlight: var(--highlight);
+  --color-danger: var(--danger);
+  --color-danger-soft: var(--danger-soft);
+  --color-danger-border: var(--danger-border);
+  --color-warning: var(--warning);
+  --color-warning-soft: var(--warning-soft);
+  --color-warning-border: var(--warning-border);
+  --color-success: var(--success);
   --font-sans: var(--font-google-sans);
   --font-mono: var(--font-geist-mono);
   --font-serif: var(--font-serif);
@@ -141,6 +160,105 @@ mark[data-match][data-active] {
      annotation written by a newer client never silently vanishes. */
   --annotation-other: rgba(100, 116, 139, 0.24);
   --annotation-other-ink: #475569;
+}
+
+/*
+ * Dark theme (#206).
+ *
+ * Two signals, deliberately: the media query follows the operating system, and
+ * the `data-theme` attribute lets an explicit choice win over it in either
+ * direction. The shared block below is applied by both.
+ *
+ * The annotation inks all move to their light tints. A tint alone is not enough
+ * on a dark canvas — the `-ink` colours are the solid companions used for chips,
+ * swatch rings and the highlight underline, and the light theme's #a16207 amber
+ * or #1d4ed8 blue are close to invisible against near-black. The label set has
+ * to stay distinguishable from *each other* as well as readable, since colour
+ * carries meaning here even though the name always renders beside it.
+ */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --background: #0f1117;
+    --surface: #161a26;
+    --surface-2: #1e2434;
+    --foreground: #e8eaf2;
+    --muted: #a8b0c2;
+    --muted-2: #828a9e;
+    --border: #262c3c;
+    --border-strong: #39415a;
+    --primary: #e8eaf2;
+    --primary-fg: #161a26;
+    --accent: #34d399;
+    --accent-soft: rgba(52, 211, 153, 0.14);
+    --ring: #34d399;
+    --highlight: rgba(52, 211, 153, 0.22);
+    --danger: #fca5a5;
+    --danger-soft: rgba(248, 113, 113, 0.12);
+    --danger-border: rgba(248, 113, 113, 0.42);
+    --warning: #fcd34d;
+    --warning-soft: rgba(251, 191, 36, 0.12);
+    --warning-border: rgba(251, 191, 36, 0.42);
+    --success: #34d399;
+    --annotation-key-point: rgba(234, 179, 8, 0.32);
+    --annotation-key-point-ink: #fbbf24;
+    --annotation-facts: rgba(59, 130, 246, 0.32);
+    --annotation-facts-ink: #60a5fa;
+    --annotation-issue: rgba(168, 85, 247, 0.32);
+    --annotation-issue-ink: #c084fc;
+    --annotation-holding: rgba(16, 185, 129, 0.32);
+    --annotation-holding-ink: #34d399;
+    --annotation-reasoning: rgba(236, 72, 153, 0.3);
+    --annotation-reasoning-ink: #f472b6;
+    --annotation-exception: rgba(249, 115, 22, 0.32);
+    --annotation-exception-ink: #fb923c;
+    --annotation-follow-up: rgba(148, 163, 184, 0.32);
+    --annotation-follow-up-ink: #cbd5e1;
+    --annotation-other: rgba(148, 163, 184, 0.32);
+    --annotation-other-ink: #cbd5e1;
+  }
+}
+
+/* An explicit choice overrides the operating system in both directions. */
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --background: #0f1117;
+  --surface: #161a26;
+  --surface-2: #1e2434;
+  --foreground: #e8eaf2;
+  --muted: #a8b0c2;
+  --muted-2: #828a9e;
+  --border: #262c3c;
+  --border-strong: #39415a;
+  --primary: #e8eaf2;
+  --primary-fg: #161a26;
+  --accent: #34d399;
+  --accent-soft: rgba(52, 211, 153, 0.14);
+  --ring: #34d399;
+  --highlight: rgba(52, 211, 153, 0.22);
+  --danger: #fca5a5;
+  --danger-soft: rgba(248, 113, 113, 0.12);
+  --danger-border: rgba(248, 113, 113, 0.42);
+  --warning: #fcd34d;
+  --warning-soft: rgba(251, 191, 36, 0.12);
+  --warning-border: rgba(251, 191, 36, 0.42);
+  --success: #34d399;
+  --annotation-key-point: rgba(234, 179, 8, 0.32);
+  --annotation-key-point-ink: #fbbf24;
+  --annotation-facts: rgba(59, 130, 246, 0.32);
+  --annotation-facts-ink: #60a5fa;
+  --annotation-issue: rgba(168, 85, 247, 0.32);
+  --annotation-issue-ink: #c084fc;
+  --annotation-holding: rgba(16, 185, 129, 0.32);
+  --annotation-holding-ink: #34d399;
+  --annotation-reasoning: rgba(236, 72, 153, 0.3);
+  --annotation-reasoning-ink: #f472b6;
+  --annotation-exception: rgba(249, 115, 22, 0.32);
+  --annotation-exception-ink: #fb923c;
+  --annotation-follow-up: rgba(148, 163, 184, 0.32);
+  --annotation-follow-up-ink: #cbd5e1;
+  --annotation-other: rgba(148, 163, 184, 0.32);
+  --annotation-other-ink: #cbd5e1;
 }
 
 /*

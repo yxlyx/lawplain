@@ -253,7 +253,7 @@ export function ResearchGroupManager() {
                     type="button"
                     disabled={busyId === group.id}
                     onClick={() => void remove(group)}
-                    className="rounded-full border border-border px-2.5 py-0.5 text-[11px] font-medium text-muted hover:border-red-300 hover:text-red-700 disabled:opacity-60"
+                    className="rounded-full border border-border px-2.5 py-0.5 text-[11px] font-medium text-muted hover:border-danger-border hover:text-danger disabled:opacity-60"
                   >
                     Delete
                   </button>
@@ -299,7 +299,7 @@ export function ResearchGroupManager() {
                   <button
                     type="button"
                     onClick={() => setConfirmingId(group.id)}
-                    className="rounded-full border border-border px-2.5 py-0.5 text-[11px] font-medium text-muted hover:border-red-300 hover:text-red-700"
+                    className="rounded-full border border-border px-2.5 py-0.5 text-[11px] font-medium text-muted hover:border-danger-border hover:text-danger"
                   >
                     Delete
                   </button>

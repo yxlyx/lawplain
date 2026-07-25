@@ -219,7 +219,7 @@ export function DocumentNotes({
                   await remove();
                   setConfirmingDelete(false);
                 }}
-                className="rounded-full border border-border px-3 py-1 text-xs font-medium text-muted hover:border-red-300 hover:text-red-700"
+                className="rounded-full border border-border px-3 py-1 text-xs font-medium text-muted hover:border-danger-border hover:text-danger"
               >
                 Delete permanently
               </button>
@@ -235,7 +235,7 @@ export function DocumentNotes({
             <button
               type="button"
               onClick={() => setConfirmingDelete(true)}
-              className="rounded-full border border-border px-3 py-1 text-xs font-medium text-muted hover:border-red-300 hover:text-red-700"
+              className="rounded-full border border-border px-3 py-1 text-xs font-medium text-muted hover:border-danger-border hover:text-danger"
             >
               Delete note
             </button>

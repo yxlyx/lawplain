@@ -581,7 +581,7 @@ export function SavedAnnotations() {
                       <span
                         className={
                           open
-                            ? "rounded-full bg-amber-50 px-2.5 py-1 text-[11px] font-medium text-amber-800"
+                            ? "rounded-full bg-warning-soft px-2.5 py-1 text-[11px] font-medium text-warning"
                             : "rounded-full bg-surface-2 px-2.5 py-1 text-[11px] font-medium text-muted-2"
                         }
                       >
@@ -624,7 +624,7 @@ export function SavedAnnotations() {
                   type="button"
                   onClick={() => void remove(annotation)}
                   disabled={busyId === annotation.id}
-                  className="rounded-full border border-border px-3 py-1.5 text-xs font-medium text-muted hover:border-red-300 hover:text-red-700 disabled:opacity-60"
+                  className="rounded-full border border-border px-3 py-1.5 text-xs font-medium text-muted hover:border-danger-border hover:text-danger disabled:opacity-60"
                 >
                   {busyId === annotation.id ? "Deleting…" : "Delete"}
                 </button>

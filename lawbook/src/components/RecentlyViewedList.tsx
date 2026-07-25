@@ -156,9 +156,9 @@ export function RecentlyViewedList() {
 
   if (error && documents.length === 0) {
     return (
-      <div className="rounded-2xl border border-red-100 bg-red-50 p-6 text-sm text-red-700">
+      <div className="rounded-2xl border border-danger-border bg-danger-soft p-6 text-sm text-danger">
         <p>{error}</p>
-        <p className="mt-2 text-red-700/80">
+        <p className="mt-2 text-danger/80">
           If this is local/dev, run the recently-viewed D1 migration, then try
           again.
         </p>
@@ -169,7 +169,7 @@ export function RecentlyViewedList() {
   return (
     <section className="rounded-2xl border border-border bg-surface p-5">
       {error && (
-        <p className="mb-4 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
+        <p className="mb-4 rounded-xl border border-warning-border bg-warning-soft p-3 text-sm text-warning">
           {error}
         </p>
       )}

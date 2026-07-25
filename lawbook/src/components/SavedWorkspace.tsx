@@ -418,7 +418,7 @@ export function SavedWorkspace() {
         {error && (
           <p
             role="alert"
-            className="mb-4 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800"
+            className="mb-4 rounded-xl border border-warning-border bg-warning-soft p-3 text-sm text-warning"
           >
             {error}
           </p>
@@ -668,7 +668,7 @@ export function SavedWorkspace() {
                     </span>
                   )}
                   {item.openFollowUpCount > 0 && (
-                    <span className="mt-1.5 inline-flex rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-medium text-amber-800">
+                    <span className="mt-1.5 inline-flex rounded-full bg-warning-soft px-2 py-0.5 text-[10px] font-medium text-warning">
                       {item.openFollowUpCount} unresolved follow-up
                       {item.openFollowUpCount === 1 ? "" : "s"}
                     </span>
