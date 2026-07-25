@@ -187,7 +187,10 @@ mark[data-match][data-active] {
     --surface-2: #1e2434;
     --foreground: #e8eaf2;
     --muted: #a8b0c2;
-    --muted-2: #828a9e;
+    /* 4.72:1 on the sunken well, where #828a9e measured 4.48 — just under
+       AA. Meta text sits inside those wells, so the well is the binding
+       surface, not the page background. */
+    --muted-2: #868ea3;
     --border: #262c3c;
     --border-strong: #39415a;
     --primary: #e8eaf2;
@@ -230,7 +233,7 @@ mark[data-match][data-active] {
   --surface-2: #1e2434;
   --foreground: #e8eaf2;
   --muted: #a8b0c2;
-  --muted-2: #828a9e;
+  --muted-2: #868ea3;
   --border: #262c3c;
   --border-strong: #39415a;
   --primary: #e8eaf2;
