@@ -30,6 +30,11 @@ export interface SearchHit {
 export interface SearchResponse<T extends SearchHit = SearchHit> {
   query: string;
   count: number;
+  /**
+   * "any" means strict all-term matching found nothing and the backend relaxed
+   * the query, so the hits are candidates to verify rather than answers.
+   */
+  match_mode?: "all" | "any";
   results: T[];
 }
 
@@ -86,6 +91,8 @@ export interface StatuteSectionHit extends SearchHit {
   heading?: string;
   short_title?: string;
   body_text?: string;
+  /** Self-contained reference for this provision, e.g. "Companies Act 1967 s 148". */
+  citation?: string;
 }
 
 export interface StatuteSection {
