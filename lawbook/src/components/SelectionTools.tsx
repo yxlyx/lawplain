@@ -65,6 +65,28 @@ function panelHeightBelow(barTop: number) {
   );
 }
 
+/** The bar's own height, plus the gap it keeps from the selection. */
+const BAR_HEIGHT = 44;
+/**
+ * The site header is `sticky top-0 z-40` and 57px tall. The bar is also z-40, so
+ * a bar placed under it is not merely ugly — it is invisible and unclickable, and
+ * selecting text near the top of the screen looked like nothing happened at all.
+ */
+const HEADER_SAFE_TOP = 64;
+
+/**
+ * Above the selection when there is room, below it when there is not.
+ *
+ * Only the horizontal position used to be clamped, so a selection high in the
+ * viewport put the bar behind the header.
+ */
+function placeBar(box: { top: number; bottom: number }) {
+  const fitsAbove = box.top - PANEL_GAP - BAR_HEIGHT >= HEADER_SAFE_TOP;
+  return fitsAbove
+    ? { top: box.top - 10, below: false }
+    : { top: Math.max(box.bottom + PANEL_GAP, HEADER_SAFE_TOP), below: true };
+}
+
 /** Arrow-key movement between the controls of a toolbar or palette. */
 function focusSibling(container: HTMLElement, step: number) {
   const items = Array.from(
@@ -97,6 +119,7 @@ export function SelectionTools({
     top: number;
     left: number;
     maxPanelHeight: number;
+    below: boolean;
   } | null>(null);
   const [draft, setDraft] = useState<SelectionDraft | null>(null);
   const [draftOwnerId, setDraftOwnerId] = useState<string | null>(null);
@@ -169,6 +192,7 @@ export function SelectionTools({
       const sectionAnchor = startBlock.dataset.sectionId || startBlock.id;
       const anchor = startBlock.dataset.quoteAnchor || sectionAnchor;
       const box = effective.getBoundingClientRect();
+      const placement = placeBar(box);
       selectionVersion.current += 1;
       setSaving(false);
       setDraftOwnerId(ownerIdRef.current);
@@ -192,9 +216,10 @@ export function SelectionTools({
       setNoteLabelId(DEFAULT_ANNOTATION_LABEL_ID);
       setError(null);
       setRect({
-        top: box.top - 10,
+        top: placement.top,
         left: clampToViewport(box.left + box.width / 2),
-        maxPanelHeight: panelHeightBelow(box.top - 10),
+        maxPanelHeight: panelHeightBelow(placement.top),
+        below: placement.below,
       });
     }
     document.addEventListener("selectionchange", update);
@@ -368,7 +393,9 @@ export function SelectionTools({
   return (
     <div
       ref={barRef}
-      className="motion-fade-up fixed z-40 -translate-x-1/2 -translate-y-full"
+      className={`motion-fade-up fixed z-50 -translate-x-1/2 ${
+        rect.below ? "" : "-translate-y-full"
+      }`}
       style={{ top: rect.top, left: rect.left }}
     >
       <div
