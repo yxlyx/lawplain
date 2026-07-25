@@ -346,16 +346,22 @@ export function SelectionTools({
         0,
         5_500,
       );
+    // Both the pin and the draft key use docId — the canonical id /api/ask
+    // resolves a document by. `citation` is the display form (a judgment's
+    // neutral citation, "[2020] SGCA 119"), which the server cannot look up: it
+    // answered "Pinned judgment could not be loaded" and the agent never
+    // started. It also never matched the key Ask reads back, which is built from
+    // the server-resolved citation, so the drafted prompt was silently dropped.
     try {
       sessionStorage.setItem(
-        `ask:v2:${userId}:draft:${askKind}:${citation}`,
+        `ask:v2:${userId}:draft:${askKind}:${docId}`,
         prompt,
       );
     } catch {
       // Ask remains usable if storage is unavailable.
     }
     window.location.assign(
-      `/ask?cite=${encodeURIComponent(citation)}&kind=${askKind}`,
+      `/ask?cite=${encodeURIComponent(docId)}&kind=${askKind}`,
     );
   }
 
