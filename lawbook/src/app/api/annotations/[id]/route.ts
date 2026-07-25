@@ -1,8 +1,10 @@
+import { isAnnotationLabelId } from "@/lib/annotation-labels";
 import { getSession } from "@/lib/auth";
 import {
+  type AnnotationChanges,
   deleteAnnotation,
   getAnnotation,
-  updateAnnotationNote,
+  updateAnnotation,
 } from "@/lib/private-annotations";
 import { privateJson, privateRoute } from "@/lib/private-response";
 
@@ -37,21 +39,31 @@ export async function PATCH(
       string,
       unknown
     > | null;
+    // Only the user's own note and label are editable; the captured passage is
+    // immutable, so an unknown key is rejected rather than ignored.
     if (
       !body ||
-      Object.keys(body).some((key) => key !== "note") ||
-      !("note" in body) ||
-      (body.note !== null &&
-        (typeof body.note !== "string" || body.note.length > 10_000))
+      Object.keys(body).some((key) => key !== "note" && key !== "label") ||
+      !("note" in body || "label" in body) ||
+      ("note" in body &&
+        body.note !== null &&
+        (typeof body.note !== "string" || body.note.length > 10_000)) ||
+      ("label" in body && !isAnnotationLabelId(body.label))
     )
       return privateJson(
-        { error: "PATCH accepts only note (maximum 10000 characters)" },
+        {
+          error:
+            "PATCH accepts note (maximum 10000 characters) and a known label",
+        },
         { status: 400 },
       );
-    const annotation = await updateAnnotationNote(
+    const changes: AnnotationChanges = {};
+    if ("note" in body) changes.note = body.note as string | null;
+    if ("label" in body) changes.label = body.label as string;
+    const annotation = await updateAnnotation(
       session.user.id,
       (await params).id,
-      body.note as string | null,
+      changes,
     );
     return annotation
       ? privateJson({ annotation })

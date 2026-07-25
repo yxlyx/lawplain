@@ -1,3 +1,7 @@
+import {
+  DEFAULT_ANNOTATION_LABEL_ID,
+  isAnnotationLabelId,
+} from "@/lib/annotation-labels";
 import { getAuthDb } from "@/lib/d1";
 import { normalizeInternalPath } from "@/lib/internal-path";
 import type { SavedDocType } from "@/lib/saved-workspace";
@@ -22,6 +26,7 @@ export interface AnnotationInput {
   contextBefore: string;
   contextAfter: string;
   note: string | null;
+  label: string;
 }
 
 export interface Annotation extends AnnotationInput {
@@ -46,6 +51,7 @@ interface AnnotationRow {
   contextBefore: string;
   contextAfter: string;
   note: string | null;
+  label: string;
   createdAt: number;
   updatedAt: number;
 }
@@ -100,6 +106,15 @@ export function normalizeAnnotationInput(
       : typeof raw.note === "string" && raw.note.length <= MAX_NOTE
         ? raw.note
         : undefined;
+  // An omitted label is the preset's general-purpose one, matching a plain
+  // Highlight. An unknown label id is rejected rather than silently defaulted,
+  // so a client bug cannot quietly mislabel a passage.
+  const label =
+    raw.label === undefined
+      ? DEFAULT_ANNOTATION_LABEL_ID
+      : isAnnotationLabelId(raw.label)
+        ? raw.label
+        : null;
   if (
     !docId ||
     !title ||
@@ -114,7 +129,8 @@ export function normalizeAnnotationInput(
     endOffset - startOffset !== exactText.length ||
     contextBefore === null ||
     contextAfter === null ||
-    note === undefined
+    note === undefined ||
+    label === null
   )
     return null;
   return {
@@ -130,12 +146,14 @@ export function normalizeAnnotationInput(
     contextBefore,
     contextAfter,
     note,
+    label,
   };
 }
 
 const SELECT_ANNOTATION = `SELECT p.id, p.authorityId, a.docType, a.docId,
   p.title, p.citation, p.path, p.exactText, p.anchor, p.startOffset,
-  p.endOffset, p.contextBefore, p.contextAfter, p.note, p.createdAt, p.updatedAt
+  p.endOffset, p.contextBefore, p.contextAfter, p.note, p.label, p.createdAt,
+  p.updatedAt
   FROM passage_annotations p
   JOIN saved_authorities a ON a.userId = p.userId AND a.id = p.authorityId`;
 
@@ -182,8 +200,8 @@ export async function createAnnotation(
     db
       .prepare(`INSERT INTO passage_annotations
       (id, userId, authorityId, title, citation, path, exactText, anchor,
-       startOffset, endOffset, contextBefore, contextAfter, note, createdAt,
-       updatedAt)
+       startOffset, endOffset, contextBefore, contextAfter, note, label,
+       createdAt, updatedAt)
       SELECT ?, ?, id, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
       FROM saved_authorities
       WHERE userId = ? AND docType = ? AND docId = ?
@@ -197,6 +215,10 @@ export async function createAnnotation(
           WHEN excluded.updatedAt >= passage_annotations.updatedAt
             AND excluded.note IS NOT NULL THEN excluded.note
           ELSE passage_annotations.note END,
+        label = CASE
+          WHEN excluded.updatedAt >= passage_annotations.updatedAt
+            THEN excluded.label
+          ELSE passage_annotations.label END,
         deletedAt = CASE
           WHEN excluded.updatedAt >= passage_annotations.updatedAt THEN NULL
           ELSE passage_annotations.deletedAt END,
@@ -215,6 +237,7 @@ export async function createAnnotation(
         input.contextBefore,
         input.contextAfter,
         input.note,
+        input.label,
         now,
         now,
         userId,
@@ -528,20 +551,53 @@ export async function listAnnotations(
   };
 }
 
-export async function updateAnnotationNote(
+export interface AnnotationChanges {
+  note?: string | null;
+  label?: string;
+}
+
+/**
+ * Applies an owner-scoped edit to the two mutable fields. Captured source
+ * material stays immutable (#189): text, anchor, offsets, and context are never
+ * writable here. Omitted fields are left alone so relabelling cannot clear a
+ * note, and vice versa.
+ */
+export async function updateAnnotation(
   userId: string,
   id: string,
-  note: string | null,
+  changes: AnnotationChanges,
 ): Promise<Annotation | null> {
-  if (note !== null && (typeof note !== "string" || note.length > MAX_NOTE))
+  const note = changes.note;
+  const label = changes.label;
+  if (
+    note !== undefined &&
+    note !== null &&
+    (typeof note !== "string" || note.length > MAX_NOTE)
+  )
     throw new Error("INVALID_NOTE");
+  if (label !== undefined && !isAnnotationLabelId(label))
+    throw new Error("INVALID_LABEL");
+  if (note === undefined && label === undefined)
+    throw new Error("EMPTY_UPDATE");
   const db = await getAuthDb();
   const now = Date.now();
   await db.batch([
     db
-      .prepare(`UPDATE passage_annotations SET note = ?, updatedAt = ?
+      .prepare(`UPDATE passage_annotations
+      SET note = CASE WHEN ? = 1 THEN ? ELSE note END,
+          label = CASE WHEN ? = 1 THEN ? ELSE label END,
+          updatedAt = ?
       WHERE userId = ? AND id = ? AND deletedAt IS NULL AND updatedAt <= ?`)
-      .bind(note, now, userId, id, now),
+      .bind(
+        note === undefined ? 0 : 1,
+        note ?? null,
+        label === undefined ? 0 : 1,
+        label ?? null,
+        now,
+        userId,
+        id,
+        now,
+      ),
     db
       .prepare(`UPDATE saved_authorities
       SET activityAt = MAX(activityAt, ?), updatedAt = MAX(updatedAt, ?)

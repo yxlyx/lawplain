@@ -114,6 +114,99 @@ mark[data-match][data-active] {
   box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 35%, transparent);
 }
 
+/*
+ * Private annotation labels (#193) and restored highlights (#192).
+ *
+ * Colour is an aid, never the label: every surface that paints one of these
+ * also renders the label's name. `-ink` is the solid companion used for chips,
+ * swatch rings, and the highlight's underline, so a label stays perceivable
+ * without relying on a background tint alone.
+ */
+:root {
+  --annotation-key-point: rgba(234, 179, 8, 0.3);
+  --annotation-key-point-ink: #a16207;
+  --annotation-facts: rgba(59, 130, 246, 0.22);
+  --annotation-facts-ink: #1d4ed8;
+  --annotation-issue: rgba(168, 85, 247, 0.22);
+  --annotation-issue-ink: #7e22ce;
+  --annotation-holding: rgba(16, 185, 129, 0.24);
+  --annotation-holding-ink: #047857;
+  --annotation-reasoning: rgba(236, 72, 153, 0.2);
+  --annotation-reasoning-ink: #be185d;
+  --annotation-exception: rgba(249, 115, 22, 0.24);
+  --annotation-exception-ink: #c2410c;
+  --annotation-follow-up: rgba(100, 116, 139, 0.24);
+  --annotation-follow-up-ink: #475569;
+  /* Any label id this release does not recognise still paints, so an
+     annotation written by a newer client never silently vanishes. */
+  --annotation-other: rgba(100, 116, 139, 0.24);
+  --annotation-other-ink: #475569;
+}
+
+/*
+ * Restored annotations are painted with the CSS Custom Highlight API rather
+ * than wrapped in elements, so the document's own markup — links, citations,
+ * section anchors, and mark[data-match] search hits — is never rewritten.
+ */
+::highlight(lawplain-annotation-key-point),
+::highlight(lawplain-annotation-facts),
+::highlight(lawplain-annotation-issue),
+::highlight(lawplain-annotation-holding),
+::highlight(lawplain-annotation-reasoning),
+::highlight(lawplain-annotation-exception),
+::highlight(lawplain-annotation-follow-up),
+::highlight(lawplain-annotation-other) {
+  color: inherit;
+  text-decoration-line: underline;
+  text-decoration-thickness: 2px;
+  text-underline-offset: 3px;
+}
+
+::highlight(lawplain-annotation-key-point) {
+  background-color: var(--annotation-key-point);
+  text-decoration-color: var(--annotation-key-point-ink);
+}
+::highlight(lawplain-annotation-facts) {
+  background-color: var(--annotation-facts);
+  text-decoration-color: var(--annotation-facts-ink);
+}
+::highlight(lawplain-annotation-issue) {
+  background-color: var(--annotation-issue);
+  text-decoration-color: var(--annotation-issue-ink);
+}
+::highlight(lawplain-annotation-holding) {
+  background-color: var(--annotation-holding);
+  text-decoration-color: var(--annotation-holding-ink);
+}
+::highlight(lawplain-annotation-reasoning) {
+  background-color: var(--annotation-reasoning);
+  text-decoration-color: var(--annotation-reasoning-ink);
+}
+::highlight(lawplain-annotation-exception) {
+  background-color: var(--annotation-exception);
+  text-decoration-color: var(--annotation-exception-ink);
+}
+::highlight(lawplain-annotation-follow-up) {
+  background-color: var(--annotation-follow-up);
+  text-decoration-color: var(--annotation-follow-up-ink);
+}
+::highlight(lawplain-annotation-other) {
+  background-color: var(--annotation-other);
+  text-decoration-color: var(--annotation-other-ink);
+}
+
+/* The annotation whose card is open, registered at a higher priority so it
+   wins wherever annotations overlap. */
+::highlight(lawplain-annotation-active) {
+  background-color: var(--accent-soft);
+  color: inherit;
+  text-decoration-line: underline;
+  text-decoration-style: double;
+  text-decoration-color: var(--accent);
+  text-decoration-thickness: 2px;
+  text-underline-offset: 3px;
+}
+
 /* Thin scrollbars inside scrollable panels */
 .thin-scroll::-webkit-scrollbar {
   width: 8px;
