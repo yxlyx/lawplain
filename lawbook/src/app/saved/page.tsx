@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { ResearchSearch } from "@/components/ResearchSearch";
 import { SavedAnnotations } from "@/components/SavedAnnotations";
 import { SavedAnswers } from "@/components/SavedAnswers";
 import { SavedSearchHistory } from "@/components/SavedSearchHistory";
@@ -27,6 +28,7 @@ export default function SavedPage() {
           answers do too. Everything on this page is private to you.
         </p>
       </div>
+      <ResearchSearch />
       <SavedWorkspace />
       <SavedAnnotations />
       <SavedSearchHistory />

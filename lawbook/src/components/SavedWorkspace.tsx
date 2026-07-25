@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { XIcon } from "@/components/icons";
+import { ResearchGroupPicker } from "@/components/ResearchGroupPicker";
 import { SavedFeatureAuthPrompt } from "@/components/SavedFeatureAuthPrompt";
 import {
   ANNOTATION_LABELS,
@@ -678,6 +679,20 @@ export function SavedWorkspace() {
                     </span>
                   )}
                 </Link>
+                {/* Tags and collections (#197). Outside the Link so the card
+                    stays a single navigation target. */}
+                <div className="flex flex-wrap items-center gap-1.5 px-4 pb-3">
+                  <ResearchGroupPicker
+                    authorityId={item.id}
+                    kind="tag"
+                    onChanged={() => void loadLibrary()}
+                  />
+                  <ResearchGroupPicker
+                    authorityId={item.id}
+                    kind="collection"
+                    onChanged={() => void loadLibrary()}
+                  />
+                </div>
                 {item.savedAt && (
                   <button
                     type="button"

@@ -37,11 +37,10 @@ const NOT_CALLED_BY_UI = {
  * without removing its entry fails just as loudly as adding a new orphan.
  */
 const PENDING_UI = [
+  // #197 attach/detach and inline create are wired; rename, archive, merge and
+  // delete are not, so the issue is only partly reachable.
+  "/api/research-groups/[id]",
   "/api/ask-private-context", // #200 — deferred until the privacy contract is reviewed
-  "/api/research-groups", // #197
-  "/api/research-groups/[id]", // #197
-  "/api/research-groups/membership", // #197
-  "/api/research-search", // #196
 ];
 
 test("no research API is shipped without a way to reach it", () => {
@@ -62,8 +61,16 @@ test("no research API is shipped without a way to reach it", () => {
 
   const unreachable = routes.filter((route) => {
     if (route in NOT_CALLED_BY_UI) return false;
-    const key = route.replace("/[id]", "").replace(/\/$/, "");
-    return !clientSource.includes(key);
+    const dynamic = /\/\[[^\]]+\]$/.test(route);
+    const base = route.replace(/\/\[[^\]]+\]$/, "").replace(/\/$/, "");
+    if (!clientSource.includes(base)) return true;
+    if (!dynamic) return false;
+    // A dynamic route needs a caller that builds a path with an interpolated or
+    // concatenated id. A literal sibling path (".../membership?") belongs to a
+    // different route and must not vouch for this one — matching the base alone
+    // is how /api/research-groups/[id] looked wired while nothing called it.
+    const escaped = base.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    return !new RegExp(`${escaped}/(\\$\\{|"\\s*\\+)`).test(clientSource);
   });
   assert.deepEqual(
     unreachable.sort(),
