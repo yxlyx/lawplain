@@ -1072,6 +1072,9 @@ export function AskAgent({
   const pendingHistoryFocusRef = useRef<string | null>(null);
   const pendingNewChatFocusRef = useRef(false);
   const restoreComposerFocusOnMountRef = useRef(false);
+  // Consent for this question only. A ref, not state: it must not re-render the
+  // composer, and it is read at send time so an abandoned dialog leaves nothing.
+  const privateNotesConsentRef = useRef<unknown | null>(null);
   const chatScrollRef = useRef<HTMLDivElement>(null);
   const stickToBottomRef = useRef(true);
   const lastScrollYRef = useRef(0);
@@ -1739,6 +1742,10 @@ export function AskAgent({
             sourceHref: runContext?.href,
             initialMessages: runningTranscript,
             from: resumeFrom,
+            // Null unless the reader opted this question's private notes in
+            // (#200/#207). The server re-checks ownership of every id, so this
+            // is a request, never a grant.
+            consent: privateNotesConsentRef.current,
           }),
           signal: ac.signal,
         });
@@ -2707,7 +2714,11 @@ export function AskAgent({
       )}
       {/* Private notes are opt-in per question (#200), so the control sits with
           the composer rather than in settings — there is no standing choice. */}
-      <AskPrivateNotes />
+      <AskPrivateNotes
+        onConsentChange={(consent) => {
+          privateNotesConsentRef.current = consent;
+        }}
+      />
       <form onSubmit={onSubmit} className="flex items-end gap-2">
         <textarea
           ref={bindComposerInput}

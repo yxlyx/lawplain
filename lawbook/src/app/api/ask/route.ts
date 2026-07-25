@@ -26,8 +26,15 @@ import {
   legalResearchPrompt,
   researchToolCallBudget,
 } from "@/lib/agent";
+import {
+  buildManifest,
+  normalizeConsent,
+  redactForLogs,
+  toContextBlocks,
+} from "@/lib/ask-consent";
 import { loadChatContext } from "@/lib/ask-context";
 import { recordAskQuestion } from "@/lib/ask-history";
+import { loadConsentedContext } from "@/lib/ask-private-context";
 import { saveThread } from "@/lib/ask-threads";
 import { getSession } from "@/lib/auth";
 import {
@@ -106,6 +113,7 @@ export async function POST(req: Request): Promise<Response> {
   let sourceHref: string | undefined;
   let initialMessages: unknown[] | undefined;
   let from = 0;
+  let consentInput: unknown;
   try {
     const body = (await req.json()) as {
       question?: unknown;
@@ -118,6 +126,7 @@ export async function POST(req: Request): Promise<Response> {
       sourceHref?: unknown;
       initialMessages?: unknown;
       from?: unknown;
+      consent?: unknown;
     };
     question = typeof body.question === "string" ? body.question.trim() : "";
     cite = typeof body.cite === "string" ? body.cite : undefined;
@@ -140,6 +149,7 @@ export async function POST(req: Request): Promise<Response> {
       ? body.initialMessages.slice(-200)
       : undefined;
     from = typeof body.from === "number" && body.from > 0 ? body.from : 0;
+    consentInput = body.consent;
     history = Array.isArray(body.history)
       ? body.history
           .filter(
@@ -180,6 +190,47 @@ export async function POST(req: Request): Promise<Response> {
     } catch (err) {
       console.warn("Failed to record Ask question history", err);
     }
+  }
+
+  // Private notes reach a model only when this request carried an explicit
+  // opt-in naming exactly what to include (#200). normalizeConsent fails closed,
+  // and loadConsentedContext re-filters every id by this session's own user id —
+  // the client's claim is a request, never a grant.
+  let privateNotes = "";
+  try {
+    const consent = normalizeConsent(consentInput);
+    if (consent.includePrivateNotes) {
+      const { items, urls } = await loadConsentedContext(
+        session.user.id,
+        consent,
+      );
+      const blocks = toContextBlocks(items, consent, urls);
+      if (blocks.length > 0) {
+        privateNotes = [
+          "",
+          "The reader chose to include their own research for this question.",
+          "Source law and their notes are separate blocks. Never present a note",
+          "as the law, and cite each claim back to the ref it came from.",
+          "",
+          ...blocks.map(
+            (block) =>
+              `[${block.ref}] (${block.provenance}) ${block.citation}\n${block.text}`,
+          ),
+          "",
+          buildManifest(items, consent).caveat,
+        ].join("\n");
+      }
+      // Counts and refs only: no word the reader wrote may reach a log.
+      console.info("Ask private context", redactForLogs(blocks));
+    }
+  } catch {
+    // Losing the notes is the safe failure; the question still runs without them.
+    //
+    // The error object is deliberately not logged. A D1 failure carries the
+    // statement and its bound values, and on this path those identify the
+    // reader's own annotations — the one place where "log the error for
+    // debugging" is the wrong instinct.
+    console.warn("Could not assemble consented private context");
   }
 
   // Re-resolve context server-side — never trust client-supplied document text.
@@ -224,7 +275,7 @@ export async function POST(req: Request): Promise<Response> {
       const stub = askRuns.get(
         askRuns.idFromName(userRunName(session.user.id, runId)),
       );
-      const prompt = composePrompt(question, context, history);
+      const prompt = composePrompt(question, context, history) + privateNotes;
       const toolCallBudget = researchToolCallBudget(question, context, history);
       const ownerHeaders = {
         "content-type": "application/json",

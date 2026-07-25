@@ -42,7 +42,8 @@ test("the reader sees what would be sent, from the server, before sending", () =
 });
 
 test("the control lives with the composer, not in settings", () => {
-  assert.match(agent, /<AskPrivateNotes \/>/);
+  // Now wired to the request too (#207), so it carries an onConsentChange prop.
+  assert.match(agent, /<AskPrivateNotes\s+onConsentChange=/);
   assert.match(agent, /opt-in per question/);
   assert.match(agent, /there is no standing choice/);
 });
