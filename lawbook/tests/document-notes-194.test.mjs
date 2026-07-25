@@ -23,6 +23,8 @@ import {
 const migration = readFileSync("migrations/0022_document_notes.sql", "utf8");
 const notes = readFileSync("src/lib/document-notes.ts", "utf8");
 const annotations = readFileSync("src/lib/private-annotations.ts", "utf8");
+// The library query moved to its own pure module in #195.
+const libraryQuery = readFileSync("src/lib/library-query.ts", "utf8");
 const route = readFileSync("src/app/api/document-notes/route.ts", "utf8");
 const hook = readFileSync("src/hooks/useDocumentNote.ts", "utf8");
 const panel = readFileSync("src/components/DocumentNotes.tsx", "utf8");
@@ -252,10 +254,10 @@ test("a first note adds the document to My Library without duplicating it", () =
   assert.match(notes, /INSERT INTO saved_authorities/);
   assert.match(notes, /ON CONFLICT\(userId, docType, docId\) DO UPDATE SET/);
   assert.match(
-    annotations,
+    libraryQuery,
     /OR EXISTS \(SELECT 1 FROM document_notes n\s+WHERE n\.userId = a\.userId AND n\.authorityId = a\.id\)/,
   );
-  assert.match(annotations, /AS documentNoteCount/);
+  assert.match(libraryQuery, /AS documentNoteCount/);
 });
 
 test("deleting the last highlight cannot cascade a document note away", () => {

@@ -690,7 +690,8 @@ test("legacy Undo synchronization and expiry purge remove private compatibility 
   );
   const restoreSql = statements(
     "export async function restoreSoftDeletedAnnotation",
-    "type Cursor",
+    // Cursor helpers moved to lib/private-cursor.ts in #195.
+    "export interface AnnotationListOptions",
   );
   assert.equal(purgeSql.length, 6);
   assert.equal(softDeleteSql.length, 2);
@@ -973,7 +974,8 @@ test("legacy quote adapters soft-delete and restore canonical annotations", () =
   assert.match(softDelete, /WHERE userId = \?[\s\S]*annotationId = \?/);
   const restore = model.slice(
     model.indexOf("export async function restoreSoftDeletedAnnotation"),
-    model.indexOf("type Cursor"),
+    // Cursor helpers moved to lib/private-cursor.ts; this is now the next symbol.
+    model.indexOf("export interface AnnotationListOptions"),
   );
   assert.match(restore, /db\.batch/);
   assert.match(restore, /UPDATE saved_quotes SET deletedAt = NULL/);
@@ -992,10 +994,16 @@ test("legacy quote adapters soft-delete and restore canonical annotations", () =
     model,
     /resolveLegacyAnnotationId[\s\S]*purgeExpiredSoftDeletedAnnotationsWithDb/,
   );
+  // Three call sites here; listLibrary moved to lib/library.ts in #195 and calls
+  // the exported purgeExpiredSoftDeletedAnnotations wrapper instead.
   assert.equal(
     (model.match(/await purgeExpiredSoftDeletedAnnotationsWithDb/g) ?? [])
       .length,
-    4,
+    3,
+  );
+  assert.match(
+    read("src/lib/library.ts"),
+    /await purgeExpiredSoftDeletedAnnotations\(userId\)/,
   );
   assert.match(
     annotationItem,
@@ -1141,8 +1149,10 @@ test("normalization and owner-isolation contracts are explicit", () => {
   assert.match(source, /MAX_NOTE = 10_000/);
   assert.match(source, /normalizeInternalPath/);
   assert.match(source, /endOffset - startOffset !== exactText.length/);
+  // Cursor owner/shape binding now lives in its own module, shared with the
+  // library and private-search listings.
   assert.match(
-    source,
+    read("src/lib/private-cursor.ts"),
     /parsed.owner === owner &&[\s\S]*parsed.shape === shape/,
   );
   assert.match(source, /FOREIGN|userId = \? AND p\.id = \?/i);
