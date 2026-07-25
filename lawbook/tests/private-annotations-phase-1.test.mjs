@@ -12,6 +12,8 @@ const MIGRATIONS = [
   "0017_saved_quotes.sql",
   "0020_private_research_foundation.sql",
   "0021_annotation_labels.sql",
+  // listLibrary and deleteAnnotation reference document_notes (#194).
+  "0022_document_notes.sql",
 ];
 
 function migratedDb() {

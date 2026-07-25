@@ -652,18 +652,39 @@ export async function deleteAnnotation(
       .prepare(`DELETE FROM private_research_quote_aliases
       WHERE userId = ? AND annotationId = ?`)
       .bind(userId, id),
+    // A document note (#194) keeps the root alive on its own. Without these
+    // extra guards, deleting the last highlight would drop the authority and
+    // cascade the reader's document note away with it.
     db
       .prepare(`DELETE FROM private_research_authority_guards
       WHERE userId = ? AND authorityId = ?
         AND NOT EXISTS (SELECT 1 FROM passage_annotations
+          WHERE userId = ? AND authorityId = ?)
+        AND NOT EXISTS (SELECT 1 FROM document_notes
           WHERE userId = ? AND authorityId = ?)`)
-      .bind(userId, existing.authorityId, userId, existing.authorityId),
+      .bind(
+        userId,
+        existing.authorityId,
+        userId,
+        existing.authorityId,
+        userId,
+        existing.authorityId,
+      ),
     db
       .prepare(`DELETE FROM saved_authorities
       WHERE userId = ? AND id = ? AND savedAt IS NULL
         AND NOT EXISTS (SELECT 1 FROM passage_annotations
+          WHERE userId = ? AND authorityId = ?)
+        AND NOT EXISTS (SELECT 1 FROM document_notes
           WHERE userId = ? AND authorityId = ?)`)
-      .bind(userId, existing.authorityId, userId, existing.authorityId),
+      .bind(
+        userId,
+        existing.authorityId,
+        userId,
+        existing.authorityId,
+        userId,
+        existing.authorityId,
+      ),
   ]);
   return deleted.results.some(
     (row) => row.authorityId === existing.authorityId,
@@ -684,10 +705,22 @@ export async function listLibrary(
   const result = await db
     .prepare(`SELECT a.id, a.docType, a.docId, a.title,
       a.citation, a.path, a.savedAt, a.createdAt, a.activityAt,
-      COUNT(p.id) AS annotationCount
+      COUNT(p.id) AS annotationCount,
+      (SELECT COUNT(*) FROM document_notes n
+        WHERE n.userId = a.userId AND n.authorityId = a.id)
+        AS documentNoteCount,
+      (SELECT n.updatedAt FROM document_notes n
+        WHERE n.userId = a.userId AND n.authorityId = a.id)
+        AS documentNoteUpdatedAt
     FROM saved_authorities a LEFT JOIN passage_annotations p
       ON p.userId = a.userId AND p.authorityId = a.id AND p.deletedAt IS NULL
-    WHERE a.userId = ? AND (a.savedAt IS NOT NULL OR p.id IS NOT NULL)
+    WHERE a.userId = ? AND (
+        a.savedAt IS NOT NULL OR p.id IS NOT NULL
+        -- A first document note (#194) is enough to join the library, and must
+        -- not create a second card for a document already listed.
+        OR EXISTS (SELECT 1 FROM document_notes n
+          WHERE n.userId = a.userId AND n.authorityId = a.id)
+      )
       AND (? IS NULL OR a.activityAt < ? OR (a.activityAt = ? AND a.id < ?))
     GROUP BY a.id
     ORDER BY a.activityAt DESC, a.id DESC LIMIT ?`)
