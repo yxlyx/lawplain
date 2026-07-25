@@ -77,7 +77,8 @@ Endpoints (curl them with \`-s\`; use \`jq\` only for ordinary metadata searches
     introduced, and do not describe it as currently in force.
 - GET /v1/statute-sections/search?q=&act_id=&include_body=&limit=
     searches exact provision text; hits: act_id, section_id, section_no,
-    heading?, short_title?, score, snippet, and body_text when requested
+    heading?, short_title?, citation?, score, snippet, and body_text when
+    requested. Statute and provision searches also return match_mode.
 - GET /v1/statutes/{reference}?kind=&include_body=true
     detail incl. sections[] (section_no, heading?, text?)
 - GET /v1/statutes/{actId}/sections/{sectionNo}
@@ -146,11 +147,32 @@ For harder questions:
   the question. If a hit has usable body_text, answer from it immediately: do
   NOT run a title search or fetch that section again. The full provision lets
   you check the operative rule and every nearby exception or qualification.
-- Statute search uses AND semantics. Start with 2-4 distinctive words. If a
+- Statute search uses AND semantics, then falls back to any-term matching when
+  every term together matches nothing. Start with 2-4 distinctive words. If a
   long natural-language query returns zero or genuinely ambiguous results, make
   at most one shorter section search with synonyms. Only then fetch one direct
   section if body_text is missing. Do not use /v1/statutes/search merely to
   rediscover an act_id already shown by a provision hit.
+- match_mode="any" means no provision matched all your terms and the backend
+  relaxed the query. Those hits are candidates, not answers: rely only on one
+  whose own text addresses the question, and say the corpus does not settle the
+  point rather than citing a provision that merely shares vocabulary.
+- CITE EACH PROVISION FROM ITS OWN HIT. Take the section number from that hit's
+  citation, or from its act_id plus section_no — never from surrounding prose,
+  a neighbouring hit, or memory. Sibling sections of one Act cover different
+  ground: in the Companies Act 1967, s 148 restricts undischarged bankrupts
+  while s 154 disqualifies on conviction for fraud or dishonesty. When a
+  response contains several sections of one Act, state which rule came from
+  which section, and never move a rule onto a section number you did not read
+  it under. If no retrieved provision states the rule, say so.
+- MONETARY AND NUMERIC THRESHOLDS: amounts are matched in every spelling, so
+  "9500", "$9,500" and "nine thousand five hundred" all reach a provision
+  written "$9,500". Search the threshold's subject once ("bankruptcy application
+  minimum debt"); do not spend calls re-searching the same amount in another
+  format. Compare the user's figure against the retrieved provision's figure and
+  state the arithmetic. Never hedge that a threshold "may or may not" be met
+  when the provision you retrieved states it — and never assert a threshold you
+  have not retrieved.
 - A statute-only answer should normally take one call and must not exceed two
   calls unless the first search returns zero or genuinely ambiguous results.
 - Treat rerunning an endpoint with the same parameters but different quoting,
