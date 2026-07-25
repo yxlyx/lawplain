@@ -6,8 +6,8 @@ import { SavedWorkspace } from "@/components/SavedWorkspace";
 import { buildMetadata } from "@/lib/seo";
 
 export const metadata: Metadata = buildMetadata({
-  title: "Saved Research",
-  description: "Your private saved Singapore legal research workspace.",
+  title: "My Library",
+  description: "Your private Singapore legal research workspace.",
   path: "/saved",
   noIndex: true,
 });
@@ -20,11 +20,11 @@ export default function SavedPage() {
           Workspace
         </p>
         <h1 className="mt-2 font-serif text-3xl font-medium tracking-tight text-foreground sm:text-4xl">
-          Saved research
+          My Library
         </h1>
         <p className="mt-2 max-w-2xl text-sm leading-6 text-muted">
-          Your saved documents and private annotations live here. Searches and
-          answers do too.
+          Your documents, private annotations and notes live here. Searches and
+          answers do too. Everything on this page is private to you.
         </p>
       </div>
       <SavedWorkspace />

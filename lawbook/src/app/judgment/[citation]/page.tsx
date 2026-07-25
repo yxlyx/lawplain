@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { CopyActions } from "@/components/CopyActions";
+import { DocumentNotes } from "@/components/DocumentNotes";
 import {
   ArrowLeftIcon,
   ExternalLinkIcon,
@@ -269,6 +270,13 @@ export default async function JudgmentPage({
             initialSections={j.sections}
           />
         </section>
+        <DocumentNotes
+          docType="judgment"
+          docId={decoded}
+          title={title}
+          citation={j.neutral_cite || j.citation || decoded}
+          path={pagePath}
+        />
         <SelectionTools
           title={title}
           citation={j.neutral_cite || j.citation || decoded}

@@ -5,6 +5,9 @@
     "allowJs": true,
     "skipLibCheck": true,
     "strict": true,
+    // Explicit .ts specifiers keep pure modules importable by `node --test`,
+    // which strips types but still requires ESM extensions.
+    "allowImportingTsExtensions": true,
     "noEmit": true,
     "esModuleInterop": true,
     "module": "esnext",

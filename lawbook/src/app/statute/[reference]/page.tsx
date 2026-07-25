@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { CopyActions } from "@/components/CopyActions";
+import { DocumentNotes } from "@/components/DocumentNotes";
 import { EmptyState } from "@/components/EmptyState";
 import {
   ArrowLeftIcon,
@@ -301,6 +302,13 @@ export default async function StatutePage({
             </StatuteSectionShell>
           </div>
         )}
+        <DocumentNotes
+          docType="statute"
+          docId={decoded}
+          title={title}
+          citation={s.act_id ?? decoded}
+          path={pagePath}
+        />
         <SelectionTools
           title={title}
           citation={s.act_id ?? decoded}

@@ -1,9 +1,14 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { XIcon } from "@/components/icons";
 import { SavedFeatureAuthPrompt } from "@/components/SavedFeatureAuthPrompt";
+import {
+  ANNOTATION_LABELS,
+  annotationLabelToken,
+  resolveAnnotationLabel,
+} from "@/lib/annotation-labels";
 import { authClient } from "@/lib/auth-client";
 
 type LibraryAuthority = {
@@ -17,12 +22,52 @@ type LibraryAuthority = {
   createdAt: number;
   activityAt: number;
   annotationCount: number;
+  passageNoteCount: number;
+  documentNoteCount: number;
+  lastAnnotationAt: number | null;
+  labels: string[];
+  notePreview: string | null;
+  openFollowUpCount: number;
+  tags: string[];
+  collections: string[];
 };
 
 type LibraryPage = {
   authorities: LibraryAuthority[];
   nextCursor: string | null;
 };
+
+type LibraryFilterState = {
+  docType: "" | "judgment" | "statute";
+  label: string;
+  hasPassageNotes: boolean;
+  hasDocumentNote: boolean;
+  hasOpenFollowUps: boolean;
+  sort: "activity" | "saved" | "title";
+};
+
+const NO_FILTERS: LibraryFilterState = {
+  docType: "",
+  label: "",
+  hasPassageNotes: false,
+  hasDocumentNote: false,
+  hasOpenFollowUps: false,
+  sort: "activity",
+};
+
+/** Previews are remembered per browser, and default to hidden. */
+const PREVIEW_KEY = "lawplain:library-previews";
+
+function filtersActive(filters: LibraryFilterState): boolean {
+  return (
+    filters.docType !== "" ||
+    filters.label !== "" ||
+    filters.hasPassageNotes ||
+    filters.hasDocumentNote ||
+    filters.hasOpenFollowUps ||
+    filters.sort !== "activity"
+  );
+}
 
 type UndoToast = {
   item: LibraryAuthority;
@@ -53,6 +98,9 @@ export function SavedWorkspace() {
   const [authRequired, setAuthRequired] = useState(false);
   const [undoToast, setUndoToast] = useState<UndoToast | null>(null);
   const [removingId, setRemovingId] = useState<string | null>(null);
+  const [filters, setFilters] = useState<LibraryFilterState>(NO_FILTERS);
+  const [showPreviews, setShowPreviews] = useState(false);
+  const filterId = useId();
   const undoTimer = useRef<number | null>(null);
   const removeInFlight = useRef(false);
   const loadVersion = useRef(0);
@@ -84,7 +132,18 @@ export function SavedWorkspace() {
       setError(null);
       setAuthRequired(false);
       try {
-        const query = cursor ? `?cursor=${encodeURIComponent(cursor)}` : "";
+        const search = new URLSearchParams();
+        if (cursor) search.set("cursor", cursor);
+        if (filters.docType) search.set("docType", filters.docType);
+        if (filters.label) search.set("label", filters.label);
+        if (filters.hasPassageNotes) search.set("hasPassageNotes", "true");
+        if (filters.hasDocumentNote) search.set("hasDocumentNote", "true");
+        if (filters.hasOpenFollowUps) search.set("hasOpenFollowUps", "true");
+        if (filters.sort !== "activity") search.set("sort", filters.sort);
+        // Asking for previews is the opt-in: hidden means the note text is never
+        // selected server-side, not merely left unrendered here.
+        if (showPreviews) search.set("preview", "true");
+        const query = search.size > 0 ? `?${search}` : "";
         const response = await fetch(`/api/library${query}`, {
           cache: "no-store",
           signal,
@@ -129,13 +188,23 @@ export function SavedWorkspace() {
         }
       }
     },
-    [ownerId],
+    // Changing a filter or the preview choice re-runs the load effect below,
+    // which resets the list first so a filtered page never mixes with an old one.
+    [ownerId, filters, showPreviews],
   );
 
   useEffect(() => {
     return () => {
       if (undoTimer.current) window.clearTimeout(undoTimer.current);
     };
+  }, []);
+
+  useEffect(() => {
+    try {
+      setShowPreviews(window.localStorage.getItem(PREVIEW_KEY) === "true");
+    } catch {
+      // A blocked storage API is not a reason to fail; previews stay hidden.
+    }
   }, []);
 
   useEffect(() => {
@@ -180,6 +249,15 @@ export function SavedWorkspace() {
     return () =>
       window.removeEventListener("lawplain:library-changed", refreshLibrary);
   }, [loadLibrary]);
+
+  const choosePreviews = useCallback((next: boolean) => {
+    setShowPreviews(next);
+    try {
+      window.localStorage.setItem(PREVIEW_KEY, String(next));
+    } catch {
+      // Remembering the choice is a convenience, not a requirement.
+    }
+  }, []);
 
   function showUndoToast(item: LibraryAuthority, version: number) {
     if (undoTimer.current) window.clearTimeout(undoTimer.current);
@@ -357,18 +435,146 @@ export function SavedWorkspace() {
             {visibleAuthorities.length} {visibleNextCursor ? "loaded" : "total"}
           </span>
         </div>
+
+        <fieldset className="mb-4 flex flex-wrap items-center gap-2 border-b border-border pb-4">
+          <legend className="sr-only">Filter and sort your library</legend>
+          <label className="sr-only" htmlFor={`${filterId}-type`}>
+            Document type
+          </label>
+          <select
+            id={`${filterId}-type`}
+            value={filters.docType}
+            onChange={(event) =>
+              setFilters((f) => ({
+                ...f,
+                docType: event.target.value as LibraryFilterState["docType"],
+              }))
+            }
+            className="rounded-full border border-border bg-background px-3 py-1 text-xs text-muted"
+          >
+            <option value="">All documents</option>
+            <option value="judgment">Judgments</option>
+            <option value="statute">Statutes</option>
+          </select>
+
+          <label className="sr-only" htmlFor={`${filterId}-label`}>
+            Annotation label
+          </label>
+          <select
+            id={`${filterId}-label`}
+            value={filters.label}
+            onChange={(event) =>
+              setFilters((f) => ({ ...f, label: event.target.value }))
+            }
+            className="rounded-full border border-border bg-background px-3 py-1 text-xs text-muted"
+          >
+            <option value="">Any label</option>
+            {ANNOTATION_LABELS.map((label) => (
+              <option key={label.id} value={label.id}>
+                {label.name}
+              </option>
+            ))}
+          </select>
+
+          <label className="sr-only" htmlFor={`${filterId}-sort`}>
+            Sort by
+          </label>
+          <select
+            id={`${filterId}-sort`}
+            value={filters.sort}
+            onChange={(event) =>
+              setFilters((f) => ({
+                ...f,
+                sort: event.target.value as LibraryFilterState["sort"],
+              }))
+            }
+            className="rounded-full border border-border bg-background px-3 py-1 text-xs text-muted"
+          >
+            <option value="activity">Recently active</option>
+            <option value="saved">Date saved</option>
+            <option value="title">Title</option>
+          </select>
+
+          {(
+            [
+              ["hasPassageNotes", "Has passage notes"],
+              ["hasDocumentNote", "Has document note"],
+              ["hasOpenFollowUps", "Unresolved follow-ups"],
+            ] as const
+          ).map(([key, text]) => (
+            <button
+              key={key}
+              type="button"
+              aria-pressed={filters[key]}
+              onClick={() => setFilters((f) => ({ ...f, [key]: !f[key] }))}
+              className={
+                filters[key]
+                  ? "rounded-full border border-accent bg-accent/10 px-3 py-1 text-xs font-medium text-foreground"
+                  : "rounded-full border border-border px-3 py-1 text-xs font-medium text-muted hover:border-accent hover:text-foreground"
+              }
+            >
+              {text}
+            </button>
+          ))}
+
+          <button
+            type="button"
+            aria-pressed={showPreviews}
+            onClick={() => choosePreviews(!showPreviews)}
+            className={
+              showPreviews
+                ? "rounded-full border border-accent bg-accent/10 px-3 py-1 text-xs font-medium text-foreground"
+                : "rounded-full border border-border px-3 py-1 text-xs font-medium text-muted hover:border-accent hover:text-foreground"
+            }
+          >
+            {showPreviews ? "Hide note previews" : "Show note previews"}
+          </button>
+
+          {filtersActive(filters) && (
+            <button
+              type="button"
+              onClick={() => setFilters(NO_FILTERS)}
+              className="rounded-full px-3 py-1 text-xs font-medium text-muted underline hover:text-foreground"
+            >
+              Clear filters
+            </button>
+          )}
+        </fieldset>
         {visibleAuthorities.length === 0 ? (
           <div className="rounded-xl border border-dashed border-border-strong p-5 text-sm text-muted">
-            <p className="font-medium text-foreground">Nothing saved yet.</p>
-            <p className="mt-1">
-              Save a document or annotate a passage and it will appear here.
-            </p>
-            <Link
-              href="/"
-              className="mt-3 inline-flex rounded-full border border-border bg-background px-3 py-1 text-xs font-medium text-muted transition-colors hover:border-accent hover:text-accent"
-            >
-              Go to Search
-            </Link>
+            {filtersActive(filters) ? (
+              <>
+                <p className="font-medium text-foreground">
+                  No documents match these filters.
+                </p>
+                <p className="mt-1">
+                  Your library is not empty — the filters above are narrowing
+                  it.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => setFilters(NO_FILTERS)}
+                  className="mt-3 inline-flex rounded-full border border-border bg-background px-3 py-1 text-xs font-medium text-muted transition-colors hover:border-accent hover:text-accent"
+                >
+                  Clear filters
+                </button>
+              </>
+            ) : (
+              <>
+                <p className="font-medium text-foreground">
+                  Nothing saved yet.
+                </p>
+                <p className="mt-1">
+                  Save a document or annotate a passage and it will appear here.
+                </p>
+                <Link
+                  href="/"
+                  className="mt-3 inline-flex rounded-full border border-border bg-background px-3 py-1 text-xs font-medium text-muted transition-colors hover:border-accent hover:text-accent"
+                >
+                  Go to Search
+                </Link>
+              </>
+            )}
           </div>
         ) : (
           <ul className="space-y-3">
@@ -394,8 +600,56 @@ export function SavedWorkspace() {
                       ? `Saved ${formatDate(item.savedAt)}`
                       : `Added from an annotation ${formatDate(item.createdAt)}`}
                     {` · ${item.annotationCount} annotation${item.annotationCount === 1 ? "" : "s"}`}
+                    {item.passageNoteCount > 0 &&
+                      ` · ${item.passageNoteCount} passage note${item.passageNoteCount === 1 ? "" : "s"}`}
+                    {item.documentNoteCount > 0 && " · Document note"}
                     {` · Active ${formatDate(item.activityAt)}`}
                   </span>
+                  {item.labels.length > 0 && (
+                    <span className="mt-2 flex flex-wrap items-center gap-1.5">
+                      {item.labels.map((id) => {
+                        const label = resolveAnnotationLabel(id);
+                        return (
+                          // Colour is never the label: the name always renders too.
+                          <span
+                            key={id}
+                            className="inline-flex items-center gap-1 rounded-full bg-surface-2 px-2 py-0.5 text-[10px] font-medium text-muted-2"
+                          >
+                            <span
+                              aria-hidden="true"
+                              className="h-2 w-2 shrink-0 rounded-full border"
+                              style={{
+                                background: `var(--annotation-${annotationLabelToken(id)})`,
+                                borderColor: `var(--annotation-${annotationLabelToken(id)}-ink)`,
+                              }}
+                            />
+                            {label.name}
+                          </span>
+                        );
+                      })}
+                    </span>
+                  )}
+                  {(item.tags.length > 0 || item.collections.length > 0) && (
+                    <span className="mt-1.5 block text-[11px] text-muted-2">
+                      {item.collections.length > 0 &&
+                        `In ${item.collections.join(", ")}`}
+                      {item.collections.length > 0 &&
+                        item.tags.length > 0 &&
+                        " · "}
+                      {item.tags.length > 0 && `Tagged ${item.tags.join(", ")}`}
+                    </span>
+                  )}
+                  {item.openFollowUpCount > 0 && (
+                    <span className="mt-1.5 inline-flex rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-medium text-amber-800">
+                      {item.openFollowUpCount} unresolved follow-up
+                      {item.openFollowUpCount === 1 ? "" : "s"}
+                    </span>
+                  )}
+                  {item.notePreview && (
+                    <span className="mt-2 block border-l-2 border-accent/50 pl-2.5 text-[11px] italic text-muted">
+                      Your note: {item.notePreview}
+                    </span>
+                  )}
                 </Link>
                 {item.savedAt && (
                   <button

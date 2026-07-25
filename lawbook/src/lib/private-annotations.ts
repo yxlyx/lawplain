@@ -4,6 +4,7 @@ import {
 } from "@/lib/annotation-labels";
 import { getAuthDb } from "@/lib/d1";
 import { normalizeInternalPath } from "@/lib/internal-path";
+import { decodeCursor, encodeCursor } from "@/lib/private-cursor";
 import type { SavedDocType } from "@/lib/saved-workspace";
 
 const MAX_TEXT = 5_000;
@@ -464,33 +465,8 @@ export async function restoreSoftDeletedAnnotation(
   return getAnnotation(userId, id);
 }
 
-type Cursor = { v: 1; owner: string; shape: string; at: number; id: string };
-
-function encodeCursor(cursor: Cursor): string {
-  return Buffer.from(JSON.stringify(cursor)).toString("base64url");
-}
-
-function decodeCursor(
-  value: string | null,
-  owner: string,
-  shape: string,
-): Cursor | null {
-  if (!value) return null;
-  try {
-    const parsed = JSON.parse(
-      Buffer.from(value, "base64url").toString(),
-    ) as Cursor;
-    return parsed.v === 1 &&
-      parsed.owner === owner &&
-      parsed.shape === shape &&
-      Number.isSafeInteger(parsed.at) &&
-      typeof parsed.id === "string"
-      ? parsed
-      : null;
-  } catch {
-    return null;
-  }
-}
+// Cursors are shared with the library and private-search listings; see
+// private-cursor.ts for why they carry their owner and query shape.
 
 export interface AnnotationListOptions {
   limit?: number;
@@ -652,71 +628,45 @@ export async function deleteAnnotation(
       .prepare(`DELETE FROM private_research_quote_aliases
       WHERE userId = ? AND annotationId = ?`)
       .bind(userId, id),
+    // A document note (#194) keeps the root alive on its own. Without these
+    // extra guards, deleting the last highlight would drop the authority and
+    // cascade the reader's document note away with it.
     db
       .prepare(`DELETE FROM private_research_authority_guards
       WHERE userId = ? AND authorityId = ?
         AND NOT EXISTS (SELECT 1 FROM passage_annotations
+          WHERE userId = ? AND authorityId = ?)
+        AND NOT EXISTS (SELECT 1 FROM document_notes
           WHERE userId = ? AND authorityId = ?)`)
-      .bind(userId, existing.authorityId, userId, existing.authorityId),
+      .bind(
+        userId,
+        existing.authorityId,
+        userId,
+        existing.authorityId,
+        userId,
+        existing.authorityId,
+      ),
     db
       .prepare(`DELETE FROM saved_authorities
       WHERE userId = ? AND id = ? AND savedAt IS NULL
         AND NOT EXISTS (SELECT 1 FROM passage_annotations
+          WHERE userId = ? AND authorityId = ?)
+        AND NOT EXISTS (SELECT 1 FROM document_notes
           WHERE userId = ? AND authorityId = ?)`)
-      .bind(userId, existing.authorityId, userId, existing.authorityId),
+      .bind(
+        userId,
+        existing.authorityId,
+        userId,
+        existing.authorityId,
+        userId,
+        existing.authorityId,
+      ),
   ]);
   return deleted.results.some(
     (row) => row.authorityId === existing.authorityId,
   );
 }
 
-export async function listLibrary(
-  userId: string,
-  limitValue?: number,
-  cursorValue?: string | null,
-) {
-  const limit = Math.max(1, Math.min(MAX_LIMIT, limitValue ?? DEFAULT_LIMIT));
-  const shape = "library";
-  const cursor = decodeCursor(cursorValue ?? null, userId, shape);
-  if (cursorValue && !cursor) throw new Error("INVALID_CURSOR");
-  const db = await getAuthDb();
-  await purgeExpiredSoftDeletedAnnotationsWithDb(db, userId, Date.now());
-  const result = await db
-    .prepare(`SELECT a.id, a.docType, a.docId, a.title,
-      a.citation, a.path, a.savedAt, a.createdAt, a.activityAt,
-      COUNT(p.id) AS annotationCount
-    FROM saved_authorities a LEFT JOIN passage_annotations p
-      ON p.userId = a.userId AND p.authorityId = a.id AND p.deletedAt IS NULL
-    WHERE a.userId = ? AND (a.savedAt IS NOT NULL OR p.id IS NOT NULL)
-      AND (? IS NULL OR a.activityAt < ? OR (a.activityAt = ? AND a.id < ?))
-    GROUP BY a.id
-    ORDER BY a.activityAt DESC, a.id DESC LIMIT ?`)
-    .bind(
-      userId,
-      cursor?.at ?? null,
-      cursor?.at ?? null,
-      cursor?.at ?? null,
-      cursor?.id ?? null,
-      limit + 1,
-    )
-    .all<Record<string, unknown>>();
-  const all = result.results ?? [];
-  const items = all.slice(0, limit);
-  const last = items.at(-1) as { activityAt?: number; id?: string } | undefined;
-  return {
-    authorities: items,
-    nextCursor:
-      all.length > limit &&
-      last &&
-      typeof last.activityAt === "number" &&
-      last.id
-        ? encodeCursor({
-            v: 1,
-            owner: userId,
-            shape,
-            at: last.activityAt,
-            id: last.id,
-          })
-        : null,
-  };
-}
+// listLibrary moved to lib/library.ts, which owns the richer My Library query
+// (#195) and its filters. Kept out of this module so the annotation data layer
+// stays focused on passage anchoring and ownership.
