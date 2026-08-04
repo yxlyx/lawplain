@@ -2,13 +2,12 @@
 @import "tailwindcss";
 
 /*
- * Design system — "Counsel Emerald" (light only).
- * Pure white canvas, navy-cast neutrals, one deep emerald accent, pill
- * geometry. Google Sans Flex for UI (semi-black weights for emphasis);
- * Lora for editorial/legal text.
+ * Design system — "Counsel Emerald".
+ * Light and dark surfaces share a navy-cast neutral scale and one deep
+ * emerald accent. Google Sans Flex is used for UI; Lora for legal text.
  */
 :root {
-  color-scheme: light; /* always light */
+  color-scheme: light;
   --background: #ffffff; /* pure white canvas */
   --surface: #ffffff; /* cards */
   --surface-2: #eef1f8; /* sunken wells, navy-tinted */
@@ -23,6 +22,24 @@
   --accent-soft: rgba(13, 117, 97, 0.09);
   --ring: #0d7561;
   --highlight: rgba(13, 117, 97, 0.16); /* search highlight */
+}
+
+[data-theme="dark"] {
+  color-scheme: dark;
+  --background: #101318;
+  --surface: #171c24;
+  --surface-2: #202733;
+  --foreground: #f1f4f8;
+  --muted: #c1cad6;
+  --muted-2: #9da8b6;
+  --border: #303946;
+  --border-strong: #4b5869;
+  --primary: #f1f4f8;
+  --primary-fg: #101318;
+  --accent: #6fd1b4;
+  --accent-soft: rgba(111, 209, 180, 0.16);
+  --ring: #8ee5ca;
+  --highlight: rgba(111, 209, 180, 0.24);
 }
 
 @theme inline {

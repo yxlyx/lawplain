@@ -17,6 +17,7 @@ import {
   SearchIcon,
   SparkleIcon,
 } from "@/components/icons";
+import { ThemeToggle } from "@/components/ThemeToggle";
 import {
   authClient,
   SIGN_OUT_TRANSITION_END,
@@ -360,45 +361,48 @@ export function AppShell({
                 Lawplain<span className="text-accent">.</span>
               </span>
             </Link>
+            <ThemeToggle />
           </div>
-          <nav
-            aria-label="Primary"
-            inert={searchActive || undefined}
-            className={`hidden items-center gap-1 ${searchActive ? "" : "lg:flex"}`}
-          >
-            {visibleNav.map((tab) => {
-              const active = matchesPath(pathname, tab.href);
-              const Icon = tab.icon;
-              return (
-                <Link
-                  key={tab.href}
-                  href={tab.href}
-                  aria-current={active ? "page" : undefined}
-                  className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium transition-[color,background-color,opacity] duration-[50ms] ${
-                    active
-                      ? "bg-accent-soft text-accent"
-                      : "text-muted-2 hover:bg-surface-2 hover:text-foreground"
-                  } ${
-                    tab.href === "/ask" && signingOut
-                      ? "pointer-events-none opacity-0"
-                      : "opacity-100"
-                  }`}
-                >
-                  <Icon className="h-4 w-4" />
-                  <span className="hidden sm:inline">{tab.label}</span>
-                  {tab.href === "/ask" && askSidebarUnread && (
-                    <span
-                      title="Completed chat"
-                      className="ml-0.5 h-2 w-2 shrink-0 rounded-full bg-accent"
-                    >
-                      <span className="sr-only">Completed chat</span>
-                    </span>
-                  )}
-                </Link>
-              );
-            })}
-            <AuthMenu />
-          </nav>
+          <div className="flex items-center gap-2">
+            <nav
+              aria-label="Primary"
+              inert={searchActive || undefined}
+              className={`hidden items-center gap-1 ${searchActive ? "" : "lg:flex"}`}
+            >
+              {visibleNav.map((tab) => {
+                const active = matchesPath(pathname, tab.href);
+                const Icon = tab.icon;
+                return (
+                  <Link
+                    key={tab.href}
+                    href={tab.href}
+                    aria-current={active ? "page" : undefined}
+                    className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium transition-[color,background-color,opacity] duration-[50ms] ${
+                      active
+                        ? "bg-accent-soft text-accent"
+                        : "text-muted-2 hover:bg-surface-2 hover:text-foreground"
+                    } ${
+                      tab.href === "/ask" && signingOut
+                        ? "pointer-events-none opacity-0"
+                        : "opacity-100"
+                    }`}
+                  >
+                    <Icon className="h-4 w-4" />
+                    <span className="hidden sm:inline">{tab.label}</span>
+                    {tab.href === "/ask" && askSidebarUnread && (
+                      <span
+                        title="Completed chat"
+                        className="ml-0.5 h-2 w-2 shrink-0 rounded-full bg-accent"
+                      >
+                        <span className="sr-only">Completed chat</span>
+                      </span>
+                    )}
+                  </Link>
+                );
+              })}
+              <AuthMenu />
+            </nav>
+          </div>
         </div>
       </header>
 
