@@ -51,7 +51,8 @@ export const metadata: Metadata = {
     canonical: "/",
   },
   icons: {
-    icon: "/favicon.ico",
+    icon: [{ url: "/lawplain-icon.svg", type: "image/svg+xml" }],
+    shortcut: "/favicon.ico?v=lawplain-garden",
   },
   manifest: "/manifest.webmanifest",
   openGraph: {
