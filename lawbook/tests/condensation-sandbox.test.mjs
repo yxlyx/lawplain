@@ -23,7 +23,7 @@ function mockFetch(t, handler) {
     calls.push({ url, ...init, body });
     assert.equal(new URL(url).origin, "https://api.condensation.ai");
     assert.equal(init.headers.authorization, `Bearer ${KEY}`);
-    assert.equal(init.redirect, "error");
+    assert.equal(init.redirect, "manual");
     return handler(String(url), init, body);
   });
   return calls;
@@ -75,6 +75,19 @@ test("provider failures do not leak bodies or retry mutations", async (t) => {
       return true;
     },
   );
+  assert.equal(calls.length, 1);
+});
+
+test("redirects are rejected without forwarding credentials", async (t) => {
+  const calls = mockFetch(
+    t,
+    () =>
+      new Response(null, {
+        status: 307,
+        headers: { location: "https://untrusted.example/sandboxes" },
+      }),
+  );
+  await assert.rejects(new CondensationSandbox(KEY).createSandbox(), /307/);
   assert.equal(calls.length, 1);
 });
 

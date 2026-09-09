@@ -63,7 +63,9 @@ export class CondensationSandbox extends CubeSandbox {
         "content-type": "application/json",
       },
       body: body === undefined ? undefined : JSON.stringify(body),
-      redirect: "error",
+      // Workers supports manual/follow only. A 3xx is rejected below, so the
+      // Authorization header is never forwarded to a redirect destination.
+      redirect: "manual",
       signal: AbortSignal.timeout(timeoutMs),
     });
     if (!res.ok) {
