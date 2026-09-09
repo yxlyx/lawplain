@@ -1,5 +1,6 @@
 import { McpServer } from "@modelcontextprotocol/server";
 import { z } from "zod";
+import { type McpFeedback, mcpFeedbackSchema } from "./mcp-feedback";
 import type { McpAccess } from "./mcp-store";
 
 const query = z.string().trim().min(1).max(500);
@@ -27,7 +28,8 @@ const documentKinds = [
   "agency-guidance",
 ] as const;
 
-export const MCP_TOOL_GROUPS: Record<string, "search" | "read"> = {
+export const MCP_TOOL_GROUPS: Record<string, "search" | "read" | "feedback"> = {
+  submit_feedback: "feedback",
   search_judgments: "search",
   read_judgment: "read",
   search_statutes: "search",
@@ -69,6 +71,7 @@ type CorpusFetch = (url: string, init?: RequestInit) => Promise<Response>;
 export function createLawplainMcpServer(
   access: McpAccess,
   fetcher: CorpusFetch = fetch,
+  feedback?: (input: McpFeedback) => Promise<boolean>,
 ) {
   const server = new McpServer(
     { name: "lawplain", title: "Lawplain legal research", version: "1.0.0" },
@@ -84,6 +87,37 @@ export function createLawplainMcpServer(
     idempotentHint: true,
     openWorldHint: true,
   };
+
+  if (feedback)
+    server.registerTool(
+      "submit_feedback",
+      {
+        title: "Share research feedback",
+        description:
+          "Rate a previous Lawplain tool reply using its Lawplain request ID. Submit the user's stated feedback only; do not invent a user rating. Include sharedAnswer only if the user explicitly wants to share their external assistant's final answer with Lawplain. Set rating to null to clear feedback. This does not change legal sources.",
+        annotations: {
+          readOnlyHint: false,
+          destructiveHint: false,
+          idempotentHint: true,
+          openWorldHint: false,
+        },
+        inputSchema: mcpFeedbackSchema,
+      },
+      async (input) => {
+        const saved = await feedback(input);
+        return {
+          isError: !saved,
+          content: [
+            {
+              type: "text" as const,
+              text: saved
+                ? "Feedback saved."
+                : "Research request not found in your recent activity.",
+            },
+          ],
+        };
+      },
+    );
 
   async function corpus(
     path: string,

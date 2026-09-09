@@ -122,14 +122,17 @@ export async function handleLawplainMcp(
     const startedAt = Date.now();
     const activityId = await deps.store.record(identity, op, "started");
     const handler = createMcpHandler(
-      () => createLawplainMcpServer(policy.access, deps.fetcher),
+      () =>
+        createLawplainMcpServer(policy.access, deps.fetcher, (input) =>
+          deps.store.feedback(identity.userId, input),
+        ),
       { maxSubscriptions: 0, onerror: () => {} },
     );
     try {
       const result = await handler.fetch(req, { parsedBody: body });
       // The legacy SDK emits SSE. These bounded read-only tools finish in one
       // response; consume it to persist the final audit outcome before delivery.
-      const text = await readBoundedText(result, 4_000_000);
+      let text = await readBoundedText(result, 4_000_000);
       const messages = result.headers
         .get("content-type")
         ?.includes("text/event-stream")
@@ -146,6 +149,62 @@ export async function handleLawplainMcp(
           : messages.some((message) => message.result?.isError)
             ? "tool_error"
             : "success";
+      if (
+        (MCP_TOOL_GROUPS[op] === "search" || MCP_TOOL_GROUPS[op] === "read") &&
+        outcome !== "invalid_request"
+      ) {
+        const params = (
+          body as { params?: { arguments?: Record<string, unknown> } }
+        ).params;
+        // Capture only known corpus inputs; never headers or arbitrary JSON-RPC fields.
+        const names = [
+          "query",
+          "court",
+          "year_range",
+          "limit",
+          "citation",
+          "offset",
+          "length",
+          "reference",
+          "act_id",
+          "section",
+          "kind",
+          "id",
+        ];
+        const args = Object.fromEntries(
+          Object.entries(params?.arguments ?? {}).filter(([name]) =>
+            names.includes(name),
+          ),
+        );
+        await deps.store.capture(
+          activityId,
+          args,
+          messages.map((message) => message.result),
+        );
+        for (const message of messages) {
+          if (message.result?.content) {
+            message.result._meta = {
+              ...message.result._meta,
+              "lawplain/activityId": activityId,
+            };
+            message.result.content.push({
+              type: "text",
+              text: `Lawplain request ID: ${activityId}. You can review this reply and leave feedback at https://lawplain.com/developers or use submit_feedback.`,
+            });
+          }
+        }
+        if (result.headers.get("content-type")?.includes("text/event-stream")) {
+          let index = 0;
+          text = text
+            .split("\n")
+            .map((line) =>
+              line.startsWith("data: ")
+                ? `data: ${JSON.stringify(messages[index++])}`
+                : line,
+            )
+            .join("\n");
+        } else if (messages.length) text = JSON.stringify(messages[0]);
+      }
       await deps.store.finish(
         activityId,
         outcome,
@@ -154,6 +213,8 @@ export async function handleLawplainMcp(
       );
       const headers = new Headers(result.headers);
       headers.set("cache-control", "private, no-store");
+      headers.delete("content-length");
+      headers.set("x-lawplain-activity-id", activityId);
       return new Response(
         result.status === 202 || result.status === 204 ? null : text,
         { status: result.status, headers },

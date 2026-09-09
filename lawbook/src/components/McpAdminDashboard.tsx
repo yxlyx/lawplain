@@ -164,11 +164,13 @@ export function McpAdminDashboard() {
   const [busy, setBusy] = useState(false);
   const [offset, setOffset] = useState(0);
   const [userId, setUserId] = useState("");
+  const [rating, setRating] = useState("");
   const [updatedAt, setUpdatedAt] = useState<number | null>(null);
 
   const refresh = useCallback(async () => {
     const params = new URLSearchParams({ offset: String(offset) });
     if (userId) params.set("userId", userId);
+    if (rating) params.set("rating", rating);
     const res = await fetch(`/api/admin/mcp?${params}`, {
       cache: "no-store",
     }).catch(() => null);
@@ -181,7 +183,7 @@ export function McpAdminDashboard() {
     setData(await res.json());
     setUpdatedAt(Date.now());
     setError("");
-  }, [offset, userId]);
+  }, [offset, userId, rating]);
   useEffect(() => {
     void refresh();
     const timer = setInterval(() => {
@@ -340,6 +342,19 @@ export function McpAdminDashboard() {
                 </button>
               </div>
             </div>
+            <label className="mb-3 block text-xs text-muted">
+              Feedback filter{" "}
+              <select
+                aria-label="Filter MCP feedback"
+                value={rating}
+                onChange={(event) => setRating(event.target.value)}
+                className={control}
+              >
+                <option value="">All activity</option>
+                <option value="not_helpful">Not helpful</option>
+                <option value="helpful">Helpful</option>
+              </select>
+            </label>
             <McpActivityTable activity={data.activity} users={users} />
             <p className="mt-3 text-xs leading-relaxed text-muted-2">
               Latest 100 requests in the past 30 days. Refreshes every 15
@@ -347,8 +362,9 @@ export function McpAdminDashboard() {
               {updatedAt
                 ? ` Updated ${new Date(updatedAt).toLocaleTimeString()}.`
                 : ""}{" "}
-              Only calls to Lawplain are visible. Search text, returned
-              documents, and external assistant conversations are not logged.
+              Open a research record to review its query, tool reply and
+              feedback. External assistant answers are visible only when
+              explicitly shared.
             </p>
           </section>
           <section>

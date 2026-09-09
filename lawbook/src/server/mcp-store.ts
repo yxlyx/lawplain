@@ -1,3 +1,9 @@
+import {
+  type McpFeedback,
+  mcpFeedbackSchema,
+  redactMcpText,
+} from "./mcp-feedback";
+
 export type McpAccessStatus = "pending" | "approved" | "suspended";
 
 export interface McpAccess {
@@ -24,6 +30,19 @@ export interface McpActivity {
   durationMs: number;
   responseBytes: number;
   createdAt: number;
+  hasResearch: number;
+  rating: "helpful" | "not_helpful" | null;
+}
+
+export interface McpResearch {
+  activityId: string;
+  requestText: string;
+  replyText: string;
+  truncated: number;
+  rating: "helpful" | "not_helpful" | null;
+  comment: string | null;
+  sharedAnswer: string | null;
+  ratedAt: number | null;
 }
 
 export const MCP_RETENTION_MS = 30 * 24 * 60 * 60_000;
@@ -159,12 +178,64 @@ export class McpStore {
       .run();
   }
 
-  async activity(userId?: string): Promise<McpActivity[]> {
+  async capture(id: string, args: unknown, reply: unknown): Promise<void> {
+    const request = redactMcpText(JSON.stringify(args ?? {}));
+    const result = redactMcpText(JSON.stringify(reply ?? null));
+    await this.db
+      .prepare(`INSERT INTO mcp_research (activityId, requestText, replyText, truncated)
+      VALUES (?, ?, ?, ?)`)
+      .bind(
+        id,
+        request.slice(0, 8000),
+        result.slice(0, 64000),
+        Number(request.length > 8000 || result.length > 64000),
+      )
+      .run();
+  }
+
+  async research(id: string, userId?: string): Promise<McpResearch | null> {
+    return this.db
+      .prepare(`SELECT r.* FROM mcp_research r JOIN mcp_activity a ON a.id = r.activityId
+      WHERE a.id = ? AND a.createdAt >= ? ${userId ? "AND a.userId = ?" : ""}`)
+      .bind(id, Date.now() - MCP_RETENTION_MS, ...(userId ? [userId] : []))
+      .first<McpResearch>();
+  }
+
+  async feedback(userId: string, input: McpFeedback): Promise<boolean> {
+    const parsed = mcpFeedbackSchema.safeParse(input);
+    if (!parsed.success) return false;
+    const { activityId, rating, comment, sharedAnswer } = parsed.data;
+    const row = await this.db
+      .prepare(`UPDATE mcp_research SET rating = ?, comment = ?, sharedAnswer = ?, ratedAt = ?
+      WHERE activityId IN (SELECT id FROM mcp_activity WHERE id = ? AND userId = ? AND createdAt >= ? AND outcome != 'started') RETURNING activityId`)
+      .bind(
+        rating,
+        rating ? redactMcpText(comment ?? "") : null,
+        rating ? redactMcpText(sharedAnswer ?? "") : null,
+        rating ? Date.now() : null,
+        activityId,
+        userId,
+        Date.now() - MCP_RETENTION_MS,
+      )
+      .first();
+    return row !== null;
+  }
+
+  async activity(
+    userId?: string,
+    rating?: "helpful" | "not_helpful",
+  ): Promise<McpActivity[]> {
     const { results } = await this.db
-      .prepare(`SELECT a.id, a.userId, a.keyId, k.name AS keyName, a.operation, a.outcome, a.durationMs, a.responseBytes, a.createdAt
+      .prepare(`SELECT a.id, a.userId, a.keyId, k.name AS keyName, a.operation, a.outcome, a.durationMs, a.responseBytes, a.createdAt,
+      CASE WHEN r.activityId IS NULL THEN 0 ELSE 1 END AS hasResearch, r.rating
       FROM mcp_activity a JOIN api_keys k ON k.id = a.keyId AND k.userId = a.userId
-      WHERE a.createdAt >= ? ${userId ? "AND a.userId = ?" : ""} ORDER BY a.createdAt DESC LIMIT 100`)
-      .bind(Date.now() - MCP_RETENTION_MS, ...(userId ? [userId] : []))
+      LEFT JOIN mcp_research r ON r.activityId = a.id
+      WHERE a.createdAt >= ? ${userId ? "AND a.userId = ?" : ""} ${rating ? "AND r.rating = ?" : ""} ORDER BY a.createdAt DESC LIMIT 100`)
+      .bind(
+        Date.now() - MCP_RETENTION_MS,
+        ...(userId ? [userId] : []),
+        ...(rating ? [rating] : []),
+      )
       .all<McpActivity>();
     return results ?? [];
   }

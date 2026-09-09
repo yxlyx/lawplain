@@ -98,7 +98,7 @@ try {
 
 ## Tool reference
 
-Call tools/list after connecting: it is the authoritative schema for your account. Search and read permissions are controlled separately, so your client may see fewer than eight tools.
+Call tools/list after connecting: it is the authoritative schema for your account. Search and read permissions are controlled separately, so your client may see fewer research tools. There are eight corpus tools plus submit_feedback.
 
 | Tool | Required arguments | Optional arguments | Purpose |
 | --- | --- | --- | --- |
@@ -110,12 +110,21 @@ Call tools/list after connecting: it is the authoritative schema for your accoun
 | read_statute_section | act_id, section | — | Read an exact statutory provision. |
 | search_documents | kind, query | limit | Search a supporting collection. |
 | read_document | kind, id | offset, length | Read a passage from that collection. |
+| submit_feedback | activityId, rating | comment, sharedAnswer | Save or clear the user’s feedback on their own prior tool reply. |
 
 For kind, use one of: hansard, bills, subsidiary-legislation, practice-directions, agency-guidance. Reuse the exact identifiers from search results; do not supply a full URL or an already URL-encoded identifier.
 
 Queries are 1–500 characters. Search limit defaults to 5 and accepts 1–20. Passage offset defaults to 0 (maximum 2,000,000); length defaults to 10,000 and accepts 500–20,000 characters. These are text offsets, not paragraph numbers. Identifiers are 1–300 characters and cannot contain slashes, backslashes, percent signs or control characters. Unknown arguments are rejected.
 
 Successful tool results contain a text block with a JSON object: retrievedAt (retrieval time), source (corpus API URL), and data (the corpus response). Retrieval time is not the authority's publication or effective date. Preserve official source links included in data.
+
+## Research records and feedback
+
+Lawplain stores MCP query/source arguments, bounded tool replies and feedback for 30 days to improve research quality. Only the account owner and Lawplain administrators can review these records. Stored requests are capped at 8,000 characters and replies at 64,000 characters; shortened copies are marked. This does not shorten the delivered reply. Known credential patterns are redacted, but this is not a confidential-information filter: avoid client-sensitive information in searches or feedback. Request headers and API keys are not deliberately logged.
+
+Each research reply includes a Lawplain request ID, also available in result._meta["lawplain/activityId"] and the X-Lawplain-Activity-Id HTTP header. Review the query and reply at [Your recent activity](https://lawplain.com/developers). Rate it Helpful or Not helpful and optionally explain what needs improving.
+
+Agents can use submit_feedback with activityId and rating (helpful or not_helpful), plus optional comment (up to 2,000 characters). Use only feedback the user actually expressed; never invent a user rating. External assistants’ final answers are not observable by Lawplain. Only when the user explicitly wants to share one, include sharedAnswer (up to 12,000 characters), or paste it into the optional website field. The tool updates the existing feedback, replacing its optional fields; rating: null clears the rating, comment and shared answer. Feedback cannot target another account’s request or an expired record. It is private feedback for Lawplain, not a change to legal sources.
 
 ## Research workflow
 
@@ -152,5 +161,5 @@ An agent can read the guide immediately. Calling the tools still requires an app
 
 The default account limit is 60 requests per minute and administrators can change it. Initialization and tool discovery also count toward the limit. Request bodies are limited to 32,768 bytes. Corpus requests time out after 15 seconds and responses are limited to 512,000 bytes; use fewer results or a narrower passage if retrieval fails.
 
-Administrators can approve, suspend and revoke MCP access, set search/read permissions and request limits, and inspect usage. MCP usage records retain operation names, outcomes, timing and account/key identifiers for 30 days; they do not store raw search queries or document text in the MCP usage log. Manage or revoke your keys at [API & MCP access](https://lawplain.com/developers).
+Administrators can approve, suspend and revoke MCP access, set search/read permissions and request limits, and inspect usage. MCP records retain operation names, outcomes, timing, account/key identifiers, bounded queries/replies and feedback for 30 days. Manage or revoke your keys at [API & MCP access](https://lawplain.com/developers).
 `;

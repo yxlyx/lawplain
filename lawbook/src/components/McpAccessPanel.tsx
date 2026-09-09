@@ -157,10 +157,12 @@ export function McpAccessPanel() {
         available yet.
       </p>
       <p className="mt-4 text-xs leading-relaxed text-muted-2">
-        Lawplain records the account, key, tool, outcome, timing, and response
-        size for 30 days. You and Lawplain administrators can see this activity.
-        This log does not store search text, source contents, or your
-        assistant’s conversation.
+        Lawplain stores MCP queries, source requests, tool replies and feedback
+        for 30 days to improve research quality. You and Lawplain administrators
+        can review these records. Long replies are shortened in the stored copy.
+        Your assistant’s final answer is shared only if you explicitly submit
+        it. Avoid including confidential client information in searches or
+        feedback.
       </p>
       {data && (
         <details className="mt-6 border-t border-border pt-5">

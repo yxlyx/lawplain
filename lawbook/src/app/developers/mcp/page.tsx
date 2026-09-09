@@ -35,7 +35,7 @@ export default function McpDocsPage() {
         </h1>
         <p className="mt-5 text-lg leading-relaxed text-muted">
           Connect your agent to judgments, legislation and parliamentary records
-          with eight read-only MCP tools.
+          with eight read-only research tools and a feedback tool.
         </p>
         <div className="mt-6 flex flex-wrap gap-3 text-sm">
           <Link

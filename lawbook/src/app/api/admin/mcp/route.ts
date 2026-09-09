@@ -32,13 +32,19 @@ export async function GET(req: Request): Promise<Response> {
       Math.min(100_000, Number(url.searchParams.get("offset")) || 0),
     );
     const userId = url.searchParams.get("userId") || undefined;
+    const rating = url.searchParams.get("rating");
+    if (rating && rating !== "helpful" && rating !== "not_helpful")
+      return privateJson({ error: "Invalid rating" }, { status: 400 });
     if (userId && userId.length > 100)
       return privateJson({ error: "Invalid user" }, { status: 400 });
     const store = await mcpStore();
     const [page, enabled, activity, summary, audit] = await Promise.all([
       store.users(Math.floor(offset)),
       store.enabled(),
-      store.activity(userId),
+      store.activity(
+        userId,
+        rating === "helpful" || rating === "not_helpful" ? rating : undefined,
+      ),
       store.summary(userId),
       store.audit(),
     ]);

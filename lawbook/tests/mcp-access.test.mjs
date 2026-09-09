@@ -39,6 +39,7 @@ function fixture(t) {
   );
   sql.exec(readFileSync("migrations/0010_api_keys.sql", "utf8"));
   sql.exec(readFileSync("migrations/0024_mcp_access.sql", "utf8"));
+  sql.exec(readFileSync("migrations/0025_mcp_research_feedback.sql", "utf8"));
   for (const id of ["owner", "other", "admin"])
     sql
       .prepare("INSERT INTO user VALUES (?,?,?)")
@@ -264,9 +265,12 @@ test("disabled tool groups cannot be listed or called directly", async (t) => {
   const listed = await message(
     await f.request({ jsonrpc: "2.0", id: 1, method: "tools/list" }),
   );
-  assert.equal(listed.result.tools.length, 4);
+  assert.equal(listed.result.tools.length, 5);
   assert.ok(
-    listed.result.tools.every((tool) => tool.name.startsWith("search_")),
+    listed.result.tools.every(
+      (tool) =>
+        tool.name.startsWith("search_") || tool.name === "submit_feedback",
+    ),
   );
   const denied = await message(
     await f.request(call("read_judgment", { citation: "[2026] SGCA 1" })),
@@ -327,7 +331,7 @@ test("malformed, oversized and batched JSON are rejected without calling the cor
   assert.equal(f.upstream, 0);
 });
 
-test("audit records no search terms, identifiers, tokens, source text or raw provider errors", async (t) => {
+test("activity summaries omit research payloads and provider errors never reveal credentials", async (t) => {
   const f = fixture(t);
   await f.approve();
   const secret = "confidential client acquisition";
@@ -346,6 +350,96 @@ test("audit records no search terms, identifiers, tokens, source text or raw pro
   assert.equal(error.result.isError, true);
   assert.ok(!JSON.stringify(error).includes(secret));
   assert.ok(!JSON.stringify(error).includes(key));
+});
+
+test("research captures query and reply with correlated IDs, redacts credentials and bounds storage without altering delivery", async (t) => {
+  const f = fixture(t);
+  await f.approve();
+  f.deps.fetcher = async () =>
+    Response.json({ body: "source ".repeat(12000) + key });
+  const response = await f.request(
+    call("search_judgments", { query: "negligence " + key }),
+  );
+  const id = response.headers.get("x-lawplain-activity-id");
+  const reply = await message(response);
+  assert.equal(reply.result._meta["lawplain/activityId"], id);
+  assert.ok(reply.result.content[1].text.includes(id));
+  assert.ok(reply.result.content[0].text.length > 64000);
+  const record = await f.store.research(id, "owner");
+  assert.ok(record.requestText.includes("negligence"));
+  assert.ok(record.requestText.includes("[redacted key]"));
+  assert.ok(!record.requestText.includes(key));
+  assert.ok(record.replyText.includes("source"));
+  assert.equal(record.replyText.length, 64000);
+  assert.equal(record.truncated, 1);
+  assert.equal(await f.store.research(id, "other"), null);
+  assert.ok(await f.store.research(id));
+  assert.equal((await f.store.activity("owner"))[0].hasResearch, 1);
+});
+
+test("feedback tool persists explicit feedback and shared answers, enforces ownership, clears and expires with research", async (t) => {
+  const f = fixture(t);
+  await f.approve();
+  await f.approve("other");
+  const response = await f.request(call());
+  const activityId = response.headers.get("x-lawplain-activity-id");
+  await response.text();
+  const args = {
+    activityId,
+    rating: "not_helpful",
+    comment: "Missing an authority " + key,
+    sharedAnswer: "Explicitly shared test answer",
+  };
+  const foreign = await message(
+    await f.request(call("submit_feedback", args), { token: otherKey }),
+  );
+  assert.equal(foreign.result.isError, true);
+  const saved = await message(await f.request(call("submit_feedback", args)));
+  assert.equal(saved.result.isError, false);
+  const record = await f.store.research(activityId, "owner");
+  assert.equal(record.rating, "not_helpful");
+  assert.equal(record.sharedAnswer, args.sharedAnswer);
+  assert.ok(!record.comment.includes(key));
+  assert.equal((await f.store.activity(undefined, "not_helpful")).length, 1);
+  assert.equal((await f.store.activity("other", "not_helpful")).length, 0);
+  assert.equal(
+    await f.store.feedback("owner", { ...args, comment: "x".repeat(2001) }),
+    false,
+  );
+  const cleared = await message(
+    await f.request(call("submit_feedback", { activityId, rating: null })),
+  );
+  assert.equal(cleared.result.isError, false);
+  const empty = await f.store.research(activityId, "owner");
+  assert.equal(empty.rating, null);
+  assert.equal(empty.comment, null);
+  assert.equal(empty.sharedAnswer, null);
+  f.sql
+    .prepare("UPDATE mcp_activity SET createdAt=? WHERE id=?")
+    .run(Date.now() - MCP_RETENTION_MS - 100, activityId);
+  assert.equal(await f.store.feedback("owner", args), false);
+  assert.equal(await f.store.research(activityId, "owner"), null);
+  await f.store.purge();
+  assert.equal(
+    f.sql.prepare("SELECT count(*) AS n FROM mcp_research").get().n,
+    0,
+  );
+});
+
+test("discovery and rejected methods never create research snapshots", async (t) => {
+  const f = fixture(t);
+  await f.approve();
+  await f.request({
+    jsonrpc: "2.0",
+    id: 1,
+    method: "tools/list",
+    params: { secret: key },
+  });
+  await f.request(call("unknown", { query: "private text" }));
+  assert.equal(
+    f.sql.prepare("SELECT count(*) AS n FROM mcp_research").get().n,
+    0,
+  );
 });
 
 test("retention purges old audit rows and admin changes are separately attributable", async (t) => {
@@ -393,7 +487,7 @@ for (const mode of ["legacy", "auto"])
     t.after(() => client.close());
     await client.connect(transport);
     const listed = await client.listTools();
-    assert.equal(listed.tools.length, 8);
+    assert.equal(listed.tools.length, 9);
     const result = await client.callTool({
       name: "search_judgments",
       arguments: { query: "negligence" },
@@ -473,7 +567,7 @@ test("published MCP guide examples match schemas and its SDK example connects", 
     { env: { LAWPLAIN_API_KEY: key } },
     { log: (value) => output.push(value) },
   );
-  assert.equal(output[0].tools.length, 8);
+  assert.equal(output[0].tools.length, 9);
   for (const tool of output[0].tools) {
     const row = MCP_GUIDE.split("\n").find((line) =>
       line.startsWith(`| ${tool.name} |`),
