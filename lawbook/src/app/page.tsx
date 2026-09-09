@@ -101,7 +101,15 @@ export default async function Home({
     .map((c) => c.court);
 
   const counts = stats?.counts ?? {};
-  const countEntries = Object.entries(counts).filter(([, n]) => n > 0);
+  const countEntries = Object.entries(counts).filter(
+    ([key, n]) =>
+      [
+        "judgments",
+        "statutes",
+        "hansard_speeches",
+        "subsidiary_legislation",
+      ].includes(key) && n > 0,
+  );
 
   return (
     <main className="mx-auto flex min-h-0 w-full max-w-[1440px] flex-1 flex-col px-4 sm:px-7">
@@ -111,19 +119,18 @@ export default async function Home({
         initialQuery={q ?? ""}
         stats={
           countEntries.length > 0 ? (
-            <p className="mx-auto max-w-3xl pb-4 text-center text-xs leading-relaxed text-muted-2">
-              {countEntries.map(([key, n], i) => (
-                <span key={key}>
-                  {i > 0 && (
-                    <span className="mx-1.5 text-border-strong">·</span>
-                  )}
-                  <span className="font-medium tabular-nums text-muted">
-                    {n.toLocaleString()}
-                  </span>{" "}
-                  {CORPUS_LABELS[key] ?? key}
-                </span>
+            <div
+              className="garden-stat-grid"
+              role="group"
+              aria-label="Corpus coverage"
+            >
+              {countEntries.map(([key, n]) => (
+                <div key={key}>
+                  <strong>{n.toLocaleString()}</strong>
+                  <span>{CORPUS_LABELS[key] ?? key}</span>
+                </div>
               ))}
-            </p>
+            </div>
           ) : null
         }
       />

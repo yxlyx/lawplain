@@ -52,61 +52,65 @@ export function HomeShell({
   return (
     <div className={`garden-home ${active ? "is-searching" : ""}`}>
       {active && <h1 className="sr-only">Search Singapore law</h1>}
-      {!active && (
-        <section className="garden-hero" aria-labelledby="garden-title">
-          <Image
-            src="/images/singapore-garden.webp"
-            alt=""
-            fill
-            unoptimized
-            preload
-            sizes="(max-width: 1440px) 100vw, 1440px"
-            className="garden-art"
+      <div className={`garden-opening ${active ? "is-active" : ""}`}>
+        {!active && (
+          <>
+            <div className="garden-hero" aria-hidden="true">
+              <Image
+                src="/images/singapore-garden.webp"
+                alt=""
+                fill
+                unoptimized
+                preload
+                sizes="(max-width: 1440px) 100vw, 1440px"
+                className="garden-art"
+              />
+              <div className="garden-shade" />
+            </div>
+            <div className="garden-hero-copy">
+              <p className="garden-eyebrow">
+                <span /> SINGAPORE LAW, OPEN TO EVERYONE
+              </p>
+              <h1 id="garden-title">
+                A little clarity.
+                <br />A world of <em>law.</em>
+              </h1>
+              <p>
+                Find the law. Understand the context.
+                <br />
+                Go straight to the source.
+              </p>
+            </div>
+          </>
+        )}
+        <section className="garden-search" aria-label="Search Singapore law">
+          {!active && (
+            <div className="garden-search-heading">
+              <span>Search Singapore law</span>
+              <Link href="/faq">Search tips ↗</Link>
+            </div>
+          )}
+          <SearchExplorer
+            courts={courts}
+            initialTab={initialTab}
+            initialQuery={initialQuery}
+            onActiveChange={setSearchActive}
           />
-          <div className="garden-shade" />
-          <div className="garden-hero-copy">
-            <p className="garden-eyebrow">
-              <span /> SINGAPORE LAW, OPEN TO EVERYONE
-            </p>
-            <h1 id="garden-title">
-              A little clarity.
-              <br />A world of <em>law.</em>
-            </h1>
-            <p>
-              Find your way through Singapore law.
-              <br className="hidden sm:block" /> Judgments, legislation, and
-              answers that lead to the source.
-            </p>
-            <Link className="garden-cta" href="/ask">
-              Ask a legal question <span aria-hidden="true">↗</span>
-            </Link>
-          </div>
-          <div className="garden-hero-caption">
-            <span>YOUR QUIET CORNER FOR LEGAL RESEARCH</span>
-            <span>01°17′ N · 103°51′ E</span>
-          </div>
+          {!active && (
+            <div className="garden-search-alternative">
+              <span>Have a question instead?</span>
+              <Link href="/ask">
+                Ask Lawplain <span aria-hidden="true">↗</span>
+              </Link>
+            </div>
+          )}
         </section>
-      )}
-      <section className="garden-search" aria-label="Search Singapore law">
         {!active && (
-          <div className="garden-search-heading">
-            <span>Start with a search.</span>
-            <span>Follow your curiosity.</span>
-          </div>
+          <span className="garden-location" aria-hidden="true">
+            SINGAPORE · A DIFFERENT VIEW OF THE LAW
+          </span>
         )}
-        <SearchExplorer
-          courts={courts}
-          initialTab={initialTab}
-          initialQuery={initialQuery}
-          onActiveChange={setSearchActive}
-        />
-        {!active && (
-          <p className="garden-search-note">
-            Search by keyword, case name, or citation.{" "}
-            <Link href="/faq">A little help getting started ↗</Link>
-          </p>
-        )}
-      </section>
+      </div>
       {!active && (
         <>
           {stats && <div className="garden-stats">{stats}</div>}
