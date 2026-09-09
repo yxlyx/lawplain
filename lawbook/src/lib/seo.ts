@@ -4,9 +4,9 @@ export const SITE_NAME = "Lawplain";
 export const SITE_ORIGIN = (
   process.env.NEXT_PUBLIC_SITE_URL ?? "https://lawplain.com"
 ).replace(/\/+$/, "");
-export const DEFAULT_TITLE = "Lawplain | Singapore Legal Research";
+export const DEFAULT_TITLE = "Singapore Legal Research, Judgments & Statutes | Lawplain";
 export const DEFAULT_DESCRIPTION =
-  "Search Singapore judgments, statutes, Hansard and official agency guidance. Read-only legal information, not advice.";
+  "Search Singapore judgments, statutes and parliamentary debates. Ask plain-English legal questions, follow cited sources, and explore the law with Lawplain.";
 export const OG_IMAGE = "/opengraph-image.png";
 
 export const SITE_KEYWORDS = [

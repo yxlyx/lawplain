@@ -109,7 +109,6 @@ function ProvisionText({ text }: { text: string }) {
 
 export async function generateMetadata({
   params,
-  searchParams,
 }: {
   params: Promise<{ reference: string }>;
   searchParams: Promise<{
@@ -118,16 +117,8 @@ export async function generateMetadata({
     savedQuote?: string | string[];
   }>;
 }): Promise<Metadata> {
-  const [{ reference }, rawSearchParams] = await Promise.all([
-    params,
-    searchParams,
-  ]);
+  const { reference } = await params;
   const decoded = decodeURIComponent(reference);
-  const hasQueryVariant = Boolean(
-    firstString(rawSearchParams.q) ||
-      firstString(rawSearchParams.returnTo) ||
-      firstString(rawSearchParams.savedQuote),
-  );
   try {
     const s = await sgjudge.getStatute(decoded, {}, { cache: "no-store" });
     return buildMetadata({
@@ -135,8 +126,6 @@ export async function generateMetadata({
       description: statuteDescription(s, decoded),
       path: `/statute/${encodeURIComponent(decoded)}`,
       type: "article",
-      noIndex: hasQueryVariant,
-      noIndexFollow: hasQueryVariant,
     });
   } catch {
     return buildMetadata({
@@ -144,8 +133,6 @@ export async function generateMetadata({
       description: `Read ${decoded} on Lawplain's Singapore legal research corpus.`,
       path: `/statute/${encodeURIComponent(decoded)}`,
       type: "article",
-      noIndex: hasQueryVariant,
-      noIndexFollow: hasQueryVariant,
     });
   }
 }

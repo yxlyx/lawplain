@@ -1,0 +1,894 @@
+/* biome-ignore-all lint/complexity/noImportantStyles: scoped answer surfaces override existing chat utility classes and responsive sizes. */
+/* The reading garden: illustration at the entrance, quiet surfaces for research. */
+.garden-home {
+  width: 100%;
+  padding: 22px 0 0;
+  color: var(--foreground);
+}
+.garden-hero {
+  position: relative;
+  min-height: 540px;
+  isolation: isolate;
+  overflow: hidden;
+  border-radius: 24px;
+  background: #205d80;
+  color: white;
+}
+.garden-art {
+  object-fit: cover;
+  object-position: 50% 48%;
+  z-index: -2;
+}
+.garden-shade {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background:
+    linear-gradient(
+      90deg,
+      rgba(7, 36, 48, 0.65),
+      rgba(7, 36, 48, 0.16) 65%,
+      transparent
+    ), linear-gradient(0deg, rgba(5, 26, 20, 0.55), transparent 27%);
+}
+.garden-hero-copy {
+  padding: 62px 60px 90px;
+  max-width: 740px;
+}
+.garden-eyebrow,
+.garden-kicker {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.19em;
+  line-height: 1.7;
+}
+.garden-eyebrow {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  color: #fff;
+}
+.garden-eyebrow span {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #d8e9ad;
+}
+.garden-hero h1 {
+  font-size: clamp(48px, 5.9vw, 83px);
+  letter-spacing: -0.065em;
+  line-height: 1.04;
+  font-weight: 450;
+  margin: 25px 0 22px;
+}
+.garden-hero h1 em {
+  font-family: var(--font-serif);
+  font-weight: 400;
+  letter-spacing: -0.055em;
+}
+.garden-hero-copy > p:not(.garden-eyebrow) {
+  font-size: 15px;
+  line-height: 1.7;
+  color: #fff;
+  max-width: 470px;
+}
+.garden-cta {
+  display: inline-flex;
+  gap: 36px;
+  align-items: center;
+  justify-content: space-between;
+  background: #f8f6e9;
+  color: #20392e;
+  border-radius: 7px;
+  font-size: 13px;
+  font-weight: 600;
+  padding: 14px 18px;
+  margin-top: 27px;
+  transition:
+    transform 0.2s,
+    background 0.2s;
+}
+.garden-cta:hover {
+  transform: translateY(-2px);
+  background: #fff;
+}
+.garden-cta span {
+  font-size: 18px;
+}
+.garden-hero-caption {
+  position: absolute;
+  bottom: 64px;
+  left: 30px;
+  right: 30px;
+  display: flex;
+  justify-content: space-between;
+  gap: 20px;
+  border-top: 1px solid #ffffff45;
+  padding-top: 14px;
+  font-family: var(--font-geist-mono);
+  font-size: 9px;
+  letter-spacing: 0.1em;
+}
+.garden-search {
+  position: relative;
+  margin: 30px auto 0;
+  max-width: 850px;
+  padding: 26px 32px 22px;
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  background: var(--surface);
+  box-shadow: 0 8px 35px #172b2310;
+}
+.garden-search-heading {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 13px;
+  margin-bottom: 14px;
+}
+.garden-search-heading span:first-child {
+  font-weight: 600;
+}
+.garden-search-heading span:last-child {
+  color: var(--muted-2);
+  font-size: 12px;
+}
+.garden-search input[name="q"] {
+  border-radius: 10px;
+  box-shadow: none;
+  background: var(--background);
+}
+.garden-search-note {
+  margin-top: 17px;
+  text-align: center;
+  font-size: 11px;
+  color: var(--muted-2);
+  line-height: 1.8;
+}
+.garden-search-note a {
+  color: var(--accent);
+  white-space: nowrap;
+  margin-left: 6px;
+}
+.garden-stats {
+  max-width: 1000px;
+  margin: 22px auto 0;
+  padding: 0 24px;
+}
+.garden-stats p {
+  font-size: 10px;
+  line-height: 2.1;
+}
+.garden-collections,
+.garden-ask-feature,
+.garden-about {
+  max-width: 1150px;
+  margin: 65px auto 0;
+}
+.garden-section-heading {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 24px;
+  margin-bottom: 30px;
+}
+.garden-kicker {
+  color: var(--accent);
+  margin-bottom: 12px;
+}
+.garden-section-heading h2,
+.garden-about h2 {
+  font-family: var(--font-serif);
+  font-size: clamp(26px, 3vw, 37px);
+  font-weight: 400;
+  line-height: 1.3;
+  letter-spacing: -0.04em;
+}
+.garden-section-heading > a,
+.garden-about a {
+  font-size: 12px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.garden-section-heading > a:hover,
+.garden-about a:hover {
+  color: var(--accent);
+}
+.garden-folder-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 18px;
+}
+.garden-collection-card {
+  padding: 24px 23px 23px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  transition:
+    background 0.25s,
+    box-shadow 0.25s,
+    transform 0.25s;
+}
+.garden-collection-card:hover {
+  box-shadow: 0 10px 30px #152d2610;
+  transform: translateY(-4px);
+}
+.garden-card-index {
+  font-size: 9px;
+  color: var(--muted-2);
+  letter-spacing: 0.12em;
+}
+.garden-collection-card h3 {
+  display: flex;
+  justify-content: space-between;
+  font-size: 16px;
+  font-weight: 600;
+  margin: 9px 0;
+}
+.garden-collection-card h3 span {
+  color: var(--muted-2);
+  font-weight: 400;
+}
+.garden-collection-card p {
+  font-size: 12px;
+  line-height: 1.7;
+  color: var(--muted);
+}
+.research-folder {
+  position: relative;
+  width: 130px;
+  height: 115px;
+  margin: 8px auto 30px;
+  perspective: 600px;
+  --folder: #98ae9c;
+  --folder-back: #7d9881;
+  color: var(--folder);
+}
+.folder-tone-1 {
+  --folder: #83a9c3;
+  --folder-back: #6086a1;
+}
+.folder-tone-2 {
+  --folder: #c6a376;
+  --folder-back: #ad8a5e;
+}
+.folder-tone-3 {
+  --folder: #b3a9c5;
+  --folder-back: #9687ab;
+}
+.folder-back {
+  position: absolute;
+  inset: 12px 0 0;
+  background: var(--folder-back);
+  border-radius: 10px;
+  box-shadow: inset 0 1px 3px #fff5;
+}
+.folder-paper {
+  position: absolute;
+  bottom: 8px;
+  left: 30px;
+  width: 74px;
+  height: 90px;
+  background: #faf9f3;
+  border: 1px solid #dddcd1;
+  border-radius: 6px;
+  box-shadow: 0 2px 8px #20392e18;
+  transition: transform 0.45s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.folder-paper span {
+  display: block;
+  height: 2px;
+  background: #d9dace;
+  margin: 8px 9px;
+}
+.folder-paper span:first-child {
+  width: 30px;
+  height: 4px;
+  margin-top: 13px;
+}
+.paper-0 {
+  transform: translate(-10px, -8px) rotate(-12deg);
+}
+.paper-1 {
+  transform: translate(10px, -12px) rotate(9deg);
+}
+.paper-2 {
+  transform: translate(0, -6px) rotate(-2deg);
+}
+.folder-flap {
+  position: absolute;
+  inset: 20px 0 0;
+  width: 100%;
+  height: 98px;
+  transform-origin: bottom;
+  transform: rotateX(-18deg);
+  filter: drop-shadow(0 5px 5px #20392e12);
+  transition: transform 0.45s;
+}
+.folder-seal {
+  position: absolute;
+  bottom: 17px;
+  left: 17px;
+  color: #fff9;
+  font-family: var(--font-serif);
+  font-size: 20px;
+  pointer-events: none;
+}
+.garden-collection-card:is(:hover, :focus-visible) .paper-0 {
+  transform: translate(-23px, -25px) rotate(-17deg);
+}
+.garden-collection-card:is(:hover, :focus-visible) .paper-1 {
+  transform: translate(23px, -30px) rotate(15deg);
+}
+.garden-collection-card:is(:hover, :focus-visible) .paper-2 {
+  transform: translate(0, -33px) rotate(-3deg);
+}
+.garden-collection-card:is(:hover, :focus-visible) .folder-flap {
+  transform: rotateX(-40deg);
+}
+.garden-ask-feature {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 70px;
+  border-radius: 20px;
+  background: #edf1e8;
+  padding: 48px;
+  color: #243c30;
+}
+.garden-ask-feature h2 {
+  font-size: 36px;
+  line-height: 1.18;
+  letter-spacing: -0.04em;
+}
+.garden-ask-feature h2 em {
+  font-family: var(--font-serif);
+  font-weight: 400;
+}
+.garden-ask-feature p:not(.garden-kicker) {
+  font-size: 13px;
+  line-height: 1.8;
+  margin-top: 20px;
+  max-width: 425px;
+}
+.garden-ask-feature .garden-cta {
+  background: #254937;
+  color: white;
+}
+.garden-example {
+  align-self: center;
+  background: #fafbf6;
+  border: 1px solid #dce4d7;
+  border-radius: 14px;
+  padding: 30px;
+  box-shadow: 0 10px 30px #30483308;
+  transform: rotate(-2deg);
+}
+.garden-example-label {
+  font-size: 9px;
+  letter-spacing: 0.16em;
+  color: #567061;
+}
+.garden-example > p {
+  font-family: var(--font-serif);
+  font-size: 21px !important;
+  line-height: 1.5 !important;
+  margin-bottom: 30px;
+}
+.garden-example > div {
+  font-size: 10px;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+  color: #40624e;
+}
+.garden-source-dot {
+  width: 6px;
+  height: 6px;
+  background: #40624e;
+  border-radius: 100%;
+}
+.garden-example-footnote {
+  display: block;
+  font-size: 10px;
+  color: #637067;
+  border-top: 1px solid #dce4d7;
+  margin-top: 20px;
+  padding-top: 16px;
+}
+.garden-about {
+  text-align: center;
+  max-width: 640px;
+  margin-bottom: 75px;
+}
+.garden-about > p:not(.garden-kicker) {
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.9;
+  margin-top: 18px;
+}
+.garden-about > div {
+  display: flex;
+  justify-content: center;
+  gap: 25px;
+  margin-top: 24px;
+}
+.garden-home.is-searching {
+  max-width: 850px;
+  margin: 0 auto;
+  padding-top: 20px;
+}
+.is-searching .garden-search {
+  border: 0;
+  box-shadow: none;
+  padding: 0;
+  margin: 0 auto 35px;
+  max-width: 760px;
+}
+.collection-page {
+  max-width: 1050px;
+  width: 100%;
+  margin: 0 auto;
+  padding: 55px 28px 80px;
+}
+.collection-page h1 {
+  font-family: var(--font-serif);
+  font-size: 48px;
+  letter-spacing: -0.04em;
+  line-height: 1.2;
+  margin: 24px 0;
+}
+.collection-page .intro {
+  max-width: 680px;
+  color: var(--muted);
+  line-height: 1.85;
+  font-size: 15px;
+}
+.collection-page h2 {
+  font-family: var(--font-serif);
+  font-size: 25px;
+  margin: 36px 0 18px;
+}
+.collection-page nav {
+  font-size: 12px;
+  color: var(--muted);
+}
+.collection-tips {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 20px;
+  counter-reset: tips;
+  margin: 32px 0;
+}
+.collection-tips li {
+  padding: 22px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  font-size: 13px;
+  line-height: 1.7;
+  list-style: none;
+}
+.collection-tips li:before {
+  counter-increment: tips;
+  content: "0" counter(tips);
+  display: block;
+  color: var(--accent);
+  font-family: var(--font-geist-mono);
+  font-size: 11px;
+  margin-bottom: 10px;
+}
+.collection-results {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+}
+.collection-result {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 21px;
+  background: var(--surface);
+}
+.collection-result:hover {
+  border-color: var(--accent);
+}
+.collection-result small {
+  font-size: 11px;
+  color: var(--accent);
+}
+.collection-result h3 {
+  font-size: 15px;
+  margin-top: 8px;
+  line-height: 1.5;
+}
+.ask-welcome {
+  position: relative;
+  isolation: isolate;
+  padding-top: 65px !important;
+}
+.ask-welcome:before {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  inset: 22px -80px auto;
+  height: 210px;
+  background:
+    linear-gradient(0deg, var(--background), transparent),
+    url("/images/singapore-garden.webp") center 43% / cover;
+  opacity: 0.23;
+  border-radius: 24px;
+  mask-image: linear-gradient(
+    90deg,
+    transparent,
+    #000 15%,
+    #000 85%,
+    transparent
+  );
+}
+.ask-welcome h1 {
+  font-size: 42px;
+}
+.ask-welcome > p {
+  line-height: 1.8;
+}
+.ask-welcome > span {
+  border: 1px solid var(--border);
+  background: var(--surface);
+  box-shadow: 0 4px 15px #1226190a;
+}
+.answer-sheet {
+  border: 1px solid var(--border) !important;
+  border-radius: 16px !important;
+  background: var(--surface) !important;
+  padding: 25px 28px !important;
+  box-shadow: 0 4px 24px #13292106;
+  font-family: var(--font-sans) !important;
+  font-size: 15px !important;
+  line-height: 1.85 !important;
+}
+.answer-sheet .ask-md > * + * {
+  margin-top: 20px;
+}
+.answer-sheet .ask-md h2 {
+  font-family: var(--font-serif);
+  font-size: 25px;
+  line-height: 1.3;
+  margin-top: 28px;
+}
+.answer-sheet .ask-md h2:first-child {
+  margin-top: 0;
+}
+.answer-sheet .ask-md p,
+.answer-sheet .ask-md li {
+  line-height: 1.85;
+}
+.answer-sheet .ask-md a {
+  background: var(--accent-soft);
+  border: 1px solid color-mix(in srgb, var(--accent) 18%, transparent);
+  border-radius: 5px;
+  padding: 1px 5px;
+  text-decoration: none;
+  font-family: var(--font-sans);
+  font-size: 0.88em;
+  box-decoration-break: clone;
+  word-break: break-word;
+}
+.answer-sheet .ask-md a:hover {
+  text-decoration: underline;
+}
+.answer-sheet blockquote {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  border-radius: 0 8px 8px 0;
+  padding: 14px 18px;
+  font-family: var(--font-serif);
+}
+.answer-research {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 10px 13px;
+  background: var(--surface);
+}
+.answer-research summary {
+  cursor: pointer;
+  font-size: 12px;
+  color: var(--muted);
+  list-style: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.answer-research summary:after {
+  content: "⌄";
+  margin-left: auto;
+}
+.answer-research[open] summary {
+  margin-bottom: 12px;
+}
+.answer-research .research-complete {
+  width: 17px;
+  height: 17px;
+  border-radius: 50%;
+  background: var(--accent-soft);
+  color: var(--accent);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+}
+.answer-status {
+  border-radius: 14px !important;
+  padding: 15px !important;
+  background: var(--surface) !important;
+}
+.answer-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.answer-header small {
+  font-size: 9px;
+  letter-spacing: 0.09em;
+  color: var(--muted-2);
+  font-weight: 400;
+  text-transform: uppercase;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .garden-ask-feature {
+    background: #1b2d25;
+    color: #e6eee7;
+  }
+  :root:not([data-theme="light"]) .garden-example {
+    background: #23372c;
+    border-color: #3b5142;
+    color: #e6eee7;
+  }
+  :root:not([data-theme="light"]) .garden-example :is(span, div) {
+    color: #bdcbbf;
+  }
+}
+:root[data-theme="dark"] .garden-ask-feature {
+  background: #1b2d25;
+  color: #e6eee7;
+}
+:root[data-theme="dark"] .garden-example {
+  background: #23372c;
+  border-color: #3b5142;
+  color: #e6eee7;
+}
+:root[data-theme="dark"] .garden-example :is(span, div) {
+  color: #bdcbbf;
+}
+@media (min-width: 1100px) {
+  .garden-search {
+    margin-top: -38px;
+    z-index: 2;
+  }
+  .garden-home.is-searching .garden-search {
+    margin-top: 0;
+  }
+}
+@media (max-width: 850px) {
+  .garden-hero {
+    min-height: 480px;
+  }
+  .garden-hero-copy {
+    padding: 50px 35px 80px;
+  }
+  .garden-folder-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .garden-ask-feature {
+    gap: 30px;
+    padding: 32px;
+  }
+  .garden-example {
+    padding: 20px;
+  }
+  .garden-collections,
+  .garden-about {
+    margin-top: 45px;
+  }
+  .garden-hero-caption {
+    font-size: 8px;
+  }
+  .garden-search {
+    padding: 24px;
+  }
+  .collection-tips {
+    grid-template-columns: 1fr;
+  }
+  .collection-page h1 {
+    font-size: 38px;
+  }
+}
+@media (max-width: 540px) {
+  .garden-home {
+    padding-top: 12px;
+  }
+  .garden-hero {
+    border-radius: 16px;
+    min-height: 485px;
+  }
+  .garden-hero-copy {
+    padding: 42px 25px 80px;
+  }
+  .garden-hero h1 {
+    font-size: 49px;
+    margin-top: 28px;
+  }
+  .garden-eyebrow {
+    font-size: 8px;
+    letter-spacing: 0.13em;
+  }
+  .garden-hero-copy > p:not(.garden-eyebrow) {
+    font-size: 13px;
+    max-width: 260px;
+  }
+  .garden-shade {
+    background:
+      linear-gradient(90deg, #092d45b8, #092d4550),
+      linear-gradient(0deg, #051a1488, transparent 30%);
+  }
+  .garden-hero-caption {
+    left: 25px;
+    right: 25px;
+    bottom: 20px;
+  }
+  .garden-hero-caption span:last-child {
+    display: none;
+  }
+  .garden-search {
+    padding: 19px 14px;
+    margin-top: 18px;
+  }
+  .garden-search-heading span:last-child {
+    display: none;
+  }
+  .garden-search form > div:nth-last-of-type(2) {
+    gap: 0;
+  }
+  .garden-search-note {
+    text-align: left;
+  }
+  .garden-search-note a {
+    margin: 0;
+    display: block;
+  }
+  .garden-stats {
+    padding: 0;
+  }
+  .garden-section-heading {
+    align-items: start;
+    flex-direction: column;
+    gap: 12px;
+  }
+  .garden-folder-grid {
+    gap: 10px;
+  }
+  .garden-collection-card {
+    padding: 17px 13px;
+  }
+  .garden-collection-card h3 {
+    font-size: 14px;
+  }
+  .garden-collection-card p {
+    font-size: 11px;
+  }
+  .research-folder {
+    transform: scale(0.8);
+    margin: 0 auto 14px;
+    width: 120px;
+  }
+  .garden-card-index {
+    font-size: 8px;
+  }
+  .garden-ask-feature {
+    grid-template-columns: 1fr;
+    padding: 28px 23px;
+    margin-top: 36px;
+    gap: 32px;
+  }
+  .garden-ask-feature h2 {
+    font-size: 31px;
+  }
+  .garden-example {
+    transform: none;
+  }
+  .garden-example > p {
+    font-size: 20px !important;
+  }
+  .garden-about {
+    padding: 0 10px;
+    margin-bottom: 45px;
+  }
+  .garden-search input[name="q"] {
+    font-size: 14px;
+  }
+  .collection-results {
+    grid-template-columns: 1fr;
+  }
+  .collection-page {
+    padding: 30px 20px 55px;
+  }
+  .answer-sheet {
+    padding: 18px !important;
+    font-size: 14px !important;
+  }
+  .answer-sheet .ask-md h2 {
+    font-size: 22px;
+  }
+  .ask-welcome {
+    padding-top: 45px !important;
+  }
+  .ask-welcome h1 {
+    font-size: 35px;
+  }
+}
+
+.answer-sources {
+  margin-top: 9px;
+}
+.answer-sources > p {
+  font-size: 9px;
+  letter-spacing: 0.12em;
+  color: var(--muted-2);
+  margin: 0 0 10px;
+}
+.answer-sources > p span {
+  margin-left: 6px;
+  background: var(--surface-2);
+  border-radius: 4px;
+  padding: 2px 5px;
+}
+.answer-sources > div {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+.answer-sources a {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 12px;
+  background: var(--surface);
+  transition: border-color 0.2s;
+}
+.answer-sources a:hover {
+  border-color: var(--accent);
+}
+.answer-source-number {
+  font-size: 10px;
+  color: var(--accent);
+  background: var(--accent-soft);
+  width: 22px;
+  height: 26px;
+  display: grid;
+  place-items: center;
+  border-radius: 5px;
+  flex-shrink: 0;
+}
+.answer-sources strong {
+  display: block;
+  font-size: 11px;
+  font-weight: 550;
+  line-height: 1.5;
+}
+.answer-sources small {
+  font-size: 9px;
+  color: var(--muted-2);
+}
+.answer-sources a > span:last-child {
+  margin-left: auto;
+  color: var(--muted-2);
+}
+@media (max-width: 540px) {
+  .answer-sources > div {
+    grid-template-columns: 1fr;
+  }
+}
+
+.answer-content {
+  max-width: calc(100% - 38px);
+}

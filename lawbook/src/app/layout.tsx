@@ -16,6 +16,7 @@ import {
   websiteJsonLd,
 } from "@/lib/seo";
 import "./globals.css";
+import "./garden.css";
 
 const geistSans = Geist({
   variable: "--font-google-sans",
@@ -134,10 +135,16 @@ function SiteFooter() {
           <BrandMark className="h-5 w-5" />
           <span>
             <span className="font-semibold text-muted">Lawplain</span> — a
-            read-only projection of the Singapore legal corpus.
+            clearer way into Singapore law.
           </span>
         </p>
         <nav className="flex items-center gap-4">
+          <Link
+            href="/research"
+            className="transition-colors hover:text-foreground"
+          >
+            Library
+          </Link>
           <Link href="/faq" className="transition-colors hover:text-foreground">
             FAQ &amp; Help
           </Link>
@@ -148,10 +155,7 @@ function SiteFooter() {
             API
           </Link>
         </nav>
-        <p>
-          Not legal advice. Data via{" "}
-          <span className="font-mono">backend.lawplain.com</span>
-        </p>
+        <p>Legal information, not legal advice.</p>
       </div>
     </footer>
   );

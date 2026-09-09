@@ -42,7 +42,6 @@ async function load(citation: string): Promise<JudgmentDetail> {
 
 export async function generateMetadata({
   params,
-  searchParams,
 }: {
   params: Promise<{ citation: string }>;
   searchParams: Promise<{
@@ -51,12 +50,8 @@ export async function generateMetadata({
     savedQuote?: string;
   }>;
 }): Promise<Metadata> {
-  const [{ citation }, { q, returnTo, savedQuote }] = await Promise.all([
-    params,
-    searchParams,
-  ]);
+  const { citation } = await params;
   const decoded = decodeURIComponent(citation);
-  const hasQueryVariant = Boolean(q || returnTo || savedQuote);
   try {
     const j = await sgjudge.getJudgment(
       decoded,
@@ -70,8 +65,6 @@ export async function generateMetadata({
         description: judgmentDescription(j, decoded),
         path: `/judgment/${encodeURIComponent(decoded)}`,
         type: "article",
-        noIndex: hasQueryVariant,
-        noIndexFollow: hasQueryVariant,
       }),
     };
   } catch {
@@ -80,8 +73,6 @@ export async function generateMetadata({
       description: `Read ${decoded} on Lawplain's Singapore legal research corpus.`,
       path: `/judgment/${encodeURIComponent(decoded)}`,
       type: "article",
-      noIndex: hasQueryVariant,
-      noIndexFollow: hasQueryVariant,
     });
   }
 }

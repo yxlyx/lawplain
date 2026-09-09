@@ -104,7 +104,7 @@ export default async function Home({
   const countEntries = Object.entries(counts).filter(([, n]) => n > 0);
 
   return (
-    <main className="mx-auto flex min-h-0 w-full max-w-2xl flex-1 flex-col px-5 sm:px-8">
+    <main className="mx-auto flex min-h-0 w-full max-w-[1440px] flex-1 flex-col px-4 sm:px-7">
       <HomeShell
         courts={courts}
         initialTab={tab ?? "judgments"}

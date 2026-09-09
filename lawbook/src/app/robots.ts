@@ -16,7 +16,10 @@ export default function robots(): MetadataRoute.Robots {
         ],
       },
     ],
-    sitemap: `${SITE_ORIGIN}/sitemap.xml`,
+    sitemap: [
+      `${SITE_ORIGIN}/sitemap.xml`,
+      `${SITE_ORIGIN}/corpus-sitemap.xml`,
+    ],
     host: SITE_ORIGIN,
   };
 }
