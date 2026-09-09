@@ -12,6 +12,7 @@ interface ApiKey {
   createdAt: number;
   lastUsedAt: number | null;
   revokedAt: number | null;
+  mcpEnabled: boolean;
 }
 
 function fmt(ts: number | null): string {
@@ -33,6 +34,7 @@ export function ApiKeysManager() {
   const [freshKey, setFreshKey] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [updating, setUpdating] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -77,10 +79,37 @@ export function ApiKeysManager() {
   }
 
   async function revoke(id: string) {
-    setKeys((ks) => ks.filter((k) => k.id !== id));
-    await fetch(`/api/keys?id=${encodeURIComponent(id)}`, {
+    setError(null);
+    setUpdating(id);
+    const res = await fetch(`/api/keys?id=${encodeURIComponent(id)}`, {
       method: "DELETE",
-    }).catch(() => {});
+    }).catch(() => null);
+    setUpdating(null);
+    if (!res?.ok) {
+      setError("Could not revoke the key. Please try again.");
+      return;
+    }
+    setKeys((ks) => ks.filter((k) => k.id !== id));
+  }
+
+  async function toggleMcp(key: ApiKey) {
+    setError(null);
+    setUpdating(key.id);
+    const res = await fetch("/api/keys", {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ id: key.id, mcpEnabled: !key.mcpEnabled }),
+    }).catch(() => null);
+    setUpdating(null);
+    if (!res?.ok) {
+      setError("Could not update MCP access for this key.");
+      return;
+    }
+    setKeys((keys) =>
+      keys.map((k) =>
+        k.id === key.id ? { ...k, mcpEnabled: !key.mcpEnabled } : k,
+      ),
+    );
   }
 
   async function copyFresh() {
@@ -163,7 +192,7 @@ export function ApiKeysManager() {
           {active.map((k) => (
             <li
               key={k.id}
-              className="flex items-center gap-3 px-4 py-3 text-sm"
+              className="flex flex-wrap items-center gap-3 px-4 py-3 text-sm"
             >
               <div className="min-w-0 flex-1">
                 <p className="truncate font-medium text-foreground">{k.name}</p>
@@ -174,7 +203,18 @@ export function ApiKeysManager() {
               </div>
               <button
                 type="button"
+                onClick={() => void toggleMcp(k)}
+                disabled={updating !== null}
+                aria-pressed={k.mcpEnabled}
+                aria-label={`MCP access for ${k.name}`}
+                className="rounded-md border border-border px-2.5 py-1.5 text-xs text-foreground disabled:opacity-50"
+              >
+                MCP {k.mcpEnabled ? "on" : "off"}
+              </button>
+              <button
+                type="button"
                 onClick={() => void revoke(k.id)}
+                disabled={updating !== null}
                 aria-label="Revoke key"
                 className="inline-flex shrink-0 items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium text-muted-2 transition-colors hover:bg-surface-2 hover:text-danger"
               >

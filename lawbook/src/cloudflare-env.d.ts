@@ -18,6 +18,7 @@ declare global {
     CUBESANDBOX_TENANT_KEY?: string;
     CONDENSATION_API_KEY?: string;
     LAWPLAIN_SANDBOX_PROVIDER?: string;
+    LAWPLAIN_ADMIN_USER_IDS?: string;
   }
 }
 

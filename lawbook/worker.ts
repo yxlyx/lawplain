@@ -14,8 +14,18 @@ import handler, {
   // @ts-expect-error generated
   DOShardedTagCache,
 } from "./.open-next/worker.js";
+import { McpStore } from "./src/server/mcp-store";
 
 export { AskSessionDO } from "./src/server/ask-session-do";
 export { AskRunDO } from "./src/server/ask-run-do";
 export { BucketCachePurge, DOQueueHandler, DOShardedTagCache };
-export default handler;
+export default {
+  ...handler,
+  scheduled(
+    _controller: ScheduledController,
+    env: CloudflareEnv,
+    ctx: ExecutionContext,
+  ) {
+    if (env.AUTH_DB) ctx.waitUntil(new McpStore(env.AUTH_DB).purge());
+  },
+};

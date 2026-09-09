@@ -11,6 +11,7 @@ export interface ApiKeySummary {
   createdAt: number;
   lastUsedAt: number | null;
   revokedAt: number | null;
+  mcpEnabled: boolean;
 }
 
 /** Guard against a single account hoarding keys. */
@@ -51,7 +52,7 @@ export async function listApiKeys(userId: string): Promise<ApiKeySummary[]> {
   const db = await getDb();
   const { results } = await db
     .prepare(
-      `SELECT id, name, prefix, createdAt, lastUsedAt, revokedAt
+      `SELECT id, name, prefix, createdAt, lastUsedAt, revokedAt, mcpEnabled
        FROM api_keys
        WHERE userId = ?
        ORDER BY createdAt DESC`,
@@ -65,6 +66,7 @@ export async function listApiKeys(userId: string): Promise<ApiKeySummary[]> {
     createdAt: Number(r.createdAt),
     lastUsedAt: r.lastUsedAt == null ? null : Number(r.lastUsedAt),
     revokedAt: r.revokedAt == null ? null : Number(r.revokedAt),
+    mcpEnabled: Boolean(r.mcpEnabled),
   }));
 }
 
@@ -109,8 +111,24 @@ export async function createApiKey(
       createdAt: now,
       lastUsedAt: null,
       revokedAt: null,
+      mcpEnabled: false,
     },
   };
+}
+
+export async function setApiKeyMcp(
+  userId: string,
+  id: string,
+  enabled: boolean,
+): Promise<boolean> {
+  const db = await getDb();
+  const row = await db
+    .prepare(
+      "UPDATE api_keys SET mcpEnabled = ? WHERE userId = ? AND id = ? AND revokedAt IS NULL RETURNING id",
+    )
+    .bind(Number(enabled), userId, id)
+    .first();
+  return row !== null;
 }
 
 export async function revokeApiKey(userId: string, id: string): Promise<void> {

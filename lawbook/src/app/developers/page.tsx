@@ -1,11 +1,12 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { ApiKeysManager } from "@/components/ApiKeysManager";
+import { McpAccessPanel } from "@/components/McpAccessPanel";
 import { ArrowLeftIcon } from "@/components/icons";
 import { buildMetadata } from "@/lib/seo";
 
 export const metadata: Metadata = buildMetadata({
-  title: "Developers — API access",
+  title: "Developers — API and MCP access",
   description:
     "Create a personal API key to call the Lawplain corpus API from your own agents and scripts.",
   path: "/developers",
@@ -28,7 +29,7 @@ export default function DevelopersPage() {
 
       <header className="mt-6">
         <h1 className="font-serif text-2xl font-medium tracking-tight text-foreground">
-          API access
+          API & MCP access
         </h1>
         <p className="mt-2 text-sm leading-relaxed text-muted">
           Point your own agents and scripts at the same Singapore legal corpus
@@ -36,6 +37,8 @@ export default function DevelopersPage() {
           with it.
         </p>
       </header>
+
+      <McpAccessPanel />
 
       <section className="mt-8">
         <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-2">
