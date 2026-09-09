@@ -119,18 +119,14 @@ export default async function Home({
         initialQuery={q ?? ""}
         stats={
           countEntries.length > 0 ? (
-            <div
-              className="garden-stat-grid"
-              role="group"
-              aria-label="Corpus coverage"
-            >
+            <section className="garden-stat-grid" aria-label="Corpus coverage">
               {countEntries.map(([key, n]) => (
                 <div key={key}>
                   <strong>{n.toLocaleString()}</strong>
                   <span>{CORPUS_LABELS[key] ?? key}</span>
                 </div>
               ))}
-            </div>
+            </section>
           ) : null
         }
       />
