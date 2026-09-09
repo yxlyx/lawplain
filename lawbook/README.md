@@ -99,11 +99,13 @@ The route handler spawns the `graff` binary as a subprocess, so:
 Then `npm run dev` and use the **Ask Lawplain** box. Without explicit enablement
 or the selected credential, Ask reports that it is unavailable. The local
 fallback runs `graff --yolo` on the developer machine and is intended only for
-a trusted development environment. Configure `CUBESANDBOX_GATEWAY_URL` and
-`CUBESANDBOX_TENANT_KEY` to exercise the isolated path; production always uses
-CubeSandbox rather than treating the Worker host as a trusted shell.
+a trusted development environment. Configure `LAWPLAIN_SANDBOX_PROVIDER=condensation` and `CONDENSATION_API_KEY`
+to exercise the isolated path. Production uses Condensation’s own fleet; the
+Worker never runs the agent shell itself. Each VM has a 600-second lease and
+is deleted after completion, error, or stop. The fleet key stays in the Worker;
+only the selected model credential enters the disposable guest.
 
-Production Ask runs in CubeSandbox with CodeGraff `v0.0.200`, pinned at
+Production Ask runs in Condensation with CodeGraff `v0.0.200`, pinned at
 SHA-256 `3fefe2bc01edd64f4974e0c9a529cab0b7ebd0cb0da5ef2e30c4d256d1856351`
 and verified before extraction. Runs have a five-minute deadline, at most six
 tool calls (with duplicate calls rejected), a 1 MB captured stdout limit and a
@@ -164,8 +166,7 @@ bunx wrangler secret put BETTER_AUTH_SECRET
 bunx wrangler secret put GOOGLE_CLIENT_ID
 bunx wrangler secret put GOOGLE_CLIENT_SECRET
 bunx wrangler secret put CODEGRAFF_API_KEY
-bunx wrangler secret put CUBESANDBOX_GATEWAY_URL
-bunx wrangler secret put CUBESANDBOX_TENANT_KEY
+bunx wrangler secret put CONDENSATION_API_KEY
 ```
 
 `wrangler.jsonc` deliberately sets the non-secret production controls
@@ -214,7 +215,7 @@ highlighting or annotation suite.
 
 - **`yolo: true` is required** — without it the agent's `bash` (the `curl`
   calls) is blocked at the permission gate, since the JSON protocol has no human
-  to approve. Production contains that shell in a disposable CubeSandbox VM;
+  to approve. Production contains that shell in a disposable Condensation VM;
   the local fallback uses an isolated temporary working directory but still
   executes on the trusted developer machine. Telemetry is disabled. Treat any
   local yolo shell as server-side code execution and review the system prompt
@@ -230,3 +231,25 @@ highlighting or annotation suite.
 - The agent is instructed to cite and to **not fabricate** citations or section
   numbers; if the corpus lacks the answer it says so. Still: legal information,
   not legal advice.
+
+### Condensation deployment and verification
+
+`src/lib/condensation-sandbox.ts` adapts the own-fleet API at
+`https://api.condensation.ai/v1/fleet/sandboxes` to the existing research loop.
+The production provider is selected explicitly in `wrangler.jsonc` and fails
+closed if `CONDENSATION_API_KEY` is missing; it does not fall back to the
+legacy gateway. Condensation create requests use a persisted UUID, avoiding a
+second lease when a Durable Object is interrupted during provisioning.
+
+Create a dedicated project key at `https://condensation.ai/account`, store it
+with `wrangler secret put CONDENSATION_API_KEY`, then run `npm run cf:deploy`.
+The key needs sandbox access and a funded shared wallet. It needs no GitHub
+access. The fleet admission limit and pricing can be checked at
+`https://api.condensation.ai/v1/fleet/pricing`; capacity/balance errors remain
+failures and are not retried as new creates.
+
+After deployment, send an Ask question, verify a final cited answer and a
+`done` trajectory, and confirm the matching Condensation VM is terminated.
+The adapter tests cover provider selection, literal command arguments, large
+prompts, missing output files, output limits, and confirmed cleanup. Legacy
+Cube credentials are retained only for cleaning up VMs from older runs.

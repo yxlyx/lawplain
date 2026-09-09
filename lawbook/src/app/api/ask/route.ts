@@ -4,7 +4,7 @@
  * Body: { question, cite?, kind?, history?, runId?, from? }
  * Response: text/event-stream of `data: {json}\n\n` lines, each an AgentEvent.
  *
- * When a `runId` is supplied and CubeSandbox is configured, the run is hosted in
+ * When a `runId` is supplied and a research sandbox is configured, the run is hosted in
  * the AskRunDO Durable Object: the route composes the prompt server-side, starts
  * the DO (idempotent), and proxies the DO's replay+live stream — so the run
  * survives the client navigating away, and reconnecting with the same runId
@@ -37,6 +37,7 @@ import { recordAskQuestion } from "@/lib/ask-history";
 import { loadConsentedContext } from "@/lib/ask-private-context";
 import { saveThread } from "@/lib/ask-threads";
 import { getSession } from "@/lib/auth";
+import { sandboxConfigured } from "@/lib/research-sandbox";
 import {
   hasMemoryAskRun,
   startMemoryAskRun,
@@ -99,9 +100,7 @@ export async function POST(req: Request): Promise<Response> {
   if (!askAgentEnabled(runtimeEnv))
     return errorStream("Ask is not currently available.");
   const production = runtimeEnv.NODE_ENV === "production";
-  const useSandbox = !!(
-    runtimeEnv.CUBESANDBOX_GATEWAY_URL && runtimeEnv.CUBESANDBOX_TENANT_KEY
-  );
+  const useSandbox = sandboxConfigured(runtimeEnv);
 
   let question = "";
   let cite: string | undefined;
@@ -265,7 +264,9 @@ export async function POST(req: Request): Promise<Response> {
   }
 
   if (production && (!useSandbox || !askRuns || !runId)) {
-    console.error("Production Ask requires CubeSandbox, ASK_RUN_DO, and runId");
+    console.error(
+      "Production Ask requires a research sandbox, ASK_RUN_DO, and runId",
+    );
     return errorStream(safeAgentError());
   }
 

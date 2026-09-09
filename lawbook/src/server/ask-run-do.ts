@@ -1,6 +1,10 @@
 import { DurableObject } from "cloudflare:workers";
 import type { AgentEvent } from "../lib/agent";
-import { CubeSandbox } from "../lib/cubesandbox";
+import type { CubeSandbox } from "../lib/cubesandbox";
+import {
+  createResearchSandbox,
+  sandboxConfigured,
+} from "../lib/research-sandbox";
 import {
   askAgentEnabled,
   MAX_ASK_EVENT_BYTES,
@@ -29,6 +33,8 @@ interface AskRunEnv {
   TRAJECTORY_DB?: D1Database;
   CUBESANDBOX_GATEWAY_URL?: string;
   CUBESANDBOX_TENANT_KEY?: string;
+  CONDENSATION_API_KEY?: string;
+  LAWPLAIN_SANDBOX_PROVIDER?: string;
   [key: string]: unknown;
 }
 
@@ -237,12 +243,10 @@ export class AskRunDO extends DurableObject<AskRunEnv> {
     }
 
     const sid = await this.ctx.storage.get<string>("sandboxId");
-    const gw = this.env.CUBESANDBOX_GATEWAY_URL;
-    const key = this.env.CUBESANDBOX_TENANT_KEY;
-    if (sid && gw && key) {
-      await new CubeSandbox({ gatewayUrl: gw, tenantKey: key }).deleteSandbox(
-        sid,
-      );
+    if (sid) {
+      await createResearchSandbox(this.env, {
+        existingSandboxId: sid,
+      }).deleteSandbox(sid);
       await this.ctx.storage.delete("sandboxId");
     }
 
@@ -291,11 +295,8 @@ export class AskRunDO extends DurableObject<AskRunEnv> {
       const startedAt =
         (await this.ctx.storage.get<number>("startedAt")) ?? Date.now();
       const hasPriorEvents = this.eventCount() > 0;
-      const gw = this.env.CUBESANDBOX_GATEWAY_URL;
-      const key = this.env.CUBESANDBOX_TENANT_KEY;
-
-      if (!gw || !key) {
-        await this.fail("CubeSandbox gateway not configured");
+      if (!sandboxConfigured(this.env)) {
+        await this.fail("Research sandbox not configured");
         return;
       }
       if (!prompt || !systemPrompt || !model) {
@@ -311,18 +312,39 @@ export class AskRunDO extends DurableObject<AskRunEnv> {
         await this.fail(safeAgentError());
         return;
       }
-      providerSecrets = Object.values(providerEnv);
-      const activeSandbox = new CubeSandbox({ gatewayUrl: gw, tenantKey: key });
+      providerSecrets = [
+        ...Object.values(providerEnv),
+        this.env.CONDENSATION_API_KEY ?? "",
+      ];
+      // Record the idempotency key before making a create request. An alarm
+      // interrupted during provisioning can safely recover the same lease.
+      let sandboxRequestId =
+        await this.ctx.storage.get<string>("sandboxRequestId");
+      if (!sandboxRequestId) {
+        sandboxRequestId = crypto.randomUUID();
+        await this.ctx.storage.put("sandboxRequestId", sandboxRequestId);
+      }
+      let activeSandbox = createResearchSandbox(this.env, {
+        requestId: sandboxRequestId,
+      });
       sandbox = activeSandbox;
 
       const orphanedSandboxId = await this.ctx.storage.get<string>("sandboxId");
       if (orphanedSandboxId) {
-        await activeSandbox
+        await createResearchSandbox(this.env, {
+          existingSandboxId: orphanedSandboxId,
+        })
           .deleteSandbox(orphanedSandboxId)
           .catch((error) =>
             console.warn("Failed to remove interrupted Ask sandbox", error),
           );
         await this.ctx.storage.delete("sandboxId");
+        sandboxRequestId = crypto.randomUUID();
+        await this.ctx.storage.put("sandboxRequestId", sandboxRequestId);
+        activeSandbox = createResearchSandbox(this.env, {
+          requestId: sandboxRequestId,
+        });
+        sandbox = activeSandbox;
       }
       const recovering = attempt > 1 || hasPriorEvents || !!orphanedSandboxId;
       if (recovering) {

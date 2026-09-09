@@ -16,6 +16,8 @@ declare global {
     CODEGRAFF_API_KEY?: string;
     CUBESANDBOX_GATEWAY_URL?: string;
     CUBESANDBOX_TENANT_KEY?: string;
+    CONDENSATION_API_KEY?: string;
+    LAWPLAIN_SANDBOX_PROVIDER?: string;
   }
 }
 

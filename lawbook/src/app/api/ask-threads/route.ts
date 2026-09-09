@@ -15,17 +15,12 @@ import { userRunName } from "@/server/ask-security";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const useSandbox = !!(
-  process.env.CUBESANDBOX_GATEWAY_URL && process.env.CUBESANDBOX_TENANT_KEY
-);
-
 type RunStatus = "running" | "done" | "error" | "stopped";
 
 async function getDurableRunStatus(
   runId: string,
   userId: string,
 ): Promise<RunStatus | null> {
-  if (!useSandbox) return null;
   try {
     const { env } = await getCloudflareContext({ async: true });
     const ns = (env as { ASK_RUN_DO?: DurableObjectNamespace }).ASK_RUN_DO;
