@@ -98,3 +98,47 @@ test('ambiguous launch response cannot spawn a second guest process',async(t)=>{
  assert.equal(await readFile(join(root,'turn','starts'),'utf8'),'started\n');
  assert.equal(launches,2);assert.equal(box.creates,1);assert.equal(box.installs,1);
 });
+
+test("100 randomized partial-output schedules survive a parser restart after every poll", async () => {
+  const expected =
+    "The answer is supported by the cited source and the stated facts. 中文 ⚖️ café.";
+  const output =
+    line({ type: "text", text: "The answer " }) +
+    line({
+      type: "text",
+      text: "<think>Never show this reasoning</think>is supported by the cited source and the stated facts. 中文 ⚖️ café.",
+    });
+  for (let seed = 1; seed <= 100; seed++) {
+    let random = seed;
+    const box = fakeSandbox();
+    let run = new GraffRun();
+    await run.launch(box, params);
+    let offset = 0,
+      visible = "",
+      done = 0;
+    while (offset < output.length) {
+      random = (Math.imul(random, 1664525) + 1013904223) >>> 0;
+      offset = Math.min(output.length, offset + 1 + (random % 23));
+      box.files.set(run.workDir + "/graff.out", output.slice(0, offset));
+      const events = await run.poll(box);
+      visible += events
+        .filter((e) => e.type === "delta")
+        .map((e) => e.text)
+        .join("");
+      assert.ok(!JSON.stringify(events).includes("Never show this reasoning"));
+      run = GraffRun.restore(JSON.parse(JSON.stringify(run.snapshot())));
+    }
+    box.files.set(run.workDir + "/graff.exit", "0");
+    const terminal = await run.poll(box);
+    visible += terminal
+      .filter((e) => e.type === "delta")
+      .map((e) => e.text)
+      .join("");
+    done += terminal.filter((e) => e.type === "done").length;
+    assert.equal(visible, expected, `seed ${seed}`);
+    assert.equal(done, 1);
+    run = GraffRun.restore(JSON.parse(JSON.stringify(run.snapshot())));
+    assert.deepEqual(await run.poll(box), []);
+    assert.equal(box.creates, 1);
+  }
+});

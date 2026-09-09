@@ -195,3 +195,146 @@ test('legacy retirement cannot destroy a session already handed to the next turn
  await session.retireRun(owner,thread,'turn-1',lease.sandboxId);
  assert.equal(f.state.activeRunId,'turn-2');assert.deepEqual(f.deleted,[]);
 });
+
+for (const status of [401, 403, 408, 429, 500, 502, 503, 504]) {
+  test(`provider GET ${status} cannot multiply sandboxes`, async () => {
+    const f = fixture();
+    const lease = await f.make().acquire(owner, thread, "first");
+    await f.make().release(owner, thread, "first", lease.sandboxId, true);
+    f.fail({ get: Object.assign(new Error("provider failure"), { status }) });
+    for (let n = 0; n < 20; n++)
+      await assert.rejects(f.make().acquire(owner, thread, "retry"));
+    assert.equal(f.created.length, 1);
+    assert.deepEqual(f.deleted, []);
+    f.fail(undefined);
+    assert.equal(
+      (await f.make().acquire(owner, thread, "retry")).sandboxId,
+      lease.sandboxId,
+    );
+  });
+}
+
+test("failed disposal remains closed and alarm retries cleanup", async () => {
+  const f = fixture();
+  await f.make().acquire(owner, thread, "first");
+  f.fail({ delete: new Error("provider unavailable") });
+  await assert.rejects(f.make().dispose(owner, thread));
+  await assert.rejects(
+    f.make().acquire(owner, thread, "second"),
+    (e) => e.status === 410,
+  );
+  assert.equal(f.created.length, 1);
+  f.fail(undefined);
+  await f.make().cleanup();
+  await f.make().cleanup();
+  assert.deepEqual(f.deleted, f.created);
+});
+
+test("exact idle deadline retires the VM even if the alarm has not fired", async () => {
+  const f = fixture();
+  const first = await f.make().acquire(owner, thread, "first");
+  await f.make().release(owner, thread, "first", first.sandboxId, true);
+  f.advance(SESSION_IDLE_MS);
+  const next = await f.make().acquire(owner, thread, "second");
+  assert.notEqual(next.sandboxId, first.sandboxId);
+  assert.deepEqual(f.deleted, [first.sandboxId]);
+});
+
+test("1000 rapid completed turns reuse one VM across session reconstruction", async () => {
+  const f = fixture();
+  let sid;
+  for (let i = 0; i < 1000; i++) {
+    const lease = await f.make().acquire(owner, thread, `turn-${i}`);
+    sid ??= lease.sandboxId;
+    assert.equal(lease.sandboxId, sid);
+    await f.make().release(owner, thread, `turn-${i}`, sid, true);
+    f.advance(100);
+  }
+  assert.equal(f.created.length, 1);
+  assert.equal(f.deleted.length, 0);
+});
+
+test("200 seeded lifecycle sequences preserve ownership and bounded VM count (60000 actions)", async () => {
+  for (let seed = 1; seed <= 200; seed++) {
+    let rng = seed;
+    const random = () => {
+      rng = (Math.imul(rng, 1664525) + 1013904223) >>> 0;
+      return rng;
+    };
+    const f = fixture();
+    const history = [];
+    for (let step = 0; step < 300; step++) {
+      const before = structuredClone(f.state);
+      const createCount = f.created.length;
+      const op = random() % 10;
+      const active = before?.activeRunId;
+      try {
+        if (op < 3) {
+          const run = op === 0 && active ? active : `${seed}-${step}`;
+          if (
+            active &&
+            run !== active &&
+            (before.activeUntil ?? Infinity) > f.now
+          ) {
+            await assert.rejects(
+              f.make().acquire(owner, thread, run),
+              (e) => e.status === 409,
+            );
+            assert.equal(f.created.length, createCount);
+          } else {
+            const lease = await f.make().acquire(owner, thread, run);
+            history.push({ run, sid: lease.sandboxId });
+          }
+        } else if (op === 3 && active) {
+          await f.make().release(owner, thread, active, before.sandboxId, true);
+        } else if (op === 4) {
+          await f.make().cleanup();
+        } else if (op === 5) {
+          f.advance(random() % 180001);
+        } else if (op === 6 && history.length) {
+          const old = history[random() % history.length];
+          await f.make().release(owner, thread, old.run, old.sid, true);
+          if (old.run !== active || old.sid !== before?.sandboxId)
+            assert.deepEqual(f.state, before);
+        } else if (op === 7 && before) {
+          await assert.rejects(
+            f.make().acquire("intruder", thread, "bad"),
+            (e) => e.status === 404,
+          );
+        } else if (op === 8 && before?.sandboxId && !active) {
+          f.fail({
+            get: Object.assign(new Error("transient"), { status: 503 }),
+          });
+          // Only test provider lookup while the stored lease remains reusable.
+          if (before.expiresAt - f.now >= 360000 && before.idleUntil > f.now) {
+            await assert.rejects(f.make().acquire(owner, thread, "outage"));
+            assert.equal(f.created.length, createCount);
+          }
+          f.fail(undefined);
+        } else if (op === 9 && active) {
+          const again = await f.make().acquire(owner, thread, active);
+          assert.equal(again.sandboxId, before.sandboxId);
+          assert.equal(f.created.length, createCount);
+        }
+        const live = [...f.boxes.values()].filter((b) => b.state === "running");
+        assert.ok(
+          live.length <= 1,
+          `seed ${seed} step ${step}: multiple live VMs`,
+        );
+        if (f.state) {
+          assert.equal(f.state.userId, owner);
+          assert.equal(f.state.threadId, thread);
+        }
+      } catch (error) {
+        throw new Error(`seed=${seed} step=${step} operation=${op}`, {
+          cause: error,
+        });
+      }
+    }
+    await f.make().dispose(owner, thread);
+    assert.equal(
+      [...f.boxes.values()].filter((b) => b.state === "running").length,
+      0,
+    );
+  }
+});

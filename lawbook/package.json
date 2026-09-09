@@ -7,6 +7,7 @@
     "build": "next build",
     "start": "next start",
     "test": "node --test tests/*.test.mjs",
+    "test:ask-worker": "node scripts/test-ask-worker.cjs",
     "lint": "biome check",
     "format": "biome format --write",
     "cf:build": "opennextjs-cloudflare build",
