@@ -429,3 +429,69 @@ test("oversized upstream responses fail without returning partial JSON", async (
   assert.equal(result.result.isError, true);
   assert.ok(JSON.stringify(result).length < 1000);
 });
+
+test("published MCP guide examples match schemas and its SDK example connects", async (t) => {
+  const { MCP_GUIDE } = await import("../src/lib/mcp-guide.ts");
+  const f = fixture(t);
+  await f.approve();
+  const blocks = [...MCP_GUIDE.matchAll(/```(\w+)\n([\s\S]*?)```/g)];
+  const configs = blocks
+    .filter((b) => b[1] === "json")
+    .map((b) => JSON.parse(b[2]));
+  assert.equal(
+    configs[0].mcpServers.lawplain.headers.Authorization,
+    "Bearer ${LAWPLAIN_API_KEY}",
+  );
+  assert.equal(
+    configs[1].mcpServers.lawplain.headers.Authorization,
+    "Bearer ${env:LAWPLAIN_API_KEY}",
+  );
+  const output = [];
+  class GuideTransport extends StreamableHTTPClientTransport {
+    constructor(url, options) {
+      assert.equal(url.href, "https://lawplain.com/mcp");
+      super(url, {
+        ...options,
+        fetch: (input, init) =>
+          handleLawplainMcp(new Request(input, init), f.deps),
+      });
+    }
+  }
+  const code = blocks
+    .find((b) => b[1] === "javascript")[2]
+    .replace(/^import .*;\n/, "");
+  const AsyncFunction = Object.getPrototypeOf(async () => {}).constructor;
+  await new AsyncFunction(
+    "Client",
+    "StreamableHTTPClientTransport",
+    "process",
+    "console",
+    code,
+  )(
+    Client,
+    GuideTransport,
+    { env: { LAWPLAIN_API_KEY: key } },
+    { log: (value) => output.push(value) },
+  );
+  assert.equal(output[0].tools.length, 8);
+  for (const tool of output[0].tools) {
+    const row = MCP_GUIDE.split("\n").find((line) =>
+      line.startsWith(`| ${tool.name} |`),
+    );
+    assert.ok(row, `Missing documentation for ${tool.name}`);
+    const cells = row.split("|").map((cell) => cell.trim());
+    assert.deepEqual(
+      cells[2].split(", ").sort(),
+      [...(tool.inputSchema.required ?? [])].sort(),
+    );
+    const optional = Object.keys(tool.inputSchema.properties).filter(
+      (name) => !tool.inputSchema.required.includes(name),
+    );
+    assert.deepEqual(
+      cells[3] === "—" ? [] : cells[3].split(", ").sort(),
+      optional.sort(),
+    );
+  }
+  assert.ok(output[1].length);
+  assert.equal(f.upstream, 1);
+});

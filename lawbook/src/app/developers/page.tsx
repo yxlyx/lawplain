@@ -1,8 +1,8 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { ApiKeysManager } from "@/components/ApiKeysManager";
-import { McpAccessPanel } from "@/components/McpAccessPanel";
 import { ArrowLeftIcon } from "@/components/icons";
+import { McpAccessPanel } from "@/components/McpAccessPanel";
 import { buildMetadata } from "@/lib/seo";
 
 export const metadata: Metadata = buildMetadata({
@@ -39,6 +39,19 @@ export default function DevelopersPage() {
       </header>
 
       <McpAccessPanel />
+
+      <Link
+        href="/developers/mcp"
+        className="mt-5 block rounded-xl border border-border bg-surface-2/50 p-5 transition-colors hover:border-muted-2"
+      >
+        <span className="text-sm font-semibold text-foreground">
+          Connect your agent →
+        </span>
+        <span className="mt-1 block text-sm leading-relaxed text-muted">
+          MCP setup for Codex, Claude Code and Cursor, a tool reference, and a
+          plain-text guide your agent can read on the fly.
+        </span>
+      </Link>
 
       <section className="mt-8">
         <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-2">

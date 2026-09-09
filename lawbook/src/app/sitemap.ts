@@ -10,6 +10,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     "/research",
     "/faq",
     "/developers",
+    "/developers/mcp",
     ...COLLECTIONS.map((c) => `/research/${c.slug}`),
   ]);
   const collections = await Promise.all(
