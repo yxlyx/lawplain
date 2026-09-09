@@ -2,6 +2,7 @@ import Link from "next/link";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { CopyCodeBlock } from "@/components/CopyCodeBlock";
+import { CopyForLlms } from "@/components/CopyForLlms";
 import { MCP_ENDPOINT, MCP_GUIDE } from "@/lib/mcp-guide";
 import { buildMetadata } from "@/lib/seo";
 
@@ -43,13 +44,8 @@ export default function McpDocsPage() {
           >
             Manage MCP access
           </Link>
-          <a
-            href="/developers/mcp/llms.txt"
-            className="rounded-lg border border-border px-4 py-2"
-          >
-            Read agent guide ↗
-          </a>
         </div>
+        <CopyForLlms text={MCP_GUIDE} />
         <div className="mt-6">
           <CopyCodeBlock text={MCP_ENDPOINT} />
         </div>
