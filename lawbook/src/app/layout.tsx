@@ -85,6 +85,14 @@ export const metadata: Metadata = {
   },
 };
 
+const THEME_BOOTSTRAP_SCRIPT = `try {
+  const storedTheme = localStorage.getItem("lawplain:theme");
+  if (storedTheme === "dark" || storedTheme === "light") {
+    document.documentElement.dataset.theme = storedTheme;
+    document.documentElement.style.colorScheme = storedTheme;
+  }
+} catch {}`;
+
 export default function RootLayout({
   children,
 }: Readonly<{
@@ -93,9 +101,14 @@ export default function RootLayout({
   return (
     <html
       lang="en"
+      suppressHydrationWarning
       className={`${geistSans.variable} ${geistMono.variable} ${lora.variable} h-full antialiased`}
     >
       <body className="flex min-h-svh flex-col overflow-x-clip bg-background text-foreground">
+        <script
+          // biome-ignore lint/security/noDangerouslySetInnerHtml: The theme preference is validated before applying a fixed data attribute.
+          dangerouslySetInnerHTML={{ __html: THEME_BOOTSTRAP_SCRIPT }}
+        />
         <script
           type="application/ld+json"
           // biome-ignore lint/security/noDangerouslySetInnerHtml: JSON-LD is serialized with JSON.stringify and escaped in jsonLdScriptProps.
