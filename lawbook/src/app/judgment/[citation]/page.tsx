@@ -103,9 +103,10 @@ export default async function JudgmentPage({
 
   const judges = parseJsonField<string[]>(j.judges_json, []);
   const catchwords = parseJsonField<string[]>(j.catchwords_json, []);
+  const topics = [...new Map(catchwords.flatMap(catchwordSearchTerms).map((term) => [term.toLowerCase(), term])).values()];
   const counsel = parseJsonField<CounselEntry[]>(j.counsel_json, []);
   const counselGroups = groupCounsel(counsel);
-  const initialLoaded = (j.body_offset ?? 0) + (j.body_text?.length ?? 0);
+  const initialLoaded = (j.body_offset ?? 0) + Array.from(j.body_text ?? "").length;
   const title = (j.title as string) || j.neutral_cite || decoded;
   const source = {
     kind: "judgment" as const,
@@ -203,23 +204,21 @@ export default async function JudgmentPage({
             </dl>
           )}
 
-          {catchwords.length > 0 && (
-            <div className="mt-4 flex flex-wrap gap-x-2 gap-y-1.5 border-l-2 border-border-strong pl-4">
-              {catchwords.flatMap((c) =>
-                catchwordSearchTerms(c).map((term) => (
-                  <Link
-                    key={`${c}-${term}`}
-                    href={{
-                      pathname: "/",
-                      query: { tab: "judgments", q: term },
-                    }}
-                    title={c}
-                    className="font-serif text-sm italic leading-relaxed text-muted transition-colors hover:text-accent"
-                  >
+          {topics.length > 0 && (
+            <div className="mt-5">
+              <div className="flex flex-wrap gap-2">
+                {topics.slice(0, 5).map((term) => (
+                  <Link key={term} href={{ pathname: "/", query: { tab: "judgments", q: term } }} className="rounded-full border border-border bg-surface px-3 py-1 text-xs text-muted transition-colors hover:border-accent hover:text-accent">
                     {term}
                   </Link>
-                )),
-              )}
+                ))}
+              </div>
+              <details className="mt-3 text-xs text-muted">
+                <summary className="w-fit cursor-pointer hover:text-accent">All catchwords · {catchwords.length}</summary>
+                <ul className="mt-3 space-y-2 border-l-2 border-border pl-4 leading-relaxed">
+                  {catchwords.map((word, index) => <li key={`${index}-${word}`}>{word}</li>)}
+                </ul>
+              </details>
             </div>
           )}
 

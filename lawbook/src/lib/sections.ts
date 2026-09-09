@@ -1,6 +1,6 @@
 export interface Block {
   key: string;
-  kind: "heading" | "numbered" | "para";
+  kind: "heading" | "numbered" | "para" | "quote";
   num?: string;
   body: string;
   sectionId?: string;
@@ -103,35 +103,40 @@ export function parseBlocks(text: string): Block[] {
 
   return rawBlocks
     .map(({ raw, startOffset, endOffset }) => ({
+      quoted: /^ {4}|^\t/.test(raw),
       body: raw.replace(/\s*\n\s*/g, " ").trim(),
       startOffset,
       endOffset,
     }))
     .filter(({ body }) => Boolean(body))
-    .map(({ body, startOffset, endOffset }): Block => {
+    .map(({ body, quoted, startOffset, endOffset }): Block => {
       const prefix = body.slice(0, 40);
       const occ = seen.get(prefix) ?? 0;
       seen.set(prefix, occ + 1);
       const key = `${prefix}#${occ}`;
 
-      const numbered = body.match(/^(\d+)[.)]?\s+([\s\S]+)$/);
+      if (quoted) return { key, kind: "quote", body, startOffset, endOffset };
+
+      const isDate = /^\d{1,2}\s+(?:January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{4}\b/i.test(body);
+      const numbered = !isDate && body.match(/^(?:\[(\d+)\]|(\d+)[.)]?)\s+([\s\S]+)$/);
       if (numbered) {
-        const n = Number(numbered[1]);
+        const num = numbered[1] ?? numbered[2];
+        const n = Number(num);
         // Only treat a leading number as a judgment paragraph number when it
         // continues the running sequence. Quoted statutory provisions (e.g.
         // "118 The court may…" after paragraph 12) would otherwise hijack the
         // gutter and make the visible numbering jump — see issue #69.
-        const sequential = lastParagraph === null || n === lastParagraph + 1;
+        const sequential = lastParagraph === null ? n === 1 : n === lastParagraph + 1;
         if (sequential) {
           lastParagraph = n;
-          const base = `p-${slugify(numbered[1]) || numbered[1]}`;
+          const base = `p-${slugify(num) || num}`;
           const paragraphOcc = paragraphSeen.get(base) ?? 0;
           paragraphSeen.set(base, paragraphOcc + 1);
           return {
             key,
             kind: "numbered",
-            num: numbered[1],
-            body: numbered[2],
+            num,
+            body: numbered[3],
             id: paragraphOcc === 0 ? base : `${base}-${paragraphOcc + 1}`,
             startOffset,
             endOffset,

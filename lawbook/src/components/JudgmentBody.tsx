@@ -33,8 +33,12 @@ interface RenderSection extends DocSection {
 }
 
 function normalizeBackendSections(
-  sections?: JudgmentSection[],
+  sections: JudgmentSection[] | undefined,
+  text: string,
 ): RenderSection[] {
+  // API offsets count Unicode code points; JavaScript string offsets count UTF-16 units.
+  const offsets = [0];
+  for (const character of text) offsets.push(offsets[offsets.length - 1] + character.length);
   const seen = new Map<string, number>();
   const normalized: RenderSection[] = [];
 
@@ -52,7 +56,7 @@ function normalizeBackendSections(
     normalized.push({
       id: occ === 0 ? rawId : `${rawId}-${occ + 1}`,
       label,
-      startOffset: section.start_offset,
+      startOffset: offsets[section.start_offset] ?? Number.MAX_SAFE_INTEGER,
       endOffset: section.end_offset,
     });
   }
@@ -125,8 +129,8 @@ export function JudgmentBody({
   const regex = useMemo(() => buildRegex(terms), [terms]);
   const blocks = useMemo(() => parseBlocks(text), [text]);
   const sections = useMemo(
-    () => normalizeBackendSections(initialSections),
-    [initialSections],
+    () => normalizeBackendSections(initialSections, text),
+    [initialSections, text],
   );
   const loadedSections = useMemo(
     () => sections.filter((section) => section.startOffset < text.length),
@@ -156,8 +160,9 @@ export function JudgmentBody({
         body_length: PAGE,
       });
       const chunk = (res.body_text as string) ?? "";
+      if (!chunk) throw new Error("Empty judgment page");
       setText((t) => t + chunk);
-      setLoaded((l) => l + chunk.length);
+      setLoaded((l) => l + Array.from(chunk).length);
     } catch (err) {
       setError(
         err instanceof ApiError
@@ -332,7 +337,12 @@ export function JudgmentBody({
           : "grid grid-cols-1 gap-6"
       }
     >
-      <div className="min-w-0">
+      {showSectionNav && (
+        <div className="lg:col-start-2 lg:row-start-1 lg:sticky lg:top-20">
+          <SectionNav items={navItems} title="In this judgment" />
+        </div>
+      )}
+      <div className="min-w-0 lg:col-start-1 lg:row-start-1">
         {terms.length > 0 && (
           <FindToolbar
             query={query}
@@ -348,7 +358,7 @@ export function JudgmentBody({
         <article
           ref={containerRef}
           data-selectable
-          className="flex max-w-[68ch] flex-col gap-4 font-serif text-[17px] leading-7 text-foreground/90"
+          className="flex max-w-[68ch] flex-col gap-5 font-serif text-[17px] leading-[1.85] [overflow-wrap:anywhere] text-foreground/90"
         >
           {renderJudgment(blocks, regex, loadedSections)}
         </article>
@@ -383,7 +393,7 @@ export function JudgmentBody({
         )}
       </div>
 
-      {showSectionNav && <SectionNav items={navItems} />}
+
       <DocumentAnnotations
         containerRef={containerRef}
         docType="judgment"
@@ -457,7 +467,7 @@ function renderBlock(
       <h3
         data-section-id={currentSectionId}
         data-quote-anchor={b.key}
-        className="pt-3 font-sans text-xs font-semibold uppercase tracking-[0.14em] text-accent"
+        className="pb-1 pt-6 font-serif text-xl font-medium leading-snug tracking-tight text-foreground"
       >
         {highlightText(b.body, regex, b.key)}
       </h3>
@@ -469,13 +479,24 @@ function renderBlock(
         id={b.id}
         data-section-id={currentSectionId}
         data-quote-anchor={b.key}
-        className="flex scroll-mt-24 gap-3"
+        className="flex scroll-mt-24 gap-2 sm:gap-3"
       >
         <span className="w-7 shrink-0 select-none text-right font-sans text-sm font-medium tabular-nums text-muted-2">
           {b.num}
         </span>
-        <span className="flex-1">{highlightText(b.body, regex, b.key)}</span>
+        <span className="min-w-0 flex-1">{highlightText(b.body, regex, b.key)}</span>
       </p>
+    );
+  }
+  if (b.kind === "quote") {
+    return (
+      <blockquote
+        data-section-id={currentSectionId}
+        data-quote-anchor={b.key}
+        className="ml-9 border-l-2 border-accent/30 bg-surface/60 py-2 pl-4 pr-3 text-[16px] text-muted sm:ml-10 sm:pl-5"
+      >
+        {highlightText(b.body, regex, b.key)}
+      </blockquote>
     );
   }
   return (
@@ -483,7 +504,7 @@ function renderBlock(
       id={b.id}
       data-section-id={currentSectionId}
       data-quote-anchor={b.key}
-      className="scroll-mt-24 pl-10"
+      className="scroll-mt-24 pl-9 sm:pl-10"
     >
       {highlightText(b.body, regex, b.key)}
     </p>
