@@ -50,7 +50,9 @@ export function HomeShell({
   }, [initialActive, setSearchActive]);
 
   return (
-    <div className={`garden-home ${active ? "is-searching" : ""}`}>
+    <div
+      className={`garden-home editorial-home ${active ? "is-searching" : ""}`}
+    >
       {active && <h1 className="sr-only">Search Singapore law</h1>}
       <div className={`garden-opening ${active ? "is-active" : ""}`}>
         {!active && (
@@ -69,24 +71,21 @@ export function HomeShell({
             </div>
             <div className="garden-hero-copy">
               <p className="garden-eyebrow">
-                <span /> SINGAPORE LAW, OPEN TO EVERYONE
+                <span /> Singapore legal research
               </p>
               <h1 id="garden-title">
-                A little clarity.
-                <br />A world of <em>law.</em>
-              </h1>
-              <p>
-                Find the law. Understand the context.
+                Research
                 <br />
-                Go straight to the source.
-              </p>
+                Singapore law.
+              </h1>
+              <p>Search judgments, legislation and parliamentary debates.</p>
             </div>
           </>
         )}
         <section className="garden-search" aria-label="Search Singapore law">
           {!active && (
             <div className="garden-search-heading">
-              <span>Search Singapore law</span>
+              <span>Find a case, Act or topic</span>
               <Link href="/faq">Search tips ↗</Link>
             </div>
           )}
@@ -98,18 +97,13 @@ export function HomeShell({
           />
           {!active && (
             <div className="garden-search-alternative">
-              <span>Have a question instead?</span>
+              <span>Or ask a question in plain English.</span>
               <Link href="/ask">
                 Ask Lawplain <span aria-hidden="true">↗</span>
               </Link>
             </div>
           )}
         </section>
-        {!active && (
-          <span className="garden-location" aria-hidden="true">
-            SINGAPORE · A DIFFERENT VIEW OF THE LAW
-          </span>
-        )}
       </div>
       {!active && (
         <>
@@ -120,11 +114,10 @@ export function HomeShell({
           >
             <div className="garden-section-heading">
               <div>
-                <p className="garden-kicker">THE RESEARCH SHELF</p>
-                <h2 id="collections-title">Good questions start here.</h2>
+                <h2 id="collections-title">Browse by source</h2>
               </div>
               <Link href="/research">
-                Explore the library <span aria-hidden="true">↗</span>
+                All collections <span aria-hidden="true">↗</span>
               </Link>
             </div>
             <div className="garden-folder-grid">
@@ -135,9 +128,6 @@ export function HomeShell({
                   className="garden-collection-card"
                 >
                   <ResearchFolder tone={i} />
-                  <span className="garden-card-index">
-                    0{i + 1} / COLLECTION
-                  </span>
                   <h3>
                     {c.title} <span aria-hidden="true">↗</span>
                   </h3>
@@ -146,59 +136,34 @@ export function HomeShell({
               ))}
             </div>
           </section>
-          <section className="garden-ask-feature">
+          <section className="home-ask-row" aria-labelledby="home-ask-title">
             <div>
-              <p className="garden-kicker">MEET YOUR RESEARCH COMPANION</p>
-              <h2>
-                Big question?
-                <br />
-                <em>Start in plain English.</em>
-              </h2>
+              <h2 id="home-ask-title">Ask Lawplain</h2>
               <p>
-                Ask Lawplain searches the legal corpus and brings the findings
-                together in a cited answer. Read the explanation, follow the
-                sources, and keep exploring.
+                Research a question and get an explanation with links to the
+                sources.
               </p>
-              <Link href="/ask" className="garden-cta">
-                Ask Lawplain <span aria-hidden="true">↗</span>
-              </Link>
             </div>
-            <div className="garden-example">
-              <span className="garden-example-label">A PLACE TO BEGIN</span>
-              <p>
-                “What must a plaintiff prove
-                <br />
-                in a defamation claim?”
-              </p>
-              <div>
-                <span className="garden-source-dot" /> Search judgments{" "}
-                <span>→</span> Read sources <span>→</span> Find clarity
-              </div>
-              <span className="garden-example-footnote">
-                Legal information, with a trail back to the source.
-              </span>
-            </div>
+            <Link href="/ask">
+              Start a question <span aria-hidden="true">↗</span>
+            </Link>
           </section>
-          <section className="garden-about">
-            <p className="garden-kicker">BUILT FOR UNDERSTANDING</p>
-            <h2>
-              Singapore legal research.
-              <br />A clearer place to start.
-            </h2>
-            <p>
-              Explore Singapore judgments, statutes, parliamentary debates,
-              bills, practice directions, and official agency guidance in one
-              place. Search the full text, read the underlying documents, and
-              save useful passages to return to later.
-            </p>
-            <p>
-              Lawplain provides legal information, not legal advice. Always
-              check the official source for the current text and seek a
-              qualified lawyer for advice on your circumstances.
-            </p>
+          <section
+            className="home-source-note"
+            aria-labelledby="home-about-title"
+          >
+            <h2 id="home-about-title">About the collection</h2>
             <div>
-              <Link href="/faq">How Lawplain works ↗</Link>
-              <Link href="/developers">Build with the API ↗</Link>
+              <p>
+                Singapore judgments, statutes, parliamentary debates and
+                official guidance, searchable in one place. Read the underlying
+                documents and check the official source for the current text.
+              </p>
+              <p>Lawplain provides legal information, not legal advice.</p>
+              <nav aria-label="About Lawplain">
+                <Link href="/faq">How to use Lawplain</Link>
+                <Link href="/developers">API access</Link>
+              </nav>
             </div>
           </section>
         </>

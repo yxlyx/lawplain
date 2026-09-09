@@ -17,6 +17,7 @@ import {
 } from "@/lib/seo";
 import "./globals.css";
 import "./garden.css";
+import "./homepage.css";
 
 const geistSans = Geist({
   variable: "--font-google-sans",
