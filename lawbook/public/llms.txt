@@ -1,0 +1,26 @@
+# Lawplain
+
+> Singapore legal research: public judgments, legislation and parliamentary records, with links to official sources.
+
+Lawplain is a searchable mirror of public legal materials. Judgment text is source material, not an AI summary or legal advice. Preserve case citations and paragraph references when quoting; consult the linked official source for the current or authoritative text. Collection coverage is a snapshot, not a claim to include every Singapore decision.
+
+Rulings have Markdown at `/judgment/{URL-encoded-citation}/index.md` and a per-ruling `/llms.txt` entry point. Long rulings are split into explicitly labelled text ranges with continuation links; follow all segments before describing a ruling as fully read. Account data, saved notes and private Ask conversations are not part of this public corpus.
+
+## Rulings
+
+- [Judgment directory](https://lawplain.com/judgment/llms.txt): Index of all mirrored ruling identifiers, divided into small Markdown lists linking directly to ruling text.
+- [Browse judgments](https://lawplain.com/research/judgments): Human-readable collection and example decisions.
+
+## Other public collections
+
+- [Statutes](https://lawplain.com/research/statutes): Singapore Acts.
+- [Subsidiary legislation](https://lawplain.com/research/subsidiary): Regulations and subsidiary instruments.
+- [Parliament](https://lawplain.com/research/hansard): Parliamentary speeches.
+- [Bills](https://lawplain.com/research/bills): Proposed legislation.
+- [Practice directions](https://lawplain.com/research/practice): Court practice materials.
+- [Agency guidance](https://lawplain.com/research/guidance): Official agency materials.
+
+## Optional
+
+- [Public API documentation](https://lawplain.com/developers): Search and retrieve legal materials programmatically.
+- [Corpus sitemap](https://lawplain.com/corpus-sitemap.xml): Complete public document URL discovery.

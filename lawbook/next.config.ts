@@ -5,6 +5,7 @@ initOpenNextCloudflareForDev();
 
 const nextConfig: NextConfig = {
   reactCompiler: true,
+  devIndicators: false,
   // @codegraff/sdk ships raw .ts (its package "main" is harness.ts). Next must
   // compile it rather than treat it as prebuilt JS, or imports fail at runtime.
   transpilePackages: ["@codegraff/sdk"],
@@ -22,6 +23,7 @@ const nextConfig: NextConfig = {
   // `permanent: false` because these are conveniences, not the canonical names.
   async redirects() {
     return [
+      { source: "/llm.txt", destination: "/llms.txt", permanent: true },
       { source: "/login", destination: "/sign-in", permanent: false },
       { source: "/signin", destination: "/sign-in", permanent: false },
       { source: "/log-in", destination: "/sign-in", permanent: false },

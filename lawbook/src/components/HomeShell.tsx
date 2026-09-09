@@ -1,6 +1,5 @@
 "use client";
 
-import Image from "next/image";
 import Link from "next/link";
 import { type ReactNode, useEffect, useLayoutEffect, useRef } from "react";
 import { useChrome } from "@/components/chrome/ChromeContext";
@@ -58,15 +57,23 @@ export function HomeShell({
         {!active && (
           <>
             <div className="garden-hero" aria-hidden="true">
-              <Image
-                src="/images/singapore-garden.webp"
-                alt=""
-                fill
-                unoptimized
-                preload
-                sizes="(max-width: 1440px) 100vw, 1440px"
-                className="garden-art"
-              />
+              {/* Static responsive sources work on Workers without an image proxy. */}
+              <picture>
+                <source
+                  media="(max-width: 650px)"
+                  srcSet="/images/singapore-garden-mobile.webp"
+                />
+                <img
+                  src="/images/singapore-garden-960.webp"
+                  srcSet="/images/singapore-garden-640.webp 640w, /images/singapore-garden-960.webp 960w, /images/singapore-garden.webp 1680w"
+                  sizes="(max-width: 850px) 40vw, (max-width: 1150px) 43vw, 470px"
+                  alt=""
+                  width={1680}
+                  height={946}
+                  fetchPriority="high"
+                  className="garden-art"
+                />
+              </picture>
               <div className="garden-shade" />
             </div>
             <div className="garden-hero-copy">
@@ -159,7 +166,6 @@ export function HomeShell({
                 official guidance, searchable in one place. Read the underlying
                 documents and check the official source for the current text.
               </p>
-              <p>Lawplain provides legal information, not legal advice.</p>
               <nav aria-label="About Lawplain">
                 <Link href="/faq">How to use Lawplain</Link>
                 <Link href="/developers">API access</Link>

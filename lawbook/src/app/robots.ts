@@ -5,11 +5,15 @@ export default function robots(): MetadataRoute.Robots {
   return {
     rules: [
       {
+        // Wildcard permits search and AI crawlers on every public document.
         userAgent: "*",
         allow: "/",
         disallow: [
           "/api/",
           "/saved",
+          "/recents",
+          "/ask/",
+          "/design-preview",
           "/sign-in",
           "/sign-up",
           "/suggestions-preview",

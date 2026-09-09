@@ -38,3 +38,28 @@ Google references: [crawlable links](https://developers.google.com/search/docs/c
 - Browser verified desktop and 390px mobile layouts, light/dark themes, search returning results, Ask landing, and the shared answer components. Mobile document width equals viewport width.
 - HTTP checks returned 200 with index/follow and clean canonical URLs for a sample from each of the seven corpora, plus the homepage and collection landing page.
 - This turn changes presentation and discovery; it does not rerun the production research pipeline or publish the redesign.
+
+## September 9 refinement: colors, mobile and machine-readable rulings
+
+The shared palette now uses ivory paper (#faf8f2), forest ink (#23382f), sage accents, and muted river-blue source markers. Dark mode uses #121e1a / #1b2c24 / #25392f surfaces, warm off-white text and soft sage accents. Existing annotation category colors remain distinct. The new contrast tests check foreground, secondary text and accent text on all shared surfaces in both themes.
+
+The footer is a small brand/link group with a separate legal line on mobile. The library uses compact single-column source cards on phones. The main search controls have larger touch targets, and text fields stay at 16px to avoid iOS focus zoom. Lighthouse results and reproducible commands are in [the performance audit](../performance/README.md).
+
+### Updated social card
+
+`src/app/opengraph-image.png` is the 1200×630 social asset. It was edited using the built-in image-generation tool, then resized/encoded for the project. Original generated output: `/Users/rachpradhan/.codex/generated_images/01a083db-2c29-7873-af61-8f9bcabc4a11/exec-8cf1c80d-ef5d-43e7-8619-72959a450069.png`.
+
+Exact edit prompt:
+
+> Update this Lawplain website social sharing Open Graph card. Wide aspect ratio 1200:630. Preserve beautiful painterly Singapore garden, Supreme Court dome, river and lush foliage on right. Redesign left as a clean warm ivory solid field occupying 52% width, with a crisp vertical transition to landscape (no faded gradient). Dark charcoal text on ivory. Small serif brand 'Lawplain.' at top left, main large elegant serif headline in two lines 'Research' and 'Singapore law.' at left center. Small readable sans serif below: 'Judgments, legislation and cited answers.' Bottom left small 'lawplain.com'. Refined editorial layout, abundant whitespace, no buttons, no extra text. All text must fit with at least 60px margin. This is finished OG card, not a webpage mockup.
+
+### AI-readable public corpus
+
+- `/llms.txt` is the main overview. `/llm.txt` redirects to it.
+- `/judgment/llms.txt` links to 54 small directories covering the 10,614 mirrored ruling identifiers.
+- Each ruling exposes `/judgment/{citation}/index.md` and `/judgment/{citation}/llms.txt`. Long rulings use 60,000-character chunks with labelled ranges and continuation links. Offsets count Unicode code points to match SQLite, including supplementary characters.
+- HTML metadata advertises the Markdown alternative; text responses include canonical, directory and next-segment Link headers.
+- `seo:refresh-sitemaps` also refreshes the ruling directories; `node scripts/generate-llms-index.mjs` rebuilds them from the current sitemap snapshot.
+- The robots wildcard permits public documents for search and AI crawlers. Private account, API and conversation paths remain excluded. robots.txt is crawl guidance, not authentication or a promise of indexing.
+
+References: [llms.txt proposal](https://llmstxt.org/), [OpenAI crawler documentation](https://developers.openai.com/api/docs/bots), [Lighthouse documentation](https://developer.chrome.com/docs/lighthouse/overview).

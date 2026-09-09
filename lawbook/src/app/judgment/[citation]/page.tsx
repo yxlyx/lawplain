@@ -66,6 +66,12 @@ export async function generateMetadata({
         path: `/judgment/${encodeURIComponent(decoded)}`,
         type: "article",
       }),
+      alternates: {
+        canonical: `/judgment/${encodeURIComponent(decoded)}`,
+        types: {
+          "text/markdown": `/judgment/${encodeURIComponent(decoded)}/index.md`,
+        },
+      },
     };
   } catch {
     return buildMetadata({
@@ -229,6 +235,13 @@ export default async function JudgmentPage({
                 View official judgment on eLitigation
               </a>
             )}
+
+            <a
+              href={`${pagePath}/index.md`}
+              className="inline-flex items-center rounded-lg border border-border-strong px-3.5 py-2 text-sm text-muted hover:text-foreground"
+            >
+              Read as text
+            </a>
 
             <CopyActions source={source} path={pagePath} />
 

@@ -1,31 +1,25 @@
 /* biome-ignore-all lint/complexity/noImportantStyles: the prefers-reduced-motion reset must override Tailwind utility transitions for accessibility */
 @import "tailwindcss";
 
-/*
- * Design system — "Counsel Emerald", light and dark (#206).
- * Pure white canvas, navy-cast neutrals, one deep emerald accent, pill
- * geometry. Google Sans Flex for UI (semi-black weights for emphasis);
- * Lora for editorial/legal text.
+/* Garden palette: ivory paper, forest ink and river-blue details.
+ * Semantic tokens are shared across search, reading, Ask and account pages.
  */
 :root {
   color-scheme: light; /* the dark override lives further down (#206) */
-  --background: #ffffff; /* pure white canvas */
-  --surface: #ffffff; /* cards */
-  --surface-2: #eef1f8; /* sunken wells, navy-tinted */
-  --foreground: #161a26; /* semi-black ink with a navy cast */
-  --muted: #4a5264; /* secondary text */
-  /* 4.5:1 on both the white canvas and the sunken well. The previous #7a8194
-     measured 3.89:1 on white — under AA for normal text, and #193 asks for
-     accessible text in both themes. Dark already passed at 5.46:1. */
-  --muted-2: #666e80; /* faint meta */
-  --border: #e5e8f0; /* hairline */
-  --border-strong: #d4d9e6;
-  --primary: #161a26; /* ink buttons */
-  --primary-fg: #ffffff;
-  --accent: #0d7561; /* deep emerald (AA on white) */
-  --accent-soft: rgba(13, 117, 97, 0.09);
-  --ring: #0d7561;
-  --highlight: rgba(13, 117, 97, 0.16); /* search highlight */
+  --background: #faf8f2; /* warm paper */
+  --surface: #fffef9; /* cards */
+  --surface-2: #efeee5; /* soft stone */
+  --foreground: #23382f; /* forest ink */
+  --muted: #526359; /* secondary text */
+  --muted-2: #5d6b60; /* faint meta */
+  --border: #e0e3d8; /* hairline */
+  --border-strong: #b8c3b4;
+  --primary: #23382f; /* ink buttons */
+  --primary-fg: #faf8f2;
+  --accent: #35634d; /* deep emerald (AA on white) */
+  --accent-soft: rgba(53, 99, 77, 0.09);
+  --ring: #35634d;
+  --highlight: rgba(53, 99, 77, 0.16); /* search highlight */
   /*
    * Semantic states. Components used Tailwind palette literals (bg-amber-50,
    * text-red-700) which cannot follow a theme — every one of them stayed light
@@ -182,30 +176,27 @@ mark[data-match][data-active] {
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
     color-scheme: dark;
-    --background: #0f1117;
-    --surface: #161a26;
-    --surface-2: #1e2434;
-    --foreground: #e8eaf2;
-    --muted: #a8b0c2;
-    /* 4.72:1 on the sunken well, where #828a9e measured 4.48 — just under
-       AA. Meta text sits inside those wells, so the well is the binding
-       surface, not the page background. */
-    --muted-2: #868ea3;
-    --border: #262c3c;
-    --border-strong: #39415a;
-    --primary: #e8eaf2;
-    --primary-fg: #161a26;
-    --accent: #34d399;
-    --accent-soft: rgba(52, 211, 153, 0.14);
-    --ring: #34d399;
-    --highlight: rgba(52, 211, 153, 0.22);
+    --background: #121e1a;
+    --surface: #1b2c24;
+    --surface-2: #25392f;
+    --foreground: #f0eee3;
+    --muted: #b9c8bb;
+    --muted-2: #9bad9e;
+    --border: #34493e;
+    --border-strong: #5c7564;
+    --primary: #f0eee3;
+    --primary-fg: #15271d;
+    --accent: #a4c9ad;
+    --accent-soft: rgba(164, 201, 173, 0.14);
+    --ring: #a4c9ad;
+    --highlight: rgba(164, 201, 173, 0.22);
     --danger: #fca5a5;
     --danger-soft: rgba(248, 113, 113, 0.12);
     --danger-border: rgba(248, 113, 113, 0.42);
     --warning: #fcd34d;
     --warning-soft: rgba(251, 191, 36, 0.12);
     --warning-border: rgba(251, 191, 36, 0.42);
-    --success: #34d399;
+    --success: #a4c9ad;
     --annotation-key-point: rgba(234, 179, 8, 0.32);
     --annotation-key-point-ink: #fbbf24;
     --annotation-facts: rgba(59, 130, 246, 0.32);
@@ -228,27 +219,27 @@ mark[data-match][data-active] {
 /* An explicit choice overrides the operating system in both directions. */
 :root[data-theme="dark"] {
   color-scheme: dark;
-  --background: #0f1117;
-  --surface: #161a26;
-  --surface-2: #1e2434;
-  --foreground: #e8eaf2;
-  --muted: #a8b0c2;
-  --muted-2: #868ea3;
-  --border: #262c3c;
-  --border-strong: #39415a;
-  --primary: #e8eaf2;
-  --primary-fg: #161a26;
-  --accent: #34d399;
-  --accent-soft: rgba(52, 211, 153, 0.14);
-  --ring: #34d399;
-  --highlight: rgba(52, 211, 153, 0.22);
+  --background: #121e1a;
+  --surface: #1b2c24;
+  --surface-2: #25392f;
+  --foreground: #f0eee3;
+  --muted: #b9c8bb;
+  --muted-2: #9bad9e;
+  --border: #34493e;
+  --border-strong: #5c7564;
+  --primary: #f0eee3;
+  --primary-fg: #15271d;
+  --accent: #a4c9ad;
+  --accent-soft: rgba(164, 201, 173, 0.14);
+  --ring: #a4c9ad;
+  --highlight: rgba(164, 201, 173, 0.22);
   --danger: #fca5a5;
   --danger-soft: rgba(248, 113, 113, 0.12);
   --danger-border: rgba(248, 113, 113, 0.42);
   --warning: #fcd34d;
   --warning-soft: rgba(251, 191, 36, 0.12);
   --warning-border: rgba(251, 191, 36, 0.42);
-  --success: #34d399;
+  --success: #a4c9ad;
   --annotation-key-point: rgba(234, 179, 8, 0.32);
   --annotation-key-point-ink: #fbbf24;
   --annotation-facts: rgba(59, 130, 246, 0.32);

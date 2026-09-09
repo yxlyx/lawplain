@@ -47,3 +47,5 @@ rmSync(destination,{recursive:true,force:true});renameSync(staging,destination);
 writeFileSync(resolve(root,'public/corpus-sitemap.xml'),index);
 writeFileSync(resolve(root,'docs/design/corpus-sitemap-snapshot.json'),JSON.stringify({generatedAt:new Date().toISOString(),counts,sitemaps:maps.length,total:Object.values(counts).reduce((a,b)=>a+b,0)},null,2)+'\n');
 } catch(e) {rmSync(staging,{recursive:true,force:true});throw e;}
+
+await import('./generate-llms-index.mjs');
