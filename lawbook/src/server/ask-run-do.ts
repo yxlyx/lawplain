@@ -1,5 +1,7 @@
 import { DurableObject } from "cloudflare:workers";
 import type { AgentEvent } from "../lib/agent";
+import { RESEARCH_BUSY } from "../lib/ask-errors";
+import { CondensationError } from "../lib/condensation-sandbox";
 import type { CubeSandbox } from "../lib/cubesandbox";
 import {
   createResearchSandbox,
@@ -391,7 +393,15 @@ export class AskRunDO extends DurableObject<AskRunEnv> {
     } catch (e) {
       if (await this.isStopped()) return;
       console.error("Ask run failed", redactSecrets(e, providerSecrets));
-      await this.appendEvents([{ type: "error", message: safeAgentError() }]);
+      await this.appendEvents([
+        {
+          type: "error",
+          message:
+            e instanceof CondensationError && e.status === 429
+              ? RESEARCH_BUSY
+              : safeAgentError(),
+        },
+      ]);
       await this.ctx.storage.put("status", "error" satisfies RunStatus);
       await this.updateThreadStatus("error");
       await this.updateTrajectoryStatus("error");

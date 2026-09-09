@@ -21,6 +21,16 @@ interface FleetOutput {
   truncated: boolean;
 }
 
+export class CondensationError extends Error {
+  readonly status: number;
+
+  constructor(status: number, operation: string) {
+    super(`Condensation ${operation} failed (${status})`);
+    this.name = "CondensationError";
+    this.status = status;
+  }
+}
+
 /** POSIX shell quoting: inputs are values, never shell source. */
 export function shellQuote(value: string): string {
   if (value.includes("\0"))
@@ -71,8 +81,9 @@ export class CondensationSandbox extends CubeSandbox {
     if (!res.ok) {
       // Provider bodies can contain commands or credentials. Keep diagnostics
       // useful without exposing them to logs or the persisted event stream.
-      throw new Error(
-        `Condensation ${method} ${path.split("/").at(-1)} failed (${res.status})`,
+      throw new CondensationError(
+        res.status,
+        `${method} ${path.split("/").at(-1)}`,
       );
     }
     return res.json() as Promise<T>;

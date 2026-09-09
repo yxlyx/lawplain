@@ -37,6 +37,7 @@ import {
   XIcon,
 } from "@/components/icons";
 import type { ChatContext } from "@/lib/agent";
+import { askHttpErrorMessage } from "@/lib/ask-errors";
 import { authClient } from "@/lib/auth-client";
 
 type ChatEvent =
@@ -1643,6 +1644,7 @@ export function AskAgent({
         ? [...existing]
         : [...messagesRef.current, userMsg, assistantMsg];
       let requestStage = "preparing";
+      let responseStatus = 0;
 
       const patch = (fn: (m: Message) => Message) => {
         runSnapshot = runSnapshot.map((m) => (m.id === aId ? fn(m) : m));
@@ -1750,6 +1752,7 @@ export function AskAgent({
           signal: ac.signal,
         });
         requestStage = "opening response";
+        responseStatus = res.status;
         if (res.status === 401) {
           throw new Error("Please sign in to use Ask Lawplain.");
         }
@@ -1958,7 +1961,7 @@ export function AskAgent({
           patch((m) => ({
             ...m,
             phase: "error",
-            error: "Research could not be completed. Please try again.",
+            error: askHttpErrorMessage(responseStatus),
           }));
         }
       } finally {
