@@ -18,15 +18,12 @@ import { join } from "node:path";
 import { type Event, runAgent } from "@codegraff/sdk";
 import { researchToolCallBudget } from "@/lib/agent-budget";
 import { summarizeToolCall } from "@/lib/agent-tool-summary";
-import {
-  createSandbox,
-  deleteSandbox,
-  GRAFF_BIN_PATH,
-  installGraff,
-  readSandboxFile,
-  runProcess,
-} from "@/lib/cubesandbox";
+import { GRAFF_BIN_PATH } from "@/lib/cubesandbox";
 import { ReasoningSanitizer, sanitizeAnswer } from "@/lib/reasoning-sanitizer";
+import {
+  createResearchSandbox,
+  sandboxConfigured,
+} from "@/lib/research-sandbox";
 import { BASE } from "@/lib/sgjudge";
 
 export const AGENT_MODEL = process.env.LAWPLAIN_AGENT_MODEL ?? "glm-5.2";
@@ -566,10 +563,10 @@ export async function* askLegalAgent(
   }
 }
 
-// ─── sandboxed execution via CubeSandbox microVMs ───────────────────────
+// ─── sandboxed execution via the configured research provider ───────────────────────
 
 /**
- * Run one agent turn inside a disposable CubeSandbox microVM.
+ * Run one agent turn inside a disposable research VM.
  *
  * Instead of spawning `graff` as a local subprocess (which gives the agent's
  * yolo-bash tool access to the host), this creates a firewalled firecracker
@@ -578,8 +575,8 @@ export async function* askLegalAgent(
  * — it cannot touch the host filesystem or other processes.
  *
  * Requires:
- *   CUBESANDBOX_GATEWAY_URL  — gateway base URL
- *   CUBESANDBOX_TENANT_KEY   — tenant API key
+ *   CONDENSATION_API_KEY — own-fleet API key (server-side only)
+ *   LAWPLAIN_SANDBOX_PROVIDER=condensation — explicit production selection
  *   CODEGRAFF_API_KEY / KIMI_API_KEY / etc — model provider key injected into the VM
  *
  * Yields the same AgentEvent stream as askLegalAgent, so the UI doesn't need
@@ -591,15 +588,12 @@ export async function* askLegalAgentSandboxed(
   context?: ChatContext,
   history?: ChatTurn[],
 ): AsyncGenerator<AgentEvent> {
-  const gw = process.env.CUBESANDBOX_GATEWAY_URL;
-  const tenantKey = process.env.CUBESANDBOX_TENANT_KEY;
   const providerEnv = agentProviderEnv();
 
-  if (!gw || !tenantKey) {
+  if (!sandboxConfigured(process.env)) {
     yield {
       type: "error",
-      message:
-        "CubeSandbox gateway not configured (CUBESANDBOX_GATEWAY_URL / CUBESANDBOX_TENANT_KEY)",
+      message: "Research sandbox is not configured",
     };
     return;
   }
@@ -612,6 +606,7 @@ export async function* askLegalAgentSandboxed(
     return;
   }
 
+  const sandbox = createResearchSandbox(process.env);
   let sid: string | null = null;
   const startedAt = Date.now();
   let lastHeartbeat = startedAt;
@@ -623,7 +618,7 @@ export async function* askLegalAgentSandboxed(
       message: "Starting secure sandbox…",
       elapsedMs: Date.now() - startedAt,
     };
-    sid = await createSandbox({ cpuCount: 2, memoryMB: 1024 });
+    sid = await sandbox.createSandbox({ cpuCount: 2, memoryMB: 1024 });
 
     // 2. Download graff into the VM
     yield {
@@ -632,7 +627,7 @@ export async function* askLegalAgentSandboxed(
       message: "Loading research runtime…",
       elapsedMs: Date.now() - startedAt,
     };
-    await installGraff(sid);
+    await sandbox.installGraff(sid);
 
     // 3. Run graff --json inside the VM, piping the prompt via stdin.
     //    envd doesn't support process stdin, so we use a bash pipe.
@@ -676,7 +671,7 @@ export async function* askLegalAgentSandboxed(
       elapsedMs: Date.now() - startedAt,
     };
 
-    const start = await runProcess(sid, {
+    const start = await sandbox.runProcess(sid, {
       cmd: "/bin/bash",
       args: [
         "-c",
@@ -700,7 +695,7 @@ export async function* askLegalAgentSandboxed(
     let offset = 0;
     const deadline = Date.now() + 300_000;
     while (!signal?.aborted && Date.now() < deadline) {
-      const out = (await readSandboxFile(sid, "/tmp/graff.out")) ?? "";
+      const out = (await sandbox.readSandboxFile(sid, "/tmp/graff.out")) ?? "";
       if (out.length > offset) {
         lineBuf += out.slice(offset);
         offset = out.length;
@@ -803,10 +798,10 @@ export async function* askLegalAgentSandboxed(
         }
       }
 
-      const exitText = await readSandboxFile(sid, "/tmp/graff.exit");
+      const exitText = await sandbox.readSandboxFile(sid, "/tmp/graff.exit");
       if (exitText !== null) {
         exitCode = Number.parseInt(exitText.trim(), 10);
-        stderr = (await readSandboxFile(sid, "/tmp/graff.err")) ?? "";
+        stderr = (await sandbox.readSandboxFile(sid, "/tmp/graff.err")) ?? "";
         break;
       }
       if (Date.now() - lastHeartbeat > 8000) {
@@ -837,7 +832,7 @@ export async function* askLegalAgentSandboxed(
       (
         rawNonJson.trim() ||
         stderr.trim() ||
-        ((await readSandboxFile(sboxId, "/tmp/graff.out")) ?? "").trim()
+        ((await sandbox.readSandboxFile(sboxId, "/tmp/graff.out")) ?? "").trim()
       ).slice(0, 800);
 
     if (exitCode && exitCode !== 0) {
@@ -870,6 +865,6 @@ export async function* askLegalAgentSandboxed(
     };
   } finally {
     // Always clean up the microVM — never leak sandboxes.
-    if (sid) await deleteSandbox(sid);
+    if (sid) await sandbox.deleteSandbox(sid);
   }
 }

@@ -523,7 +523,7 @@ export function SearchExplorer({
         </section>
       )}
 
-      <div className="mt-4 flex flex-wrap justify-center gap-1.5">
+      <div className="search-corpus-tabs mt-4 flex flex-wrap justify-center gap-1.5">
         {TABS.map((t) => {
           const active = t.id === tab;
           return (
@@ -560,7 +560,7 @@ export function SearchExplorer({
           Boolean(v?.trim()),
         ).length;
         return (
-          <div className="mt-3 flex justify-center">
+          <div className="search-filter-row mt-3 flex justify-center">
             <button
               type="button"
               onClick={() => setShowFilters((s) => !s)}

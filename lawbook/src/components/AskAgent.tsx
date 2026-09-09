@@ -11,8 +11,7 @@ import {
   useRef,
   useState,
 } from "react";
-import ReactMarkdown, { type Components } from "react-markdown";
-import remarkGfm from "remark-gfm";
+import { AnswerMarkdown, AnswerSources } from "@/components/ask/AnswerContent";
 import { AskPrivateNotes } from "@/components/AskPrivateNotes";
 import {
   Bubble,
@@ -37,6 +36,7 @@ import {
   XIcon,
 } from "@/components/icons";
 import type { ChatContext } from "@/lib/agent";
+import { askHttpErrorMessage } from "@/lib/ask-errors";
 import { authClient } from "@/lib/auth-client";
 
 type ChatEvent =
@@ -234,93 +234,6 @@ function stopBackendRun(runId: string | null, threadId: string): void {
 }
 
 /* ── Markdown answer rendering (react-markdown + GFM) ───────────────── */
-
-const mdComponents: Components = {
-  h1: ({ children }) => (
-    <h2 className="mt-1 font-serif text-xl font-semibold text-foreground">
-      {children}
-    </h2>
-  ),
-  h2: ({ children }) => (
-    <h2 className="mt-1 font-serif text-lg font-semibold text-foreground">
-      {children}
-    </h2>
-  ),
-  h3: ({ children }) => (
-    <h3 className="mt-1 font-serif text-base font-semibold text-foreground">
-      {children}
-    </h3>
-  ),
-  p: ({ children }) => <p className="leading-relaxed">{children}</p>,
-  strong: ({ children }) => (
-    <strong className="font-semibold text-foreground">{children}</strong>
-  ),
-  em: ({ children }) => <em className="italic">{children}</em>,
-  a: ({ href, children }) => {
-    const h = href ?? "";
-    const internal = h.startsWith("/") || h.startsWith("#");
-    return (
-      <a
-        href={h}
-        className="text-accent underline decoration-accent/30 underline-offset-2 hover:decoration-accent"
-        {...(internal ? {} : { target: "_blank", rel: "noreferrer noopener" })}
-      >
-        {children}
-      </a>
-    );
-  },
-  ol: ({ children }) => <ol className="ask-ol space-y-1.5">{children}</ol>,
-  ul: ({ children }) => (
-    <ul className="ask-ul space-y-1.5 pl-5 marker:text-accent">{children}</ul>
-  ),
-  li: ({ children }) => <li className="leading-relaxed">{children}</li>,
-  code: ({ className, children }) =>
-    (className ?? "").includes("language-") ? (
-      <code className="font-mono text-[13px]">{children}</code>
-    ) : (
-      <code className="rounded bg-surface-2 px-1 py-0.5 font-mono text-[0.85em] text-foreground">
-        {children}
-      </code>
-    ),
-  pre: ({ children }) => (
-    <pre className="thin-scroll overflow-x-auto rounded-lg bg-surface-2 p-3 text-[13px]">
-      {children}
-    </pre>
-  ),
-  blockquote: ({ children }) => (
-    <blockquote className="border-l-2 border-border pl-3 text-muted">
-      {children}
-    </blockquote>
-  ),
-  hr: () => <hr className="border-border" />,
-  table: ({ children }) => (
-    <div className="thin-scroll overflow-x-auto">
-      <table className="w-full border-collapse text-[13px]">{children}</table>
-    </div>
-  ),
-  th: ({ children }) => (
-    <th className="border border-border bg-surface-2 px-2 py-1 text-left font-semibold">
-      {children}
-    </th>
-  ),
-  td: ({ children }) => (
-    <td className="border border-border px-2 py-1 align-top">{children}</td>
-  ),
-};
-
-const AnswerMarkdown = memo(function AnswerMarkdown({
-  text,
-}: {
-  text: string;
-}) {
-  return (
-    <div className="ask-md space-y-3">
-      <ReactMarkdown remarkPlugins={[remarkGfm]} components={mdComponents}>
-        {text}
-      </ReactMarkdown>
-    </div>
-  );
-});
 
 const SUGGESTIONS = [
   "What must a plaintiff prove in a defamation claim?",
@@ -1643,6 +1556,7 @@ export function AskAgent({
         ? [...existing]
         : [...messagesRef.current, userMsg, assistantMsg];
       let requestStage = "preparing";
+      let responseStatus = 0;
 
       const patch = (fn: (m: Message) => Message) => {
         runSnapshot = runSnapshot.map((m) => (m.id === aId ? fn(m) : m));
@@ -1750,6 +1664,7 @@ export function AskAgent({
           signal: ac.signal,
         });
         requestStage = "opening response";
+        responseStatus = res.status;
         if (res.status === 401) {
           throw new Error("Please sign in to use Ask Lawplain.");
         }
@@ -1958,7 +1873,7 @@ export function AskAgent({
           patch((m) => ({
             ...m,
             phase: "error",
-            error: "Research could not be completed. Please try again.",
+            error: askHttpErrorMessage(responseStatus),
           }));
         }
       } finally {
@@ -2869,7 +2784,7 @@ export function AskAgent({
         }`}
       >
         {messages.length === 0 ? (
-          <div className="mx-auto flex w-full max-w-2xl flex-col items-center px-5 pt-28 text-center sm:px-8 sm:pt-32">
+          <div className="ask-welcome mx-auto flex w-full max-w-2xl flex-col items-center px-5 pt-28 text-center sm:px-8 sm:pt-32">
             <span className="mb-4 inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-accent-soft text-accent">
               <SparkleIcon className="h-6 w-6" />
             </span>
@@ -3831,40 +3746,55 @@ const AssistantMessage = memo(function AssistantMessage({
           <SparkleIcon className="h-4 w-4" />
         </span>
       </MessageAvatar>
-      <MessageContent className="gap-2">
-        <MessageHeader>Lawplain</MessageHeader>
+      <MessageContent className="answer-content gap-3">
+        <MessageHeader className="answer-header">
+          Lawplain <small>Research companion</small>
+        </MessageHeader>
 
         {/* Tool steps — live while searching, settled once answered */}
         {m.tools.length > 0 && (
-          <div className="flex flex-wrap gap-1.5">
-            {m.tools.map((t) => (
-              <span
-                key={t.id}
-                className={`inline-flex items-center gap-1.5 rounded-full border border-border px-2.5 py-1 font-mono text-[11px] ${
-                  live
-                    ? "bg-surface-2 text-muted"
-                    : "bg-background text-muted-2"
-                }`}
-              >
-                <span
-                  className={`h-1.5 w-1.5 rounded-full ${TOOL_DOT[t.kind]}`}
-                />
-                {t.label}
-                {t.count > 1 && (
-                  <span className="rounded-full bg-background px-1.5 text-[10px] text-muted-2">
-                    ×{t.count}
-                  </span>
-                )}
+          <details
+            className="answer-research"
+            key={live ? "live" : "settled"}
+            open={live || undefined}
+          >
+            <summary>
+              <span className="research-complete" aria-hidden="true">
+                {live ? "·" : m.phase === "done" ? "✓" : "–"}
               </span>
-            ))}
-          </div>
+              {live ? "Exploring the sources" : "Research activity"}
+              <span>· {m.tools.reduce((n, t) => n + t.count, 0)} steps</span>
+            </summary>
+            <div className="flex flex-wrap gap-1.5">
+              {m.tools.map((t) => (
+                <span
+                  key={t.id}
+                  className={`inline-flex items-center gap-1.5 rounded-full border border-border px-2.5 py-1 font-mono text-[11px] ${
+                    live
+                      ? "bg-surface-2 text-muted"
+                      : "bg-background text-muted-2"
+                  }`}
+                >
+                  <span
+                    className={`h-1.5 w-1.5 rounded-full ${TOOL_DOT[t.kind]}`}
+                  />
+                  {t.label}
+                  {t.count > 1 && (
+                    <span className="rounded-full bg-background px-1.5 text-[10px] text-muted-2">
+                      ×{t.count}
+                    </span>
+                  )}
+                </span>
+              ))}
+            </div>
+          </details>
         )}
 
         {/* Live status */}
         {live && (
           <output
             aria-live="polite"
-            className="w-full rounded-xl border border-border bg-surface-2/70 px-3 py-2 text-[13px] text-muted"
+            className="answer-status w-full rounded-xl border border-border bg-surface-2/70 px-3 py-2 text-[13px] text-muted"
           >
             <div className="flex items-center gap-2">
               <span className="relative flex h-2 w-2">
@@ -3913,7 +3843,7 @@ const AssistantMessage = memo(function AssistantMessage({
           <Bubble
             id={`answer-${messageId}`}
             variant="assistant"
-            className="scroll-mt-24 space-y-3 px-4 py-3 font-serif text-[15px] leading-relaxed"
+            className="answer-sheet scroll-mt-24 space-y-3 px-4 py-3 font-serif text-[15px] leading-relaxed"
           >
             <AnswerMarkdown text={m.text} />
             {live && (
@@ -3921,6 +3851,8 @@ const AssistantMessage = memo(function AssistantMessage({
             )}
           </Bubble>
         )}
+
+        {m.text && !live && <AnswerSources text={m.text} />}
 
         {/* Stopped / error */}
         {m.phase === "stopped" && (

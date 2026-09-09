@@ -18,7 +18,8 @@
     "d1:migrate:remote": "wrangler d1 migrations apply lawbook-auth --remote",
     "d1:migrate:trajectories:local": "wrangler d1 migrations apply lawbook-trajectories --local",
     "d1:migrate:trajectories:remote": "wrangler d1 migrations apply lawbook-trajectories --remote",
-    "benchmark:ask": "node scripts/benchmark-ask.mjs"
+    "benchmark:ask": "node scripts/benchmark-ask.mjs",
+    "seo:refresh-sitemaps": "node scripts/refresh-corpus-sitemaps.mjs"
   },
   "dependencies": {
     "@codegraff/sdk": "^0.3.1",

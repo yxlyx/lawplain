@@ -17,6 +17,7 @@ import {
   SearchIcon,
   SparkleIcon,
 } from "@/components/icons";
+import { ThemeToggle } from "@/components/ThemeToggle";
 import {
   authClient,
   SIGN_OUT_TRANSITION_END,
@@ -360,6 +361,7 @@ export function AppShell({
                 Lawplain<span className="text-accent">.</span>
               </span>
             </Link>
+            <ThemeToggle />
           </div>
           <nav
             aria-label="Primary"
@@ -514,14 +516,17 @@ export function AppShell({
               >
                 Lawplain<span className="text-accent">.</span>
               </Link>
-              <button
-                type="button"
-                aria-label="Close navigation"
-                onClick={closeDrawerToTrigger}
-                className="rounded-lg p-2 text-muted-2 hover:bg-surface-2 hover:text-foreground"
-              >
-                <CloseIcon className="h-5 w-5" />
-              </button>
+              <div className="flex items-center gap-1">
+                <ThemeToggle />
+                <button
+                  type="button"
+                  aria-label="Close navigation"
+                  onClick={closeDrawerToTrigger}
+                  className="rounded-lg p-2 text-muted-2 hover:bg-surface-2 hover:text-foreground"
+                >
+                  <CloseIcon className="h-5 w-5" />
+                </button>
+              </div>
             </div>
             <nav
               aria-label="Primary"

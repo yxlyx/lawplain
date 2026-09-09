@@ -145,7 +145,11 @@ export const GRAFF_BIN_PATH = "/tmp/graff-x86_64-linux/graff";
 // ─── client ─────────────────────────────────────────────────────────────
 
 export class CubeSandbox {
-  constructor(private readonly cfg: CubeConfig) {}
+  private readonly cfg: CubeConfig;
+
+  constructor(cfg: CubeConfig) {
+    this.cfg = cfg;
+  }
 
   private authHeaders(): Record<string, string> {
     return { "X-API-Key": this.cfg.tenantKey };

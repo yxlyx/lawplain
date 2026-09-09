@@ -46,8 +46,7 @@ export async function generateMetadata({
     source?: string;
   }>;
 }): Promise<Metadata> {
-  const [{ kind, id }, { q, title, snippet, meta, returnTo, source }] =
-    await Promise.all([params, searchParams]);
+  const [{ kind, id }, { title }] = await Promise.all([params, searchParams]);
   const decodedKind = decodeURIComponent(kind);
   const decodedId = decodeURIComponent(id);
   if (!isDocumentKind(decodedKind)) notFound();
@@ -60,16 +59,13 @@ export async function generateMetadata({
     : metaDescription(
         `View ${displayTitle} on Lawplain. Search Singapore ${label.toLowerCase()} materials and related legal information.`,
       );
-  const hasQueryVariant = Boolean(
-    q || title || snippet || meta || returnTo || source,
-  );
 
   return buildMetadata({
     title: displayTitle,
     description,
     path: `/document/${encodeURIComponent(decodedKind)}/${encodeURIComponent(decodedId)}`,
     type: "article",
-    noIndex: !detail || hasQueryVariant,
+    noIndex: !detail,
     noIndexFollow: true,
   });
 }

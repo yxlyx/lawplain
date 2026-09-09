@@ -42,7 +42,6 @@ async function load(citation: string): Promise<JudgmentDetail> {
 
 export async function generateMetadata({
   params,
-  searchParams,
 }: {
   params: Promise<{ citation: string }>;
   searchParams: Promise<{
@@ -51,12 +50,8 @@ export async function generateMetadata({
     savedQuote?: string;
   }>;
 }): Promise<Metadata> {
-  const [{ citation }, { q, returnTo, savedQuote }] = await Promise.all([
-    params,
-    searchParams,
-  ]);
+  const { citation } = await params;
   const decoded = decodeURIComponent(citation);
-  const hasQueryVariant = Boolean(q || returnTo || savedQuote);
   try {
     const j = await sgjudge.getJudgment(
       decoded,
@@ -70,9 +65,13 @@ export async function generateMetadata({
         description: judgmentDescription(j, decoded),
         path: `/judgment/${encodeURIComponent(decoded)}`,
         type: "article",
-        noIndex: hasQueryVariant,
-        noIndexFollow: hasQueryVariant,
       }),
+      alternates: {
+        canonical: `/judgment/${encodeURIComponent(decoded)}`,
+        types: {
+          "text/markdown": `/judgment/${encodeURIComponent(decoded)}/index.md`,
+        },
+      },
     };
   } catch {
     return buildMetadata({
@@ -80,8 +79,6 @@ export async function generateMetadata({
       description: `Read ${decoded} on Lawplain's Singapore legal research corpus.`,
       path: `/judgment/${encodeURIComponent(decoded)}`,
       type: "article",
-      noIndex: hasQueryVariant,
-      noIndexFollow: hasQueryVariant,
     });
   }
 }
@@ -238,6 +235,13 @@ export default async function JudgmentPage({
                 View official judgment on eLitigation
               </a>
             )}
+
+            <a
+              href={`${pagePath}/index.md`}
+              className="inline-flex items-center rounded-lg border border-border-strong px-3.5 py-2 text-sm text-muted hover:text-foreground"
+            >
+              Read as text
+            </a>
 
             <CopyActions source={source} path={pagePath} />
 

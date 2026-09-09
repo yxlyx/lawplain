@@ -1,8 +1,11 @@
 "use client";
 
+import Link from "next/link";
 import { type ReactNode, useEffect, useLayoutEffect, useRef } from "react";
 import { useChrome } from "@/components/chrome/ChromeContext";
+import { ResearchFolder } from "@/components/ResearchFolder";
 import { SearchExplorer } from "@/components/SearchExplorer";
+import { COLLECTIONS } from "@/lib/collections";
 
 // useLayoutEffect on the client, useEffect on the server (avoids the SSR warning).
 const useIsoLayoutEffect =
@@ -27,7 +30,6 @@ export function HomeShell({
   stats?: ReactNode;
 }) {
   const { searchActive, setSearchActive } = useChrome();
-  const ease = "duration-500 ease-[var(--ease-emphasized)]";
   const initialActive = initialQuery.trim().length > 0;
   const firstRender = useRef(true);
   // First paint already reflects the URL query, so returning to a search (Back
@@ -47,46 +49,130 @@ export function HomeShell({
   }, [initialActive, setSearchActive]);
 
   return (
-    <div className="mx-auto flex min-h-0 w-full max-w-2xl flex-1 flex-col">
-      {/* Spacer collapses on search, lifting the hero upward. */}
-      <div
-        aria-hidden="true"
-        className={`shrink-0 transition-[height] ${ease} ${
-          active ? "h-4" : "h-[12vh] sm:h-[20vh]"
-        }`}
-      />
-
-      {/* Hero brand. On search it collapses away entirely — the sidebar/header
-          already shows "Lawplain.", so we avoid a duplicate. */}
-      <div
-        aria-hidden={active}
-        className={`overflow-hidden text-center transition-all ${ease} ${
-          active ? "mb-0 max-h-0 opacity-0" : "mb-6 max-h-44 opacity-100"
-        }`}
-      >
-        <h1 className="font-serif text-5xl font-medium tracking-tight text-foreground sm:text-7xl">
-          Lawplain<span className="text-accent">.</span>
-        </h1>
-        <p className="mt-3 text-sm font-semibold tracking-tight text-muted sm:text-base">
-          Search Singapore law and official agency guidance
-        </p>
+    <div
+      className={`garden-home editorial-home ${active ? "is-searching" : ""}`}
+    >
+      {active && <h1 className="sr-only">Search Singapore law</h1>}
+      <div className={`garden-opening ${active ? "is-active" : ""}`}>
+        {!active && (
+          <>
+            <div className="garden-hero" aria-hidden="true">
+              {/* Static responsive sources work on Workers without an image proxy. */}
+              <picture>
+                <source
+                  media="(max-width: 650px)"
+                  srcSet="/images/singapore-garden-mobile.webp"
+                />
+                <img
+                  src="/images/singapore-garden-960.webp"
+                  srcSet="/images/singapore-garden-640.webp 640w, /images/singapore-garden-960.webp 960w, /images/singapore-garden.webp 1680w"
+                  sizes="(max-width: 850px) 40vw, (max-width: 1150px) 43vw, 470px"
+                  alt=""
+                  width={1680}
+                  height={946}
+                  fetchPriority="high"
+                  className="garden-art"
+                />
+              </picture>
+              <div className="garden-shade" />
+            </div>
+            <div className="garden-hero-copy">
+              <p className="garden-eyebrow">
+                <span /> Singapore legal research
+              </p>
+              <h1 id="garden-title">
+                Research
+                <br />
+                Singapore law.
+              </h1>
+              <p>Search judgments, legislation and parliamentary debates.</p>
+            </div>
+          </>
+        )}
+        <section className="garden-search" aria-label="Search Singapore law">
+          {!active && (
+            <div className="garden-search-heading">
+              <span>Find a case, Act or topic</span>
+              <Link href="/faq">Search tips ↗</Link>
+            </div>
+          )}
+          <SearchExplorer
+            courts={courts}
+            initialTab={initialTab}
+            initialQuery={initialQuery}
+            onActiveChange={setSearchActive}
+          />
+          {!active && (
+            <div className="garden-search-alternative">
+              <span>Or ask a question in plain English.</span>
+              <Link href="/ask">
+                Ask Lawplain <span aria-hidden="true">↗</span>
+              </Link>
+            </div>
+          )}
+        </section>
       </div>
-
-      <SearchExplorer
-        courts={courts}
-        initialTab={initialTab}
-        initialQuery={initialQuery}
-        onActiveChange={setSearchActive}
-      />
-
-      {stats && (
-        <div
-          className={`transition-all ${ease} ${
-            active ? "max-h-0 overflow-hidden opacity-0" : "mt-4 opacity-100"
-          }`}
-        >
-          {stats}
-        </div>
+      {!active && (
+        <>
+          {stats && <div className="garden-stats">{stats}</div>}
+          <section
+            className="garden-collections"
+            aria-labelledby="collections-title"
+          >
+            <div className="garden-section-heading">
+              <div>
+                <h2 id="collections-title">Browse by source</h2>
+              </div>
+              <Link href="/research">
+                All collections <span aria-hidden="true">↗</span>
+              </Link>
+            </div>
+            <div className="garden-folder-grid">
+              {COLLECTIONS.slice(0, 4).map((c, i) => (
+                <Link
+                  key={c.slug}
+                  href={`/research/${c.slug}`}
+                  className="garden-collection-card"
+                >
+                  <ResearchFolder tone={i} />
+                  <h3>
+                    {c.title} <span aria-hidden="true">↗</span>
+                  </h3>
+                  <p>{c.short}</p>
+                </Link>
+              ))}
+            </div>
+          </section>
+          <section className="home-ask-row" aria-labelledby="home-ask-title">
+            <div>
+              <h2 id="home-ask-title">Ask Lawplain</h2>
+              <p>
+                Research a question and get an explanation with links to the
+                sources.
+              </p>
+            </div>
+            <Link href="/ask">
+              Start a question <span aria-hidden="true">↗</span>
+            </Link>
+          </section>
+          <section
+            className="home-source-note"
+            aria-labelledby="home-about-title"
+          >
+            <h2 id="home-about-title">About the collection</h2>
+            <div>
+              <p>
+                Singapore judgments, statutes, parliamentary debates and
+                official guidance, searchable in one place. Read the underlying
+                documents and check the official source for the current text.
+              </p>
+              <nav aria-label="About Lawplain">
+                <Link href="/faq">How to use Lawplain</Link>
+                <Link href="/developers">API access</Link>
+              </nav>
+            </div>
+          </section>
+        </>
       )}
     </div>
   );
