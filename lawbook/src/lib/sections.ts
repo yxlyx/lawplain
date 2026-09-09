@@ -126,7 +126,7 @@ export function parseBlocks(text: string): Block[] {
         // continues the running sequence. Quoted statutory provisions (e.g.
         // "118 The court may…" after paragraph 12) would otherwise hijack the
         // gutter and make the visible numbering jump — see issue #69.
-        const sequential = lastParagraph === null ? n === 1 : n === lastParagraph + 1;
+        const sequential = lastParagraph === null ? n === 1 || n === 2 : n === lastParagraph + 1;
         if (sequential) {
           lastParagraph = n;
           const base = `p-${slugify(num) || num}`;

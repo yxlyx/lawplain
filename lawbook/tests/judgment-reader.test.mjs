@@ -19,3 +19,9 @@ test('bracketed paragraphs retain stable anchors and source offsets', () => {
  assert.equal(text.slice(blocks[1].startOffset, blocks[1].endOffset), '[2] Next paragraph.');
  assert.equal(blocks[0].key, '[1] A 😀 reference.#0');
 });
+
+test('older rulings can leave paragraph one unnumbered', () => {
+ const blocks = parseBlocks('The opening paragraph has no printed number.\n\n2 The next paragraph.\n\n3 The final paragraph.');
+ assert.deepEqual(blocks.filter(b => b.kind === 'numbered').map(b => b.num), ['2', '3']);
+ assert.equal(blocks[0].kind, 'para');
+});
