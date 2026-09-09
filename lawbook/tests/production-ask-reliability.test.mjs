@@ -101,7 +101,7 @@ test("Durable Object retries are isolate-local, bounded, and reconnectable", () 
   assert.match(durable, /ensureRunningAlarm/);
   assert.match(durable, /storage\.getAlarm\(\)/);
   assert.match(durable, /hasPriorEvents/);
-  assert.match(durable, /recovering \? Date\.now\(\) : startedAt/);
-  assert.match(durable, /Previous research was interrupted; retrying safely/);
-  assert.match(durable, /Failed to remove interrupted Ask sandbox/);
+  assert.match(durable, /Reconnecting to your existing research/);
+  assert.match(durable, /GraffRun.restore\(saved\)/);
+  assert.doesNotMatch(durable, /deleteSandbox\(orphanedSandboxId\)/);
 });

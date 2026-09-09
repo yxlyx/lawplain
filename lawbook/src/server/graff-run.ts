@@ -45,6 +45,35 @@ export interface GraffRunParams {
 
 const RUN_DEADLINE_MS = 300_000;
 
+export interface GraffRunState {
+  startedAt: number;
+  workDir: string;
+  sandboxId: string | null;
+  launched: boolean;
+  runtimeReady: boolean;
+  done: boolean;
+  failed: boolean;
+  finalText: string;
+  costUsd: number;
+  contextTokens: number;
+  offset: number;
+  lineBuf: string;
+  rawNonJson: string;
+  streamedText: string;
+  sanitizer: { pending: string; thinking: boolean };
+  sawTurn: boolean;
+  sawText: boolean;
+  announcedAnswering: boolean;
+  seenTools: [string, number][];
+  lastHeartbeat: number;
+}
+
+interface LaunchOptions {
+  sandboxId?: string;
+  runtimeReady?: boolean;
+  checkpoint?: () => Promise<void>;
+}
+
 /** Conservative guard against treating a visibly cut-off stream as success. */
 export function isLikelyCompleteAnswer(text: string): boolean {
   const answer = text.trim();
@@ -61,8 +90,12 @@ export function isLikelyCompleteAnswer(text: string): boolean {
 /** Holds the parse state for one graff run so a DO can drive it across alarms. */
 export class GraffRun {
   readonly startedAt: number;
+  readonly workDir: string;
+  launched = false;
+  runtimeReady = false;
   sandboxId: string | null = null;
   done = false;
+  failed = false;
   /** The final answer markdown once the turn completes. */
   finalText = "";
   costUsd = 0;
@@ -79,9 +112,91 @@ export class GraffRun {
   private seenTools = new Map<string, number>();
   private lastHeartbeat: number;
 
-  constructor(startedAt: number = Date.now()) {
+  constructor(
+    startedAt: number = Date.now(),
+    workDir = `/tmp/lawplain-runs/${crypto.randomUUID()}`,
+  ) {
     this.startedAt = startedAt;
+    this.workDir = workDir;
     this.lastHeartbeat = startedAt;
+  }
+
+  snapshot(): GraffRunState {
+    return {
+      startedAt: this.startedAt,
+      workDir: this.workDir,
+      sandboxId: this.sandboxId,
+      launched: this.launched,
+      runtimeReady: this.runtimeReady,
+      done: this.done,
+      failed: this.failed,
+      finalText: this.finalText,
+      costUsd: this.costUsd,
+      contextTokens: this.contextTokens,
+      offset: this.offset,
+      lineBuf: this.lineBuf,
+      rawNonJson: this.rawNonJson,
+      streamedText: this.streamedText,
+      sanitizer: this.sanitizer.snapshot(),
+      sawTurn: this.sawTurn,
+      sawText: this.sawText,
+      announcedAnswering: this.announcedAnswering,
+      seenTools: [...this.seenTools],
+      lastHeartbeat: this.lastHeartbeat,
+    };
+  }
+
+  static restore(state: GraffRunState): GraffRun {
+    const run = new GraffRun(state.startedAt, state.workDir);
+    run.sandboxId = state.sandboxId;
+    run.launched = state.launched;
+    run.runtimeReady = state.runtimeReady;
+    run.done = state.done;
+    run.failed = state.failed;
+    run.finalText = state.finalText;
+    run.costUsd = state.costUsd;
+    run.contextTokens = state.contextTokens;
+    run.offset = state.offset;
+    run.lineBuf = state.lineBuf;
+    run.rawNonJson = state.rawNonJson;
+    run.streamedText = state.streamedText;
+    run.sanitizer.restore(state.sanitizer);
+    run.sawTurn = state.sawTurn;
+    run.sawText = state.sawText;
+    run.announcedAnswering = state.announcedAnswering;
+    run.seenTools = new Map(state.seenTools);
+    run.lastHeartbeat = state.lastHeartbeat;
+    return run;
+  }
+
+  /** Stop this turn's process group without destroying the conversation VM. */
+  async stop(sandbox: CubeSandbox): Promise<void> {
+    if (!this.sandboxId) return;
+    const result = await sandbox.runProcess(this.sandboxId, {
+      cmd: "/bin/bash",
+      args: [
+        "-c",
+        `mkdir -p "$RUN_DIR"
+touch "$RUN_DIR/stopped"
+if [ -s "$RUN_DIR/graff.pid" ]; then
+  pid=$(cat "$RUN_DIR/graff.pid")
+  case "$pid" in ''|*[!0-9]*) exit 1;; esac
+  [ "$pid" -gt 1 ] || exit 1
+  if kill -0 -- "-$pid" 2>/dev/null; then
+    kill -TERM -- "-$pid" 2>/dev/null || true
+    for attempt in 1 2 3 4 5; do
+      kill -0 -- "-$pid" 2>/dev/null || break
+      sleep 0.2
+    done
+    if kill -0 -- "-$pid" 2>/dev/null; then kill -KILL -- "-$pid" 2>/dev/null || true; fi
+  fi
+fi`,
+      ],
+      envs: { RUN_DIR: this.workDir },
+      timeoutMs: 10_000,
+    });
+    if (result.exitCode !== 0)
+      throw new Error("Could not stop research process");
   }
 
   private elapsed(now: number = Date.now()): number {
@@ -93,28 +208,38 @@ export class GraffRun {
     sandbox: CubeSandbox,
     params: GraffRunParams,
     onSandboxCreated?: (sandboxId: string) => void | Promise<void>,
+    options: LaunchOptions = {},
   ): Promise<AgentEvent[]> {
     const events: AgentEvent[] = [];
     events.push({
       type: "progress",
       phase: "sandbox_start",
-      message: "Starting secure sandbox…",
+      message: options.sandboxId
+        ? "Reusing this conversation’s sandbox…"
+        : "Starting secure sandbox…",
       elapsedMs: this.elapsed(),
     });
-    const sid = await sandbox.createSandbox({ cpuCount: 2, memoryMB: 1024 });
+    const sid =
+      options.sandboxId ??
+      (await sandbox.createSandbox({ cpuCount: 2, memoryMB: 1024 }));
     this.sandboxId = sid;
     await onSandboxCreated?.(sid);
 
-    events.push({
-      type: "progress",
-      phase: "agent_install",
-      message: "Loading research runtime…",
-      elapsedMs: this.elapsed(),
-    });
-    await sandbox.installGraff(sid);
+    if (!options.runtimeReady && !this.runtimeReady) {
+      events.push({
+        type: "progress",
+        phase: "agent_install",
+        message: "Loading research runtime…",
+        elapsedMs: this.elapsed(),
+      });
+      await sandbox.installGraff(sid);
+    }
+    this.runtimeReady = true;
+    await options.checkpoint?.();
 
     const promptJson = JSON.stringify({ type: "user", text: params.prompt });
     const envs: Record<string, string> = {
+      RUN_DIR: this.workDir,
       PROMPT_JSON: promptJson,
       SYSTEM_PROMPT: params.systemPrompt,
       GRAFF_BIN: GRAFF_BIN_PATH,
@@ -139,7 +264,16 @@ export class GraffRun {
       cmd: "/bin/bash",
       args: [
         "-c",
-        `rm -f /tmp/graff.out /tmp/graff.err /tmp/graff.exit /tmp/graff.launch; nohup /bin/bash -lc 'printf %s "$PROMPT_JSON" | "$GRAFF_BIN" --json --yolo --no-telemetry --max-tool-calls "$TOOL_CALL_BUDGET" --dedupe-tool-calls --model "$MODEL" --system-prompt "$SYSTEM_PROMPT" > /tmp/graff.out 2> /tmp/graff.err; echo $? > /tmp/graff.exit' > /tmp/graff.launch 2>&1 < /dev/null & echo $!`,
+        `mkdir -p "$RUN_DIR"
+# The guest lock survives an ambiguous exec response or Worker restart.
+# Re-entering launch can attach to this turn but cannot spawn it twice.
+if mkdir "$RUN_DIR/launch.lock" 2>/dev/null; then
+  if [ -e "$RUN_DIR/stopped" ]; then exit 0; fi
+  nohup setsid /bin/bash -c 'printf %s "$PROMPT_JSON" | "$GRAFF_BIN" --json --yolo --no-telemetry --max-tool-calls "$TOOL_CALL_BUDGET" --dedupe-tool-calls --model "$MODEL" --system-prompt "$SYSTEM_PROMPT" > "$RUN_DIR/graff.out" 2> "$RUN_DIR/graff.err"; echo $? > "$RUN_DIR/graff.exit"' > "$RUN_DIR/graff.launch" 2>&1 < /dev/null &
+  pid=$!
+  echo "$pid" > "$RUN_DIR/graff.pid"
+  if [ -e "$RUN_DIR/stopped" ]; then kill -TERM -- "-$pid" 2>/dev/null || true; fi
+fi`,
       ],
       cwd: "/tmp",
       envs,
@@ -148,6 +282,9 @@ export class GraffRun {
     if (start.exitCode && start.exitCode !== 0) {
       throw new Error(`failed to start graff: ${start.stderr || start.stdout}`);
     }
+
+    this.launched = true;
+    await options.checkpoint?.();
 
     events.push({
       type: "progress",
@@ -169,7 +306,8 @@ export class GraffRun {
     if (!sid) return [];
     const events: AgentEvent[] = [];
 
-    const rawOut = (await sandbox.readSandboxFile(sid, "/tmp/graff.out")) ?? "";
+    const rawOut =
+      (await sandbox.readSandboxFile(sid, `${this.workDir}/graff.out`)) ?? "";
     const boundedOut = boundedText(rawOut, MAX_ASK_TEXT_BYTES);
     const out = boundedOut.text;
     if (boundedOut.truncated && this.offset >= out.length) {
@@ -271,11 +409,14 @@ export class GraffRun {
       }
     }
 
-    const exitText = await sandbox.readSandboxFile(sid, "/tmp/graff.exit");
+    const exitText = await sandbox.readSandboxFile(
+      sid,
+      `${this.workDir}/graff.exit`,
+    );
     if (exitText !== null) {
       const exitCode = Number.parseInt(exitText.trim(), 10);
       const stderr =
-        (await sandbox.readSandboxFile(sid, "/tmp/graff.err")) ?? "";
+        (await sandbox.readSandboxFile(sid, `${this.workDir}/graff.err`)) ?? "";
       events.push(...(await this.finalize(sandbox, exitCode, stderr)));
       this.done = true;
       return events;
@@ -311,7 +452,10 @@ export class GraffRun {
         this.rawNonJson.trim() ||
         stderr.trim() ||
         (sid
-          ? ((await sandbox.readSandboxFile(sid, "/tmp/graff.out")) ?? "")
+          ? ((await sandbox.readSandboxFile(
+              sid,
+              `${this.workDir}/graff.out`,
+            )) ?? "")
           : ""
         ).trim()
       ).slice(0, 800);

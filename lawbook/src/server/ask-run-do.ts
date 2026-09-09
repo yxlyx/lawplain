@@ -13,8 +13,10 @@ import {
   providerCredential,
   redactSecrets,
   safeAgentError,
+  userRunName,
 } from "./ask-security";
-import { GraffRun } from "./graff-run";
+import { GraffRun, type GraffRunState } from "./graff-run";
+import type { SessionLease } from "./ask-session";
 import {
   finishTrajectory,
   recordTrajectoryEvents,
@@ -33,6 +35,7 @@ import {
 interface AskRunEnv {
   AUTH_DB?: D1Database;
   TRAJECTORY_DB?: D1Database;
+  ASK_SESSION_DO?: DurableObjectNamespace;
   CUBESANDBOX_GATEWAY_URL?: string;
   CUBESANDBOX_TENANT_KEY?: string;
   CONDENSATION_API_KEY?: string;
@@ -52,6 +55,9 @@ export class AskRunDO extends DurableObject<AskRunEnv> {
     super(ctx, env);
     ctx.storage.sql.exec(
       `CREATE TABLE IF NOT EXISTS events (idx INTEGER PRIMARY KEY, json TEXT NOT NULL)`,
+    );
+    ctx.storage.sql.exec(
+      `CREATE TABLE IF NOT EXISTS run_checkpoint (id INTEGER PRIMARY KEY CHECK (id = 1), json TEXT NOT NULL)`,
     );
   }
 
@@ -103,7 +109,10 @@ export class AskRunDO extends DurableObject<AskRunEnv> {
     }
   }
 
-  private async appendEvents(events: AgentEvent[]): Promise<void> {
+  private async appendEvents(
+    events: AgentEvent[],
+    checkpoint?: GraffRunState,
+  ): Promise<void> {
     const secrets = Object.values(providerCredential(this.env) ?? {});
     const redact = (value: unknown): unknown => {
       if (typeof value === "string") return redactSecrets(value, secrets);
@@ -134,25 +143,32 @@ export class AskRunDO extends DurableObject<AskRunEnv> {
       trajectoryEvents.push({ seq: nextIndex, event: safeEvent });
       nextIndex += 1;
     };
-    for (const ev of events) {
-      if (ev.type === "delta") {
-        let text = ev.text;
-        while (text) {
-          // 8KB of UTF-8 remains below the 64KB event cap even when every byte
-          // needs JSON's longest six-byte escape representation.
-          const bytes = new TextEncoder().encode(text);
-          const part = new TextDecoder().decode(bytes.slice(0, 8_000), {
-            stream: bytes.length > 8_000,
-          });
-          insert({ type: "delta", text: part });
-          text = new TextDecoder().decode(
-            bytes.slice(new TextEncoder().encode(part).length),
-          );
+    this.ctx.storage.transactionSync(() => {
+      for (const ev of events) {
+        if (ev.type === "delta") {
+          let text = ev.text;
+          while (text) {
+            // 8KB of UTF-8 remains below the 64KB event cap even when every byte
+            // needs JSON's longest six-byte escape representation.
+            const bytes = new TextEncoder().encode(text);
+            const part = new TextDecoder().decode(bytes.slice(0, 8_000), {
+              stream: bytes.length > 8_000,
+            });
+            insert({ type: "delta", text: part });
+            text = new TextDecoder().decode(
+              bytes.slice(new TextEncoder().encode(part).length),
+            );
+          }
+        } else {
+          insert(ev);
         }
-      } else {
-        insert(ev);
       }
-    }
+      if (checkpoint)
+        this.ctx.storage.sql.exec(
+          "INSERT OR REPLACE INTO run_checkpoint (id, json) VALUES (1, ?)",
+          JSON.stringify(checkpoint),
+        );
+    });
     const runId = await this.ctx.storage.get<string>("runId");
     if (runId && trajectoryEvents.length) {
       await recordTrajectoryEvents(
@@ -161,6 +177,67 @@ export class AskRunDO extends DurableObject<AskRunEnv> {
         trajectoryEvents,
       ).catch((error) => console.warn("Failed to persist Ask events", error));
     }
+  }
+
+  private checkpoint(): GraffRunState | null {
+    const rows = this.ctx.storage.sql
+      .exec("SELECT json FROM run_checkpoint WHERE id = 1")
+      .toArray();
+    return rows.length
+      ? (JSON.parse(String(rows[0].json)) as GraffRunState)
+      : null;
+  }
+
+  private async sessionRequest(
+    path: string,
+    extra: Record<string, unknown> = {},
+  ): Promise<Response> {
+    const userId = await this.ctx.storage.get<string>("userId");
+    const runId = await this.ctx.storage.get<string>("runId");
+    const threadId = (await this.ctx.storage.get<string>("threadId")) ?? runId;
+    if (!userId || !threadId || !this.env.ASK_SESSION_DO)
+      throw new Error("Research session unavailable");
+    const stub = this.env.ASK_SESSION_DO.get(
+      this.env.ASK_SESSION_DO.idFromName(userRunName(userId, threadId)),
+    );
+    return stub.fetch(`https://ask-session${path}`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-lawplain-user-id": userId,
+      },
+      body: JSON.stringify({ threadId, runId, ...extra }),
+    });
+  }
+
+  private async releaseSession(run: GraffRun): Promise<void> {
+    const response = await this.sessionRequest("/release", {
+      sandboxId: run.sandboxId,
+      runtimeReady: run.runtimeReady,
+    });
+    if (!response.ok) throw new Error("Research session release failed");
+  }
+
+  private async parkSession(
+    run: GraffRun,
+    sandbox: CubeSandbox,
+  ): Promise<void> {
+    // Old deployments did not record a process group. Keep completed legacy
+    // VMs, but retire an interrupted legacy process that cannot be safely stopped.
+    if (
+      run.workDir === "/tmp" &&
+      run.sandboxId &&
+      (await sandbox.readSandboxFile(run.sandboxId, "/tmp/graff.exit")) === null
+    ) {
+      const response = await this.sessionRequest("/retire", {
+        sandboxId: run.sandboxId,
+      });
+      if (!response.ok)
+        throw new Error("Could not retire interrupted legacy session");
+      return;
+    }
+    await run.stop(sandbox);
+    await this.releaseSession(run);
   }
 
   /** Idempotent: starts the run on first call; later calls are no-ops. */
@@ -246,9 +323,18 @@ export class AskRunDO extends DurableObject<AskRunEnv> {
 
     const sid = await this.ctx.storage.get<string>("sandboxId");
     if (sid) {
-      await createResearchSandbox(this.env, {
+      const sandbox = createResearchSandbox(this.env, {
         existingSandboxId: sid,
-      }).deleteSandbox(sid);
+      });
+      const state = this.checkpoint();
+      if (await this.ctx.storage.get<boolean>("sharedSession")) {
+        if (state) {
+          const run = GraffRun.restore(state);
+          await this.parkSession(run, sandbox);
+        }
+      } else {
+        await sandbox.deleteSandbox(sid);
+      }
       await this.ctx.storage.delete("sandboxId");
     }
 
@@ -275,6 +361,8 @@ export class AskRunDO extends DurableObject<AskRunEnv> {
     let sandbox: CubeSandbox | null = null;
     let run: GraffRun | null = null;
     let providerSecrets: string[] = [];
+    let sharedSession = false;
+    let terminalStatus: "done" | "error" | undefined;
     try {
       // Remove the legacy persisted guard from Durable Objects created by an
       // older deployment. Retry attempts are bounded separately below.
@@ -318,77 +406,155 @@ export class AskRunDO extends DurableObject<AskRunEnv> {
         ...Object.values(providerEnv),
         this.env.CONDENSATION_API_KEY ?? "",
       ];
-      // Record the idempotency key before making a create request. An alarm
-      // interrupted during provisioning can safely recover the same lease.
+      const saved = this.checkpoint();
+      // Terminal output and its cursor were committed together. If the isolate
+      // restarted during release, finish that release without acquiring again.
+      if (saved?.done && saved.sandboxId) {
+        run = GraffRun.restore(saved);
+        sandbox = createResearchSandbox(this.env, {
+          existingSandboxId: saved.sandboxId,
+        });
+        sharedSession =
+          (await this.ctx.storage.get<boolean>("sharedSession")) === true;
+        terminalStatus = saved.failed ? "error" : "done";
+        return;
+      }
+      const orphanedSandboxId = await this.ctx.storage.get<string>("sandboxId");
+      sharedSession =
+        !!this.env.ASK_SESSION_DO &&
+        (this.env.LAWPLAIN_SANDBOX_PROVIDER === "condensation" ||
+          (await this.ctx.storage.get<boolean>("sharedSession")) === true);
+      let lease: SessionLease | undefined;
       let sandboxRequestId =
         await this.ctx.storage.get<string>("sandboxRequestId");
       if (!sandboxRequestId) {
         sandboxRequestId = crypto.randomUUID();
         await this.ctx.storage.put("sandboxRequestId", sandboxRequestId);
       }
-      let activeSandbox = createResearchSandbox(this.env, {
+      if (sharedSession) {
+        const response = await this.sessionRequest("/acquire", {
+          existingSandboxId: !saved ? orphanedSandboxId : undefined,
+        });
+        if (!response.ok) {
+          await this.fail(
+            response.status === 409
+              ? "Research is already running in this conversation. Wait for it to finish before sending another question."
+              : response.status === 429
+                ? RESEARCH_BUSY
+                : safeAgentError(),
+          );
+          return;
+        }
+        lease = (await response.json()) as SessionLease;
+        await this.ctx.storage.put("sharedSession", true);
+        console.info("Ask sandbox lease", {
+          runId: await this.ctx.storage.get<string>("runId"),
+          sandboxId: lease.sandboxId,
+          reused: lease.reused,
+          expiresAt: lease.expiresAt,
+        });
+      }
+      const activeSandbox = createResearchSandbox(this.env, {
         requestId: sandboxRequestId,
+        existingSandboxId: lease?.sandboxId ?? orphanedSandboxId,
       });
       sandbox = activeSandbox;
-
-      const orphanedSandboxId = await this.ctx.storage.get<string>("sandboxId");
-      if (orphanedSandboxId) {
-        await createResearchSandbox(this.env, {
-          existingSandboxId: orphanedSandboxId,
-        })
-          .deleteSandbox(orphanedSandboxId)
-          .catch((error) =>
-            console.warn("Failed to remove interrupted Ask sandbox", error),
-          );
-        await this.ctx.storage.delete("sandboxId");
-        sandboxRequestId = crypto.randomUUID();
-        await this.ctx.storage.put("sandboxRequestId", sandboxRequestId);
-        activeSandbox = createResearchSandbox(this.env, {
-          requestId: sandboxRequestId,
-        });
-        sandbox = activeSandbox;
-      }
+      // Resume the same guest process and parser cursor after an isolate restart.
+      // A new VM is needed only when the prior provider lease is actually gone.
+      const canResume =
+        saved && (!lease || lease.sandboxId === saved.sandboxId);
       const recovering = attempt > 1 || hasPriorEvents || !!orphanedSandboxId;
+      run = canResume
+        ? GraffRun.restore(saved)
+        : new GraffRun(
+            recovering && !orphanedSandboxId ? Date.now() : startedAt,
+            orphanedSandboxId && !saved ? "/tmp" : undefined,
+          );
+      if (!saved && orphanedSandboxId) {
+        run.launched = true;
+        run.runtimeReady = true;
+      }
+      if (lease) run.sandboxId = lease.sandboxId;
+      else if (orphanedSandboxId) run.sandboxId = orphanedSandboxId;
       if (recovering) {
         await this.appendEvents([
           {
             type: "progress",
             phase: "thinking",
-            message: "Previous research was interrupted; retrying safely…",
+            message: canResume
+              ? "Reconnecting to your existing research…"
+              : "Resuming research after an interruption…",
             elapsedMs: Math.max(0, Date.now() - startedAt),
           },
         ]);
       }
-
-      run = new GraffRun(recovering ? Date.now() : startedAt);
       if (await this.isStopped()) return;
-      const launchEvents = await run.launch(
-        activeSandbox,
-        { model, providerEnv, prompt, systemPrompt, toolCallBudget },
-        async (sid) => {
-          await this.ctx.storage.put("sandboxId", sid);
-          if (await this.isStopped()) {
-            await activeSandbox.deleteSandbox(sid);
-            throw new Error("stopped");
-          }
-        },
-      );
+      await this.appendEvents([], run.snapshot());
+      let launchEvents: AgentEvent[] = [];
+      if (!run.launched) {
+        launchEvents = await run.launch(
+          activeSandbox,
+          { model, providerEnv, prompt, systemPrompt, toolCallBudget },
+          async (sid) => {
+            await this.ctx.storage.put("sandboxId", sid);
+            await this.appendEvents([], run!.snapshot());
+            if (await this.isStopped()) throw new Error("stopped");
+          },
+          {
+            sandboxId: run.sandboxId ?? undefined,
+            runtimeReady: lease?.runtimeReady,
+            checkpoint: () => this.appendEvents([], run!.snapshot()),
+          },
+        );
+      }
       if (await this.isStopped()) return;
-      await this.appendEvents(launchEvents);
-      let sawError = launchEvents.some((ev) => ev.type === "error");
+      await this.appendEvents(launchEvents, run.snapshot());
+      // One-time migration of pre-checkpoint runs: replay their existing log
+      // into the parser but do not send already-delivered text/tools twice.
+      let replayChars = 0;
+      const replayTools = new Map<string, number>();
+      let replayDone = false;
+      if (run.workDir === "/tmp" && run.snapshot().offset === 0) {
+        for (const row of this.ctx.storage.sql
+          .exec("SELECT json FROM events ORDER BY idx")
+          .toArray()) {
+          const event = JSON.parse(String(row.json)) as AgentEvent;
+          if (event.type === "delta") replayChars += event.text.length;
+          if (event.type === "tool")
+            replayTools.set(event.key, event.count ?? 1);
+          if (event.type === "done") replayDone = true;
+        }
+      }
+      let sawError =
+        run.failed || launchEvents.some((ev) => ev.type === "error");
       while (!run.done) {
         if (await this.isStopped()) break;
-        const events = await run.poll(activeSandbox);
+        const events = (await run.poll(activeSandbox)).flatMap(
+          (event): AgentEvent[] => {
+            if (event.type === "delta" && replayChars > 0) {
+              const skip = Math.min(replayChars, event.text.length);
+              replayChars -= skip;
+              return skip === event.text.length
+                ? []
+                : [{ ...event, text: event.text.slice(skip) }];
+            }
+            if (
+              event.type === "tool" &&
+              (event.count ?? 1) <= (replayTools.get(event.key) ?? 0)
+            )
+              return [];
+            if (event.type === "done" && replayDone) return [];
+            return [event];
+          },
+        );
         if (events.some((ev) => ev.type === "error")) sawError = true;
-        if (events.length) await this.appendEvents(events);
+        run.failed = sawError;
+        await this.appendEvents(events, run.snapshot());
         if (run.done || (await this.isStopped())) break;
         await sleep(750);
       }
       if (!(await this.isStopped())) {
-        const status = (sawError ? "error" : "done") satisfies RunStatus;
-        await this.ctx.storage.put("status", status);
-        await this.updateThreadStatus(status);
-        await this.updateTrajectoryStatus(status);
+        terminalStatus = sawError ? "error" : "done";
       }
     } catch (e) {
       if (await this.isStopped()) return;
@@ -402,19 +568,36 @@ export class AskRunDO extends DurableObject<AskRunEnv> {
               : safeAgentError(),
         },
       ]);
-      await this.ctx.storage.put("status", "error" satisfies RunStatus);
-      await this.updateThreadStatus("error");
-      await this.updateTrajectoryStatus("error");
+      terminalStatus = "error";
     } finally {
       try {
         if (run?.sandboxId && sandbox) {
-          await sandbox.deleteSandbox(run.sandboxId);
+          if (sharedSession) {
+            // Terminate only this turn's process group; keep the VM and its
+            // workspace for follow-ups. The session DO owns idle/lease cleanup.
+            await this.parkSession(run, sandbox);
+          } else {
+            await sandbox.deleteSandbox(run.sandboxId);
+          }
         }
-      } catch (error) {
-        console.warn("Failed to remove Ask sandbox", error);
-      } finally {
         await this.ctx.storage.delete("sandboxId");
-        this.looping = false;
+      } catch (error) {
+        // Retain the persisted identity when cleanup is uncertain. The session
+        // watchdog can recover it; never abandon it and create another VM.
+        console.warn(
+          "Ask sandbox release will be retried by its session",
+          redactSecrets(error, providerSecrets),
+        );
+      } finally {
+        try {
+          if (terminalStatus && !(await this.isStopped())) {
+            await this.ctx.storage.put("status", terminalStatus);
+            await this.updateThreadStatus(terminalStatus);
+            await this.updateTrajectoryStatus(terminalStatus);
+          }
+        } finally {
+          this.looping = false;
+        }
       }
     }
   }
@@ -441,7 +624,8 @@ export class AskRunDO extends DurableObject<AskRunEnv> {
     if (!db) return;
     const userId = await this.ctx.storage.get<string>("userId");
     const threadId = await this.ctx.storage.get<string>("threadId");
-    if (!userId || !threadId) return;
+    const runId = await this.ctx.storage.get<string>("runId");
+    if (!userId || !threadId || !runId) return;
 
     await db
       .prepare(
@@ -453,7 +637,7 @@ export class AskRunDO extends DurableObject<AskRunEnv> {
                ELSE unread
              END,
              updatedAt = ?
-         WHERE userId = ? AND id = ?`,
+         WHERE userId = ? AND id = ? AND runId = ?`,
       )
       .bind(
         status,
@@ -462,6 +646,7 @@ export class AskRunDO extends DurableObject<AskRunEnv> {
         Date.now(),
         userId,
         threadId,
+        runId,
       )
       .run()
       .catch(() => {});
@@ -484,7 +669,16 @@ export class AskRunDO extends DurableObject<AskRunEnv> {
                 cursor,
               )
               .toArray();
+            const currentStatus = await status();
             for (const r of rows) {
+              const event = JSON.parse(String(r.json)) as AgentEvent;
+              // Do not invite a follow-up until the preceding turn has released
+              // its session. Output deltas can still stream during cleanup.
+              if (
+                currentStatus === "running" &&
+                (event.type === "done" || event.type === "error")
+              )
+                break;
               controller.enqueue(encoder.encode(`data: ${r.json}\n\n`));
               cursor = Number(r.idx) + 1;
               lastEventAt = Date.now();

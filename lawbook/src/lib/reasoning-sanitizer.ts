@@ -3,6 +3,15 @@ export class ReasoningSanitizer {
   private pending = "";
   private thinking = false;
 
+  snapshot(): { pending: string; thinking: boolean } {
+    return { pending: this.pending, thinking: this.thinking };
+  }
+
+  restore(state: { pending: string; thinking: boolean }): void {
+    this.pending = state.pending;
+    this.thinking = state.thinking;
+  }
+
   push(chunk: string): string {
     this.pending += chunk;
     let output = "";

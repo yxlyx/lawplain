@@ -167,6 +167,37 @@ export async function DELETE(req: Request): Promise<Response> {
     return Response.json({ error: "Authentication required" }, { status: 401 });
   const id = new URL(req.url).searchParams.get("id");
   if (!id) return Response.json({ error: "Missing id" }, { status: 400 });
+  const thread = await getThread(session.user.id, id);
+  if (!thread) return Response.json({ ok: true });
+  try {
+    const { env } = await getCloudflareContext({ async: true });
+    const ns = (env as { ASK_SESSION_DO?: DurableObjectNamespace })
+      .ASK_SESSION_DO;
+    if (ns) {
+      const stub = ns.get(ns.idFromName(userRunName(session.user.id, id)));
+      const disposed = await stub.fetch("https://ask-session/dispose", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "x-lawplain-user-id": session.user.id,
+        },
+        body: JSON.stringify({ threadId: id }),
+      });
+      if (!disposed.ok)
+        return Response.json(
+          { error: "Could not close research session. Please retry." },
+          { status: 503 },
+        );
+    }
+  } catch (error) {
+    if (process.env.NODE_ENV === "production") {
+      console.warn("Could not close deleted research session", error);
+      return Response.json(
+        { error: "Could not close research session. Please retry." },
+        { status: 503 },
+      );
+    }
+  }
   await deleteThread(session.user.id, id);
   return Response.json({ ok: true });
 }

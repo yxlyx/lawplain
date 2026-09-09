@@ -61,7 +61,7 @@ test("creation uses a stable request ID and a bounded lease without automatic re
   assert.deepEqual(calls[0].body, {
     requestId: UUID,
     name: "Lawplain research",
-    leaseSeconds: 600,
+    leaseSeconds: 1800,
   });
 });
 

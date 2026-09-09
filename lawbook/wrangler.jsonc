@@ -23,9 +23,15 @@
     }
   ],
   "durable_objects": {
-    "bindings": [{ "name": "ASK_RUN_DO", "class_name": "AskRunDO" }]
+    "bindings": [
+      { "name": "ASK_RUN_DO", "class_name": "AskRunDO" },
+      { "name": "ASK_SESSION_DO", "class_name": "AskSessionDO" }
+    ]
   },
-  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["AskRunDO"] }],
+  "migrations": [
+    { "tag": "v1", "new_sqlite_classes": ["AskRunDO"] },
+    { "tag": "v2", "new_sqlite_classes": ["AskSessionDO"] }
+  ],
   "kv_namespaces": [
     { "binding": "STATS_KV", "id": "cf385a9570384a87b6879ba300b72609" }
   ],

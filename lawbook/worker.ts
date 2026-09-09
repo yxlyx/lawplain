@@ -15,6 +15,7 @@ import handler, {
   DOShardedTagCache,
 } from "./.open-next/worker.js";
 
+export { AskSessionDO } from "./src/server/ask-session-do";
 export { AskRunDO } from "./src/server/ask-run-do";
 export { BucketCachePurge, DOQueueHandler, DOShardedTagCache };
 export default handler;

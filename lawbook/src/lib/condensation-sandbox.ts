@@ -6,12 +6,13 @@ import {
 } from "./cubesandbox.ts";
 
 const ORIGIN = "https://api.condensation.ai";
-const LEASE_SECONDS = 600;
+export const CONDENSATION_LEASE_SECONDS = 1800;
 const MAX_FILE_BYTES = 1_000_000;
 
-interface FleetSandbox {
+export interface FleetSandbox {
   id: string;
   state: string;
+  expiresAt: number;
 }
 
 interface FleetOutput {
@@ -96,7 +97,7 @@ export class CondensationSandbox extends CubeSandbox {
       {
         requestId: this.requestId,
         name: "Lawplain research",
-        leaseSeconds: LEASE_SECONDS,
+        leaseSeconds: CONDENSATION_LEASE_SECONDS,
       },
     );
     this.path(box.id);
@@ -105,6 +106,10 @@ export class CondensationSandbox extends CubeSandbox {
       throw new Error("Condensation sandbox did not become ready");
     }
     return box.id;
+  }
+
+  async getSandbox(sid: string): Promise<FleetSandbox> {
+    return this.request<FleetSandbox>("GET", this.path(sid));
   }
 
   override async deleteSandbox(sid: string): Promise<void> {
