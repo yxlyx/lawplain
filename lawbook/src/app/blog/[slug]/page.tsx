@@ -3,8 +3,10 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import ReactMarkdown from "react-markdown";
 import {
+  AccessDiagram,
   ExperimentDiagram,
   ResearchDiagram,
+  SourceDiagram,
 } from "@/components/blog/ResearchDiagrams";
 import {
   BLOG_POSTS,
@@ -144,11 +146,12 @@ export default async function BlogArticle({
                 <h2>{section.title}</h2>
                 <ReactMarkdown>{section.body}</ReactMarkdown>
                 {"diagram" in section &&
-                  (section.diagram === "research" ? (
-                    <ResearchDiagram />
-                  ) : (
-                    <ExperimentDiagram />
-                  ))}
+                  {
+                    research: <ResearchDiagram />,
+                    sources: <SourceDiagram />,
+                    experiments: <ExperimentDiagram />,
+                    access: <AccessDiagram />,
+                  }[section.diagram]}
               </section>
             ))}
             <div className="blog-editorial-note">

@@ -52,6 +52,7 @@ The work began in our **sglaw** project, which brings public Singapore legal mat
 Different materials also serve different purposes. A judgment, an Act and a parliamentary speech should retain their source identity when they appear in a research answer. Keeping identifiers and source links alongside the text makes that distinction easier to preserve.
 
 For the reader, the principle is straightforward: follow the citation, read the relevant text and check the linked official source for its current or authoritative version. The collection is a research aid with coverage limits. A missing result is a limit of the search or collection, not proof that an authority does not exist.`,
+        diagram: "sources",
       },
       {
         id: "lessons-from-sglaw",
@@ -85,6 +86,7 @@ That informs how we think about the product: a useful run should make progress t
 The roles are different. **Ask Lawplain** runs our research experience with Graff. **MCP** gives your agent access to Lawplain’s corpus tools; your chosen client runs its own agent loop. You do not need to run Graff to use Lawplain through MCP.
 
 MCP access requires an approved account and an enabled personal API key. The [setup guide](/developers/mcp) includes client configurations and a plain-text version for agents. For readers who simply want to look something up, [searching the collection](/) is the direct route.`,
+        diagram: "access",
       },
       {
         id: "research-you-can-follow",
@@ -107,6 +109,10 @@ export function blogPath(post: BlogPost) {
 
 export function blogMarkdown(post: BlogPost) {
   const diagramText: Record<string, string> = {
+    sources:
+      "Diagram: Judgments provide the court’s reasoning; legislation provides the operative text; Hansard records parliamentary debate. Keep the document identity, relevant text and source link attached to each claim. These sources have different roles and are not interchangeable.",
+    access:
+      "Diagram: Ask Lawplain → Graff research loop → corpus tools through the API → Singapore legal collection. Your agent → your client’s runtime → Lawplain MCP with approved access → the same Singapore legal collection. Each route returns source material to its own agent runtime; MCP does not require Graff.",
     research:
       "Diagram: A question enters Lawplain. Graff runs the model-and-tool loop: search → inspect → read → explain. Search and reading use the Singapore legal collection; the result is an explanation with source links. Steps may repeat within a bounded run.",
     experiments:

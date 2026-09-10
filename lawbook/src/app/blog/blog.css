@@ -269,136 +269,6 @@
   padding: 2px 5px;
   border-radius: 3px;
 }
-.diagram-question {
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  gap: 9px;
-  font-size: 13px;
-  padding: 12px;
-}
-.diagram-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--accent);
-}
-.diagram-connector {
-  text-align: center;
-  font-size: 18px;
-  color: var(--muted);
-  height: 32px;
-}
-.diagram-harness {
-  border: 1px solid var(--border-strong);
-  border-radius: 6px;
-  padding: 20px;
-  background: var(--accent-soft);
-}
-.diagram-harness-label {
-  display: flex;
-  justify-content: space-between;
-  gap: 12px;
-  align-items: baseline;
-  margin-bottom: 18px;
-}
-.diagram-harness-label strong {
-  font-family: var(--font-serif), Georgia, serif;
-  font-size: 23px;
-  font-weight: 400;
-}
-.diagram-harness-label > span {
-  font-size: 11px;
-  color: var(--muted);
-}
-.diagram-steps {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  list-style: none;
-  padding: 0;
-  margin: 0;
-  gap: 12px;
-}
-.diagram-steps li {
-  position: relative;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  padding: 12px 9px;
-}
-.diagram-steps li:not(:last-child)::after {
-  content: "→";
-  position: absolute;
-  left: calc(100% + 1px);
-  top: 39px;
-  font-size: 12px;
-  color: var(--muted);
-}
-.diagram-steps strong {
-  font-size: 13px;
-  font-weight: 500;
-}
-.diagram-steps li > span:last-child {
-  color: var(--muted);
-  font-size: 10px;
-  line-height: 1.5;
-}
-.diagram-step-number {
-  color: var(--muted);
-  font-size: 9px;
-  font-family: var(--font-geist-mono), monospace;
-}
-.research-diagram .diagram-loop {
-  margin: 16px 0 0;
-  color: var(--muted);
-  font-size: 10px;
-}
-.diagram-exchange {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 2px;
-  color: var(--muted);
-  font-size: 10px;
-  padding: 10px 0;
-}
-.diagram-exchange > span {
-  font-size: 22px;
-  line-height: 1;
-}
-.diagram-corpus {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  text-align: center;
-  gap: 6px;
-  padding: 16px;
-  border: 1px solid var(--border-strong);
-  border-radius: 4px;
-  background: var(--surface-2);
-}
-.diagram-corpus strong {
-  font-weight: 500;
-  font-size: 13px;
-}
-.diagram-corpus span {
-  color: var(--muted);
-  font-size: 10px;
-}
-.diagram-outcome {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 7px;
-  padding-top: 22px;
-  font-size: 11px;
-}
-.diagram-outcome > span:last-child {
-  color: var(--muted);
-}
 .research-diagram figcaption {
   color: var(--muted);
   font-size: 11px;
@@ -410,58 +280,6 @@
 .research-diagram.is-compact {
   margin: 0;
   padding: 22px;
-}
-.is-compact .diagram-harness {
-  padding: 16px;
-}
-.is-compact .diagram-steps li > span:last-child {
-  display: none;
-}
-.is-compact .diagram-steps li {
-  padding: 10px 7px;
-}
-.is-compact .diagram-steps li:not(:last-child)::after {
-  top: 22px;
-}
-.experiment-steps {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  list-style: none;
-  gap: 24px 32px;
-  padding: 0;
-  margin: 0;
-}
-.experiment-steps li {
-  display: flex;
-  gap: 14px;
-  align-items: flex-start;
-}
-.experiment-number {
-  font-family: var(--font-geist-mono), monospace;
-  font-size: 11px;
-  flex: 0 0 34px;
-  height: 34px;
-  display: grid;
-  place-items: center;
-  border: 1px solid var(--border-strong);
-  border-radius: 50%;
-  color: var(--accent);
-}
-.experiment-steps strong {
-  font-size: 15px;
-  font-weight: 500;
-}
-.experiment-steps p {
-  font-size: 12px;
-  line-height: 1.6;
-  margin: 5px 0 0;
-}
-.experiment-return {
-  border-top: 1px dashed var(--border-strong);
-  margin-top: 25px;
-  padding-top: 15px;
-  font-size: 11px;
-  color: var(--muted);
 }
 @media (max-width: 950px) {
   .blog-feature {
@@ -559,53 +377,6 @@
   .research-diagram.is-compact {
     padding: 18px;
   }
-  .diagram-harness {
-    padding: 16px;
-  }
-  .diagram-steps {
-    grid-template-columns: 1fr;
-    gap: 18px;
-  }
-  .diagram-steps li {
-    display: grid;
-    grid-template-columns: 24px 1fr;
-    gap: 3px 8px;
-    padding: 12px;
-    align-items: baseline;
-  }
-  .diagram-steps li > span:last-child {
-    grid-column: 2;
-    font-size: 11px;
-  }
-  .diagram-steps li:not(:last-child)::after {
-    content: "↓";
-    left: 50%;
-    top: calc(100% + 1px);
-  }
-  .is-compact .diagram-steps {
-    grid-template-columns: 1fr 1fr;
-    gap: 10px;
-  }
-  .is-compact .diagram-steps li {
-    display: flex;
-    flex-direction: column;
-  }
-  .is-compact .diagram-steps li::after {
-    display: none;
-  }
-  .diagram-harness-label {
-    gap: 8px;
-  }
-  .diagram-harness-label > span {
-    font-size: 10px;
-  }
-  .diagram-corpus span {
-    line-height: 1.8;
-  }
-  .experiment-steps {
-    grid-template-columns: 1fr;
-    gap: 24px;
-  }
   .diagram-topline {
     font-size: 9px;
   }
@@ -666,4 +437,176 @@
   .blog-mobile-toc {
     display: none;
   }
+}
+/* Inline vector flows. Travelling dashes show direction, never volume or speed. */
+.flow-canvas {
+  container-type: inline-size;
+}
+.flow-svg {
+  width: 100%;
+  height: auto;
+  display: block;
+  overflow: visible;
+}
+.flow-svg-mobile {
+  display: none;
+}
+.flow-track {
+  fill: none;
+  stroke: var(--border-strong);
+  stroke-width: 1.5;
+}
+.flow-arrowhead {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 1.5;
+}
+.flow-travel {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 2;
+  stroke-dasharray: 7 15;
+  animation: flow-travel 2.5s linear infinite;
+  opacity: 0.35;
+}
+.flow-edge.is-highlighted .flow-travel {
+  opacity: 1;
+}
+.flow-node {
+  cursor: pointer;
+  outline: none;
+}
+.flow-node rect {
+  fill: var(--surface-2);
+  stroke: var(--border-strong);
+  stroke-width: 1;
+  transition:
+    fill 180ms,
+    stroke 180ms;
+}
+.flow-node.is-selected rect {
+  fill: var(--accent-soft);
+  stroke: var(--accent);
+  stroke-width: 2;
+}
+.flow-node:focus-visible rect {
+  stroke: var(--accent);
+  stroke-width: 3;
+  stroke-dasharray: 5 3;
+}
+.flow-node:hover rect {
+  stroke: var(--accent);
+}
+.flow-node-number {
+  font:
+    10px var(--font-geist-mono),
+    monospace;
+  fill: var(--muted);
+}
+.flow-node-label {
+  font:
+    21px var(--font-serif),
+    Georgia,
+    serif;
+  fill: var(--foreground);
+}
+.flow-node-detail {
+  font:
+    12px var(--font-sans),
+    sans-serif;
+  fill: var(--muted);
+}
+.flow-node.is-narrow .flow-node-label {
+  font-size: 16px;
+}
+.flow-node.is-narrow .flow-node-detail {
+  font-size: 10px;
+}
+.flow-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 11px;
+  color: var(--muted);
+  margin-top: 12px;
+}
+.flow-toolbar button {
+  flex-shrink: 0;
+  border: 1px solid var(--border-strong);
+  border-radius: 5px;
+  padding: 10px 13px;
+  min-height: 40px;
+  color: var(--foreground);
+  background: var(--surface);
+}
+.flow-toolbar button:hover {
+  background: var(--accent-soft);
+}
+.flow-toolbar button:disabled {
+  color: var(--muted);
+  cursor: default;
+}
+.flow-explanation {
+  padding: 18px;
+  background: var(--accent-soft);
+  border-radius: 5px;
+  margin-top: 16px;
+  min-height: 116px;
+}
+.flow-explanation > strong {
+  font-size: 13px;
+  font-weight: 500;
+}
+.flow-explanation > p {
+  font-size: 12px;
+  line-height: 1.8;
+  margin: 7px 0 0;
+}
+.svg-flow.is-paused .flow-travel {
+  animation-play-state: paused;
+}
+.svg-flow.is-compact .flow-node {
+  cursor: inherit;
+}
+@keyframes flow-travel {
+  to {
+    stroke-dashoffset: -44;
+  }
+}
+@container (max-width: 540px) {
+  .flow-svg-desktop {
+    display: none;
+  }
+  .flow-svg-mobile {
+    display: block;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .flow-travel {
+    animation: none;
+  }
+  .flow-node rect {
+    transition: none;
+  }
+}
+@media print {
+  .flow-travel {
+    animation: none;
+  }
+  .flow-toolbar {
+    display: none;
+  }
+}
+.svg-flow.is-compact .flow-svg-desktop {
+  display: block;
+}
+.svg-flow.is-compact .flow-svg-mobile {
+  display: none;
+}
+.svg-flow.is-compact .flow-node-detail {
+  display: none;
+}
+.svg-flow.is-compact .flow-node-label {
+  font-size: 28px;
 }
