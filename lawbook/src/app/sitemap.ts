@@ -1,4 +1,5 @@
 import type { MetadataRoute } from "next";
+import { BLOG_POSTS, blogPath } from "@/lib/blog";
 import { collectionResults } from "@/lib/collection-results";
 import { COLLECTIONS } from "@/lib/collections";
 import { absoluteUrl } from "@/lib/seo";
@@ -11,6 +12,8 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     "/faq",
     "/developers",
     "/developers/mcp",
+    "/blog",
+    ...BLOG_POSTS.map(blogPath),
     ...COLLECTIONS.map((c) => `/research/${c.slug}`),
   ]);
   const collections = await Promise.all(
@@ -18,5 +21,11 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   );
   for (const items of collections)
     for (const item of items) paths.add(item.path);
-  return [...paths].map((path) => ({ url: absoluteUrl(path) }));
+  return [...paths].map((path) => {
+    const post = BLOG_POSTS.find((post) => blogPath(post) === path);
+    return {
+      url: absoluteUrl(path),
+      ...(post ? { lastModified: post.date } : {}),
+    };
+  });
 }

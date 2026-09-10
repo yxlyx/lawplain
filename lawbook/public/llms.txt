@@ -22,6 +22,8 @@ Rulings have Markdown at `/judgment/{URL-encoded-citation}/index.md` and a per-r
 
 ## Optional
 
+- [Lawplain blog](https://lawplain.com/blog): Engineering notes on Singapore legal research and the product.
+- [How Lawplain works](https://lawplain.com/blog/how-lawplain-researches-singapore-law/llms.txt): Technical article about Graff, source retrieval and the sglaw experiments, with text descriptions of the diagrams.
 - [MCP agent guide](https://lawplain.com/developers/mcp/llms.txt): Public setup instructions, authentication, read-only tools, client configurations and research workflow. Tool calls require approved MCP access and a personal API key.
 - [MCP documentation](https://lawplain.com/developers/mcp): Human-readable guide with copyable configuration examples.
 - [Public API documentation](https://lawplain.com/developers): Search and retrieve legal materials programmatically.

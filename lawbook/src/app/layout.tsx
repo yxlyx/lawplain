@@ -141,6 +141,7 @@ function SiteFooter() {
         <nav aria-label="Footer">
           <Link href="/research">Library</Link>
           <Link href="/faq">Help</Link>
+          <Link href="/blog">Blog</Link>
           <Link href="/developers">API</Link>
           <a href="/llms.txt">For AI</a>
         </nav>

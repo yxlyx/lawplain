@@ -168,6 +168,7 @@ export function HomeShell({
               </p>
               <nav aria-label="About Lawplain">
                 <Link href="/faq">How to use Lawplain</Link>
+                <Link href="/blog">From the blog</Link>
                 <Link href="/developers">API access</Link>
               </nav>
             </div>
