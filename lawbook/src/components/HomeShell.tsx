@@ -103,12 +103,21 @@ export function HomeShell({
             onActiveChange={setSearchActive}
           />
           {!active && (
-            <div className="garden-search-alternative">
-              <span>Or ask a question in plain English.</span>
-              <Link href="/ask">
-                Ask Lawplain <span aria-hidden="true">↗</span>
-              </Link>
-            </div>
+            <>
+              <div className="garden-search-alternative">
+                <span>
+                  Explore judgments and legislation using a plain-English
+                  research question.
+                </span>
+                <Link href="/ask">
+                  Research with Lawplain <span aria-hidden="true">↗</span>
+                </Link>
+              </div>
+              <p className="garden-research-note">
+                AI-assisted legal research, not legal advice. Check the cited
+                sources.
+              </p>
+            </>
           )}
         </section>
       </div>
@@ -145,14 +154,14 @@ export function HomeShell({
           </section>
           <section className="home-ask-row" aria-labelledby="home-ask-title">
             <div>
-              <h2 id="home-ask-title">Ask Lawplain</h2>
+              <h2 id="home-ask-title">Research with Lawplain</h2>
               <p>
-                Research a question and get an explanation with links to the
-                sources.
+                Explore judgments and legislation using a plain-English research
+                question, with links to the sources.
               </p>
             </div>
             <Link href="/ask">
-              Start a question <span aria-hidden="true">↗</span>
+              Start research <span aria-hidden="true">↗</span>
             </Link>
           </section>
           <section

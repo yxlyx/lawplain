@@ -93,7 +93,14 @@
   padding: 14px 0 0;
   font-size: 11px;
   justify-content: flex-start;
+  flex-wrap: wrap;
   gap: 12px;
+}
+.editorial-home .garden-research-note {
+  margin: 8px 0 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--muted);
 }
 .editorial-home .garden-search-alternative a {
   gap: 5px;
